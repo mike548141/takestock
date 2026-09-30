@@ -1,0 +1,24 @@
+# Public reference domains and tokens the guard accepts, one per line.
+# A domain entry also covers its subdomains. Every entry must be public and
+# must point at no particular organisation's estate: standards bodies,
+# publishers of guidance, and software projects. Adding a line is a reviewed
+# change.
+apache.org
+github.com
+python.org
+pypi.org
+cyclonedx.org
+ietf.org
+rfc-editor.org
+iana.org
+nist.gov
+owasp.org
+# New Zealand government publishers of standards and guidance, named one by
+# one. Never the whole government suffix, because an organisation's own domain can
+# sit under it.
+nzism.gcsb.govt.nz
+gcsb.govt.nz
+ncsc.govt.nz
+digital.govt.nz
+protectivesecurity.govt.nz
+legislation.govt.nz

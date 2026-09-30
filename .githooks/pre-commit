@@ -1,0 +1,3 @@
+#!/bin/sh
+# Refuse any commit whose tree carries an organisation's identifiers.
+exec python3 "$(git rev-parse --show-toplevel)/tools/guard.py"
