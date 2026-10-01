@@ -116,7 +116,7 @@ IETF one that the NZISM itself uses (RFC 2119; NZISM §1.1.40):
 | Signing at the last hop where an external security provider relays outbound mail | MUST | *"DKIM signing must happen at that point"* | DKIM guide §4 |
 | Third-party sending platforms sign with the organisation's own domain | MUST | *"You must configure the platform to sign emails using your domain"* | DKIM guide Appendix 1 |
 | DMARC policy `p=reject` | MUST | *"All domains must have a p=reject DMARC policy."* | DMARC guide §3 (the framework's own §8 says *"needs to be set"*) |
-| Inbound mail checked for DMARC and acted on | MUST | *"Inbound emails must be checked for DMARC compliance and acted on based on the sending domain's DMARC policy."* | Framework §8 |
+| Inbound mail checked for DMARC and acted on | MUST | *"Inbound emails must be checked for DMARC compliance and acted on based on the sending domain's DMARC policy."* | Framework §8. RFC 9989 §7.4 forbids rejecting solely on a `p=reject` policy; see the inbound DMARC handling section of [`STANDARDS.md`](STANDARDS.md) |
 | DMARC reports reviewed regularly | MUST | *"DMARC Reports must be reviewed on a regular basis."* | DMARC guide §3; NZISM `15.2.36.C.04` (MUST) |
 | A DMARC reporting tool in use | MUST | *"A DMARC reporting tool is required."* | Framework §4; DMARC guide §4 step 1 |
 | MTA-STS enabled in `enforce` mode | MUST | *"An MTA record must be defined and set to enforce."* | Framework §10 checklist (§8 says *"needs to be enabled"*) |
@@ -140,6 +140,13 @@ IETF one that the NZISM itself uses (RFC 2119; NZISM §1.1.40):
 | Minimum keyword list blocked | SHOULD | *"It recommends, at a minimum, the following keywords be added to your DLP block lists"* | Keyword Blocking guide §3 |
 | Unencrypted mail in and out reviewed | SHOULD | *"It is recommended email platform administrators review their TLS-RPT logs or TLS session logs"* | TLS guide §4.4 |
 | Platforms that cannot use TLS raised as a security risk | SHOULD | *"It is recommended where Agencies platforms do not support TLS … this be raised as a security risk"* | TLS guide Appendix 1 |
+
+**`p=reject` and mailing lists.** RFC 9989 §7.4 advises domains whose users
+post to mailing lists not to publish `p=reject`. An organisation this framework
+binds meets `p=reject` anyway, records the tension openly, and reduces the cost
+by DKIM-signing all mail and telling users that taking part in mailing lists
+may be hindered. [`STANDARDS.md`](STANDARDS.md) sets out how, in its section
+on DMARC `p=reject`.
 
 ### All non-email-enabled domains and sub-domains
 

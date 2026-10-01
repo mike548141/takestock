@@ -660,8 +660,11 @@ compliance_levels:
 #   summary  the table's reasoning in prose
 #
 # A cite is {authority, control, note}. `authority` must name an entry in
-# `authorities:`. `control` is present only where a specific control or
-# section is known; otherwise the document is cited alone.
+# `authorities:`. `control` is present only where a specific control,
+# section or paragraph is known; otherwise the document is cited alone. A
+# section or paragraph reference (`ch.17 §17.2`, `§17.2.13`) is guidance, not
+# a numbered control: it has no compliance level and is never marked
+# `breaches: true`.
 #
 # `breaches: true` says the row FAILS the named control, as opposed to merely
 # being graded under it. Every such cite must carry a `commentary:` saying,
@@ -983,9 +986,9 @@ citations:
       - authority: nzism
         control: ch.17 §17.2
         note: >-
-          Approves AES and sets NO minimum key length. In Chapter 17 the only symmetric-specific control
-          in the chapter is 17.2.28.C.01 (SHOULD NOT use ECB mode), and no NZISM chapter mentions
-          AES-256 or a 256-bit key.
+          Approves AES (§17.2.11). The §17.2.13 summary table lists AES with a minimum 256-bit key, but
+          no numbered control sets an AES key length: the only AES control is 17.2.28.C.01 (SHOULD NOT
+          use ECB mode). The table is guidance, not a MUST.
       - authority: cnsa-2
         note: >-
           Requires AES-256, for US National Security Systems. Used here as calibration, not as an
@@ -1014,7 +1017,8 @@ citations:
     summary: >-
       NIST SP 800-57 Part 1 Rev 5 Table 2 for the strengths, and NIST IR 8547 ipd §4.1.3 and
       Table 6 for the post-quantum security categories and the 2030 date on the 112-bit class.
-      NZISM Chapter 17 states no minimum AES key length. This table grades nothing; it feeds the
+      No NZISM Chapter 17 control sets an AES key length; its §17.2.13 summary table lists a 256-bit
+      minimum as guidance. This table grades nothing; it feeds the
       informational `quantum-symmetric-margin:<bits>` reading only.
   symmetric:
     cites:
@@ -1046,6 +1050,12 @@ citations:
       aes192_cbc:
         - authority: cnsa-2
           note: an approved key size, but not the one CNSA 2.0 requires
+        - authority: nzism
+          control: §17.2.13
+          note: >-
+            The summary table lists AES with a minimum 256-bit key, and this key is shorter. The table
+            is guidance, not a control: no numbered control sets an AES key length, so this is a
+            shortfall from guidance, not a breach of a MUST.
       aes256_cbc:
         - authority: nzism
           control: ch.17 §17.2
@@ -1059,6 +1069,12 @@ citations:
           note: XTS-AES, the mode used for encrypting block storage such as disks and virtual machine files.
       aes128_gcm:
         - authority: nist-sp-800-38d
+        - authority: nzism
+          control: §17.2.13
+          note: >-
+            The summary table lists AES with a minimum 256-bit key, and this key is shorter. The table
+            is guidance, not a control: no numbered control sets an AES key length, so this is a
+            shortfall from guidance, not a breach of a MUST.
       aes256_gcm:
         - authority: cnsa-2
           note: >-
@@ -1066,6 +1082,12 @@ citations:
             post-quantum algorithm", so this row is `strong` and not `pqc`
       aes128_ccm:
         - authority: nist-sp-800-38c
+        - authority: nzism
+          control: §17.2.13
+          note: >-
+            The summary table lists AES with a minimum 256-bit key, and this key is shorter. The table
+            is guidance, not a control: no numbered control sets an AES key length, so this is a
+            shortfall from guidance, not a breach of a MUST.
       aes256_ccm:
         - authority: nist-sp-800-38c
       aes128_ccm_8:
@@ -1074,6 +1096,12 @@ citations:
           note: >-
             The 64-bit-tag form comes from RFC 6655 §3, for constrained devices. Appendix B allows a
             shortened tag with caveats, which is why this is `acceptable` and not `strong`.
+        - authority: nzism
+          control: §17.2.13
+          note: >-
+            The summary table lists AES with a minimum 256-bit key, and this key is shorter. The table
+            is guidance, not a control: no numbered control sets an AES key length, so this is a
+            shortfall from guidance, not a breach of a MUST.
       aes256_ccm_8:
         - authority: nist-sp-800-38c
           control: Appendix B
@@ -1355,6 +1383,12 @@ citations:
           note: legacy only, and a 64-bit block cipher (Sweet32)
       aes-gcm-128:
         - authority: nist-sp-800-38d
+        - authority: nzism
+          control: §17.2.13
+          note: >-
+            The summary table lists AES with a minimum 256-bit key, and this key is shorter. The table
+            is guidance, not a control: no numbered control sets an AES key length, so this is a
+            shortfall from guidance, not a breach of a MUST.
       aes-gcm-256:
         - authority: cnsa-2
           note: >-
@@ -1365,11 +1399,23 @@ citations:
           note: >-
             IKEv1 transform 7 is AES-CBC (RFC 3602; IANA IKEv1 registry). CBC on the wire: AEAD preferred,
             so `acceptable`.
+        - authority: nzism
+          control: §17.2.13
+          note: >-
+            The summary table lists AES with a minimum 256-bit key, and this key is shorter. The table
+            is guidance, not a control: no numbered control sets an AES key length, so this is a
+            shortfall from guidance, not a breach of a MUST.
       aes-cbc-192:
         - authority: nist-sp-800-38a
           note: >-
             IKEv1 transform 7 is AES-CBC (RFC 3602; IANA IKEv1 registry). CBC on the wire: AEAD preferred,
             so `acceptable`.
+        - authority: nzism
+          control: §17.2.13
+          note: >-
+            The summary table lists AES with a minimum 256-bit key, and this key is shorter. The table
+            is guidance, not a control: no numbered control sets an AES key length, so this is a
+            shortfall from guidance, not a breach of a MUST.
       aes-cbc-256:
         - authority: nist-sp-800-38a
           note: >-
@@ -1561,22 +1607,52 @@ citations:
       aes128-ctr:
         - authority: nist-sp-800-38a
           note: CTR has no padding and no known practical attack in SSH
+        - authority: nzism
+          control: §17.2.13
+          note: >-
+            The summary table lists AES with a minimum 256-bit key, and this key is shorter. The table
+            is guidance, not a control: no numbered control sets an AES key length, so this is a
+            shortfall from guidance, not a breach of a MUST.
       aes192-ctr:
         - authority: nist-sp-800-38a
           note: CTR has no padding and no known practical attack in SSH
+        - authority: nzism
+          control: §17.2.13
+          note: >-
+            The summary table lists AES with a minimum 256-bit key, and this key is shorter. The table
+            is guidance, not a control: no numbered control sets an AES key length, so this is a
+            shortfall from guidance, not a breach of a MUST.
       aes256-ctr:
         - authority: nist-sp-800-38a
           note: CTR has no padding and no known practical attack in SSH
       aes128-gcm@openssh.com:
         - authority: nist-sp-800-38d
+        - authority: nzism
+          control: §17.2.13
+          note: >-
+            The summary table lists AES with a minimum 256-bit key, and this key is shorter. The table
+            is guidance, not a control: no numbered control sets an AES key length, so this is a
+            shortfall from guidance, not a breach of a MUST.
       aes256-gcm@openssh.com:
         - authority: nist-sp-800-38d
       aes128-cbc:
         - authority: cve-2008-5161
           note: plaintext recovery against CBC-mode SSH; ssh-audit warns on it
+        - authority: nzism
+          control: §17.2.13
+          note: >-
+            The summary table lists AES with a minimum 256-bit key, and this key is shorter. The table
+            is guidance, not a control: no numbered control sets an AES key length, so this is a
+            shortfall from guidance, not a breach of a MUST.
       aes192-cbc:
         - authority: cve-2008-5161
           note: plaintext recovery against CBC-mode SSH; ssh-audit warns on it
+        - authority: nzism
+          control: §17.2.13
+          note: >-
+            The summary table lists AES with a minimum 256-bit key, and this key is shorter. The table
+            is guidance, not a control: no numbered control sets an AES key length, so this is a
+            shortfall from guidance, not a breach of a MUST.
       aes256-cbc:
         - authority: cve-2008-5161
           note: plaintext recovery against CBC-mode SSH; ssh-audit warns on it

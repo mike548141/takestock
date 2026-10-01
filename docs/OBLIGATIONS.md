@@ -19,7 +19,7 @@ anyone relies on it.
 |---|---|---|---|
 | Privacy Act 2020 | Law | Every *agency* that holds personal information; the Act's definition of a New Zealand agency covers public sector agencies and private sector bodies alike (s 8) | Reasonable security safeguards (IPP 5); care when a service provider holds the data (IPP 5(b), s 11); retention (IPP 9); offshore disclosure (IPP 12); breach notification (ss 112–115) |
 | Public Records Act 2005 | Law | Public offices and local authorities, as defined in s 4 | Keep full and accurate records, including of contracted-out work (s 17); no disposal, including destruction, without the Chief Archivist's authority (s 18) |
-| Protective Security Requirements (PSR), INFOSEC | Government policy | Agencies mandated by Cabinet; others are encouraged to adopt it | Security measures *"in line with"* the NZISM (paragraph 44); ICT systems, in house or cloud, *"MUST meet the NZISM minimum standards"* (paragraph 138) |
+| Protective Security Requirements (PSR), INFOSEC | Government policy | Agencies mandated by Cabinet; others are encouraged to adopt it | Security measures *"in line with"* the NZISM (paragraph 44); ICT systems, in house or cloud, *"MUST meet the NZISM minimum standards"* (paragraph 138); system assurance through NZISM certification and accreditation or continuous monitoring (paragraphs 184–186); compensating measures where a MUST cannot be met (paragraph 13) |
 | New Zealand Information Security Manual (NZISM) | Technical standard | Departments and agencies it applies to (§1.2.3); compliance *"is not required as a matter of law"* (§1.2.6) | Chapter 17 algorithm and key-length controls; §2.4 post-quantum preparation |
 | NCSC NZ Minimum Cyber Security Standards | Technical standard | GCISO-mandated agencies, who *"will be required to implement them"*; others may adopt them | Ten maturity standards mapped to NZISM controls |
 | Government Procurement Rules (5th edition) | Government policy | The agencies listed by New Zealand Government Procurement as required to apply them; others are encouraged to have regard to them | Govern the procurement *process*, not technical content (see below) |
@@ -143,6 +143,31 @@ its information security part. Version 2.0 is dated 1 October 2026.
   government who holds organisation information comply with the NZISM"*
   (paragraph 136), and ICT systems *"may be hosted in house or in the cloud and
   MUST meet the NZISM minimum standards"* (paragraph 138).
+- **An unmet MUST needs compensating measures.** An organisation *"must
+  implement all mandatory measures unless it can demonstrate that a given
+  measure is not relevant in its context"* (paragraph 12), and *"If a
+  mandatory measure cannot be directly implemented, suitable compensating
+  measures MUST be in place to manage identified risks"* (paragraph 13). As
+  takestock reads it, a finding that an NZISM MUST control is unmet therefore
+  raises two questions for an organisation that implements the PSR: whether a
+  dispensation has been granted, and what compensating measures are in place.
+- **ICT systems need system assurance.** INFOSEC 3.1, *"Ensure appropriate
+  system assurance for ICT systems"*:
+  - *"An organisation MUST conduct the appropriate system assurance activities
+    required for the type of security measures being implemented as stated in
+    the NZISM"* (paragraph 184).
+  - *"Agencies MUST either: a. adopt the NZISM continuous monitoring model;
+    and/or b. follow the certification and accreditation process defined in
+    the NZISM"*, for all ICT systems (paragraph 185).
+  - *"Organisations MUST plan for the certification and accreditation of
+    physical buildings, security and equipment alongside ICT system
+    assurance"* (paragraph 186), with physical security covered by the PSR's
+    PHYSEC framework.
+
+  NZISM v3.9, the version takestock grades against, sets out certification and
+  accreditation in Chapter 4 (*System Certification and Accreditation*) and
+  describes no continuous monitoring model. takestock performs neither; its
+  inventory and grades are evidence that either process can use.
 - **Legislation wins a conflict.** *"When legislation requires an organisation
   to manage protective security in a way that is different to the PSR, that
   legislation takes precedence"* (paragraph 19).
@@ -217,7 +242,7 @@ compliance with a New Zealand deadline, because there is none.
 | New Zealand Parliament | Privacy Act 2020: s 8, s 11, s 22 (IPPs 5, 9, 12), ss 112–115 | <https://www.legislation.govt.nz/act/public/2020/0031/latest/LMS23342.html>, <https://www.legislation.govt.nz/act/public/2020/0031/latest/LMS23530.html> |
 | New Zealand Parliament | Public Records Act 2005: ss 4, 17, 18 | <https://www.legislation.govt.nz/act/public/2005/0040/latest/whole.html> |
 | PSR | *INFOSEC* policy framework v2.0 | <https://www.protectivesecurity.govt.nz/assets/psr/INFOSEC-policy.pdf> |
-| GCSB | NZISM v3.9, §1.1.2, §1.2, §2.4 | <https://nzism.gcsb.govt.nz/ism-document> |
+| GCSB | NZISM v3.9, §1.1.2, §1.2, §2.4, Chapter 4 | <https://nzism.gcsb.govt.nz/ism-document> |
 | NCSC NZ | *Minimum Cyber Security Standards*; site map | <https://www.ncsc.govt.nz/protect-your-organisation/minimum-cyber-security-standards/>, <https://www.ncsc.govt.nz/sitemap.xml> |
 | Department of the Prime Minister and Cabinet | *New Zealand's Cyber Security Strategy 2026–2030* | Published on the Department's website |
 | New Zealand Government Procurement | *Application of the Rules*; *Government Procurement Rules* overview | Published on the New Zealand Government Procurement website |

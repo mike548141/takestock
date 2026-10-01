@@ -43,7 +43,7 @@ Companion documents:
 | Standard | Publisher | Version used | Written for | What takestock uses it for |
 |---|---|---|---|---|
 | New Zealand Information Security Manual (NZISM) | Government Communications Security Bureau (GCSB), published by the Government Chief Information Security Officer | v3.9 | New Zealand government departments and agencies; Crown entities, local government and the private sector are *encouraged* to use it (§1.1.2) | The primary bar for classical cryptography, email security and patching |
-| Protective Security Requirements (PSR), INFOSEC policy framework | New Zealand Government (PSR) | v2.0 | Organisations mandated to implement the PSR; others are encouraged to adopt it | Governance wrapper. It delegates technical detail to the NZISM |
+| Protective Security Requirements (PSR), INFOSEC policy framework | New Zealand Government (PSR) | v2.0 | Organisations mandated to implement the PSR; others are encouraged to adopt it | Governance wrapper. It delegates technical detail to the NZISM, requires system assurance for ICT systems (INFOSEC 3.1) and compensating measures where a MUST cannot be met |
 | Minimum Cyber Security Standards | National Cyber Security Centre (NCSC NZ) | 2025 edition | GCISO-mandated agencies, which must implement them; others may adopt them | Maturity criteria, mapped to NZISM controls |
 | Secure Government Email (SGE) Common Implementation Framework | Government Chief Digital Officer, on digital.govt.nz | Framework v1.1 and seven deployment guides | New Zealand government agencies | A separate email requirement set. See the companion document |
 | FIPS 203, 204 and 205 | US National Institute of Standards and Technology (NIST) | Final, 13 August 2024 | US federal systems; widely used as the reference elsewhere | Which algorithms count as post-quantum |
@@ -107,6 +107,23 @@ also carries a classification scope, for example *All Classifications* or
 levels of risk; SHOULD is *"recommended for organisations with moderate and
 above risks"*; and COULD is *"recommended for organisations with high and
 above risks"* (INFOSEC v2.0, paragraphs 11–15). The NZISM has no COULD.
+An organisation *"must implement all mandatory measures unless it can
+demonstrate that a given measure is not relevant in its context"*, and *"If a
+mandatory measure cannot be directly implemented, suitable compensating
+measures MUST be in place to manage identified risks"* (paragraphs 12–13).
+
+**PSR system assurance.** INFOSEC 3.1, *"Ensure appropriate system assurance
+for ICT systems"*, says an organisation *"MUST conduct the appropriate system
+assurance activities required for the type of security measures being
+implemented as stated in the NZISM"* (paragraph 184). Agencies *"MUST either:
+a. adopt the NZISM continuous monitoring model; and/or b. follow the
+certification and accreditation process defined in the NZISM"* for all ICT
+systems (paragraph 185), and organisations *"MUST plan for the certification
+and accreditation of physical buildings, security and equipment alongside ICT
+system assurance"* (paragraph 186). NZISM v3.9, the version takestock grades
+against, sets out certification and accreditation in Chapter 4 and describes
+no continuous monitoring model. See [`OBLIGATIONS.md`](OBLIGATIONS.md) for
+what this means for a finding.
 
 **Deferring a MUST.** The NZISM's route for not meeting a baseline control is
 a **dispensation**, not silence:
@@ -121,7 +138,9 @@ a **dispensation**, not silence:
 The manual also says that accepting risk *"without due consideration is NOT
 adequate or acceptable"* (§1.1.51). takestock therefore reports an unmet MUST
 as unmet even where the organisation has decided to wait, and leaves room
-beside it for the dispensation that authorises the wait.
+beside it for the dispensation that authorises the wait. For an organisation
+that implements the PSR, paragraph 13 of INFOSEC (quoted above) adds that
+compensating measures must be in place while the measure is unmet.
 
 ## Precedence: which standard decides a grade
 
@@ -216,7 +235,7 @@ it states: SHOULD.
 | Finite-field DH minimum | 3072 bits, MUST (`17.2.19.C.01`) | 2048 bits gives 112-bit strength (SP 800-57 Pt 1, Table 2), which SP 800-131A Rev. 2 rates acceptable | Replaced by post-quantum key establishment | Not approved beyond 2030 |
 | Elliptic curves | *"MUST implement the curve P-384"* for ECDH and ECDSA | P-256 gives 128-bit strength (SP 800-57 Pt 1, Table 2) | Replaced by post-quantum algorithms | ECDH and ECDSA not approved beyond 2030 |
 | RSA minimum | 3072 bits for signatures and key transport; 2048 in internet X.509 certificates | 2048 bits gives 112-bit strength; SP 800-131A Rev. 2 rates a modulus of 2048 bits or more acceptable | Replaced | Not approved beyond 2030 |
-| AES key size | No control states one (see the next section) | AES-128, -192 and -256 all at or above 128-bit strength | AES-256 for all classification levels | AES-128, -192 or -256, preferably AES-256 (ISM-1769); AES-128 and AES-192 *"will not be approved beyond 2030"* |
+| AES key size | No control states one; the §17.2.13 summary table lists a 256-bit minimum as guidance (see *Inside the NZISM itself*) | AES-128, -192 and -256 all at or above 128-bit strength | AES-256 for all classification levels | AES-128, -192 or -256, preferably AES-256 (ISM-1769); AES-128 and AES-192 *"will not be approved beyond 2030"* |
 | Approved post-quantum algorithms | None (§2.4.8) | ML-KEM, ML-DSA, SLH-DSA (FIPS 203, 204, 205) | CRYSTALS-Kyber and CRYSTALS-Dilithium at their highest (Level V) parameters, the algorithms later standardised as ML-KEM and ML-DSA | ML-KEM-768 or -1024 and ML-DSA-65 or -87, preferably the larger (ISM-1995, ISM-1991) |
 | Dates for classical public-key cryptography | None | 112-bit strength *"Deprecated after 2030"*, everything *"Disallowed after 2035"* (IR 8547 ipd, Tables 2 and 4) | *"Exclusively use"* CNSA 2.0 by 2030 (software signing, networking equipment) or 2033 (web, cloud, operating systems, niche equipment) | DH, ECDH, ECDSA and RSA *"will not be approved beyond 2030"* |
 
@@ -285,14 +304,82 @@ third.
 takestock grades the New Zealand requirement as written and cites the RFC
 beside it. An organisation not bound by the NZISM control weighs the two.
 
+An organisation that the NZISM control or the Secure Government Email
+framework binds meets `p=reject`, because that is the requirement it is
+assessed against, and records openly that the DMARC standard advises against
+it for domains whose users post to mailing lists. It can reduce the cost that
+RFC 9989 §7.4 describes:
+
+- **DKIM-sign all mail.** §7.4 requires this of any domain that publishes
+  `p=reject`, and notes that when mail is relayed by forwarders or role-based
+  aliases, where SPF fails, *"DKIM signatures will generally remain valid"*.
+  Alignment therefore survives forwarding that leaves the signed message
+  intact. A mailing list that alters the signed parts of a message, such as
+  the subject or body, invalidates the signature, so this does not solve the
+  mailing-list case. The SGE framework already requires every outbound
+  message to be DKIM signed.
+- **Tell users, or set a rule.** §7.4 says domains that publish `p=reject`
+  *"SHOULD implement policies that their users not post to Internet mailing
+  lists and/or inform their users that their participation in mailing lists
+  may be hindered"*. It also records that mailing-list software has adopted
+  workarounds that rewrite the From: line of list mail so that it stays
+  aligned.
+- **A separate sub-domain for staff who post to external lists** is takestock's
+  suggestion, not the RFC's. Given its own, lower policy, it would keep list
+  posts from being rejected, but that is a departure, not an exemption: the
+  NZISM control covers all email *"originating from or received by their
+  domain(s)"* and the SGE guide says *"All domains"*. takestock grades a
+  sub-domain it is given like any other, so the lower policy shows as short of
+  `p=reject`, and under the NZISM it needs a dispensation (see *Deferring a
+  MUST* above).
+
+### Inbound DMARC handling: the SGE framework and the DMARC standard pull opposite ways
+
+- The SGE framework (§8) says *"Inbound emails must be checked for DMARC
+  compliance and acted on based on the sending domain's DMARC policy."* Under
+  *Inbound messages and DMARC* in the same section it adds *"Where the sending
+  domain policy rejects the email, the email should be rejected and
+  dropped."* The SGE DMARC Deployment Guide (§3) puts the requirement as
+  *"Inbound emails must be scanned by DMARC and acted on."*
+- RFC 9989 §7.4 says *"Mail Receivers MUST NOT reject incoming messages solely
+  on the basis of a "p=reject" policy by the sending domain"*. Receivers
+  *"must use the DMARC policy as part of their disposition decision, along
+  with other knowledge and analysis"*, and *"In the absence of other knowledge
+  and analysis, Mail Receivers MUST treat such failing mail as if the policy
+  were "p=quarantine" rather than "p=reject"."*
+
+An organisation that the SGE framework binds meets the framework's
+requirement, because that is the one it is assessed against, and states the
+tension openly. Both texts can be served together. §7.4 forbids rejecting
+*solely* on the sender's policy, so a rejection that also rests on *"other
+knowledge and analysis"*, which the RFC says *"might refer to observed sending
+patterns for properly authenticated mail using the sending domain, content
+filtering, etc."*, remains open to a receiver. Mail that is not rejected
+still stays out of users' mailboxes: the framework says mail failing DMARC
+*"should never make it to the users' mailboxes"*, and sends quarantined mail
+*"to the email platform quarantine for release only by administrators"*
+(§8). The framework does not say whether quarantining mail from a
+`p=reject` domain counts as acting on that policy. It does depart from the
+framework's SHOULD to reject and drop that mail.
+
 ### Inside the NZISM itself
 
 - **AES key size.** The §17.2.13 summary table lists AES with a minimum
   *"256-bit key"*. No control in the chapter states an AES key length: the
   approved list in §17.2.11 says only *"AES"*, and the only AES control is
-  `17.2.28.C.01` on ECB mode. The table is context, not a control, so takestock
-  reports AES-128 against the table as a shortfall from guidance, not as a
-  breach of a MUST. The same table lists ECDSA against *"FIPS 186-3"*; the
+  `17.2.28.C.01` on ECB mode. (`17.2.20.C.01` and `.C.02` deal with devices
+  that cannot reach *"required key lengths"*, without saying where those
+  lengths are set.) takestock treats the table as guidance, not a control.
+  Every graded row that names a 128-bit or 192-bit AES key cites §17.2.13 in a
+  note saying the key is shorter than the table's minimum: the AES-128 GCM and
+  CCM rows and the AES-192 CBC row of the symmetric-cipher table (which grade
+  TLS suites and the same ciphers reported by other collectors), the IKE
+  AES-128 and AES-192 transforms, and the SSH `aes128-*` and `aes192-*`
+  ciphers. None of these citations is marked as breaching a control, so none
+  is counted among the MUST-level breaches that need a dispensation, and none
+  changes a grade. A TLS CBC suite is graded on one row shared by every AES key
+  size, so it carries no such note. The same table lists ECDSA against
+  *"FIPS 186-3"*; the
   current version is FIPS 186-5 (NIST, 3 February 2023), which superseded
   FIPS 186-4.
 - **MTA-STS described as key pinning.** §15.2.24 says that with MTA-STS *"you
@@ -337,7 +424,7 @@ severity scale should avoid them:
 
 | Publisher | Document | Where |
 |---|---|---|
-| GCSB | NZISM v3.9, §1.1, §1.2, §2.4, §6.2, §7.2, §12.4, §15.2, §17.1, §17.2, §17.9 | <https://nzism.gcsb.govt.nz/ism-document> (the site also offers the full manual as XML) |
+| GCSB | NZISM v3.9, §1.1, §1.2, §2.4, Chapter 4, §6.2, §7.2, §12.4, §15.2, §17.1, §17.2, §17.9 | <https://nzism.gcsb.govt.nz/ism-document> (the site also offers the full manual as XML) |
 | NCSC NZ | *NZISM v3.9 Release* | <https://www.ncsc.govt.nz/news/nzism-v3-9-release/> |
 | NCSC NZ | *Minimum Cyber Security Standards* | <https://www.ncsc.govt.nz/protect-your-organisation/minimum-cyber-security-standards/> |
 | PSR | *INFOSEC* policy framework v2.0 | <https://www.protectivesecurity.govt.nz/assets/psr/INFOSEC-policy.pdf> |

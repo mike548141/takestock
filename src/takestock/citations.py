@@ -7,6 +7,11 @@ obliges (MUST, SHOULD and so on, with the control text), and its
 ``citations:`` block says which document and control backs each table and
 each individual row.
 
+A cite's ``control`` may name a section or paragraph rather than a numbered
+control (``§17.2.13``). Such a cite is guidance: it has no entry in
+``compliance_levels:``, so it resolves with an empty ``compliance``, and
+marking it as breached is refused.
+
 Assets carry only citation keys (``"<table>/<token>"``); this module turns
 the keys into full citations once per report.
 """
@@ -47,6 +52,10 @@ class UnknownComplianceLevel(ValueError):
 
 class UnreasonedBreach(ValueError):
     """A citation marks a row as breaching a control without saying how solid that is."""
+
+
+class UnlevelledBreach(ValueError):
+    """A citation marks a row as breaching something with no recorded compliance level."""
 
 
 def calibration_years(baseline: dict) -> dict[str, int]:
@@ -125,6 +134,13 @@ def _cite(raw: dict, registry: dict, where: str,
             f"`commentary:`. A row marked against a control ships the control "
             f"id to a reader; without the commentary it also ships the claim "
             f"that the reading is settled. Say how solid it is.")
+    # A section or paragraph reference has no recorded level, so there is
+    # nothing it could be breached against; it is cited as guidance.
+    if breaches and not lvl:
+        raise UnlevelledBreach(
+            f"{where} marks {control!r} as breached, but `compliance_levels:` records no "
+            f"level for it under {ident!r}. A section or paragraph is guidance: cite it as a "
+            f"note, or record the control's level first.")
     return {
         "authority": ident,
         "control": control,
@@ -147,8 +163,9 @@ def resolve(baseline: dict) -> dict[str, list[dict]]:
     """Every graded row's citations, keyed ``"<table>/<token>"``.
 
     A row with its own ``tokens:`` entry uses that; any other row in a cited
-    table inherits the table's ``cites:``. Raises :class:`UnknownAuthority`
-    or :class:`UnreasonedBreach` for a malformed citation.
+    table inherits the table's ``cites:``. Raises :class:`UnknownAuthority`,
+    :class:`UnreasonedBreach` or :class:`UnlevelledBreach` for a malformed
+    citation.
     """
     registry = baseline.get("authorities") or {}
     levels = compliance_index(baseline)

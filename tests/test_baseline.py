@@ -147,3 +147,55 @@ def test_the_payload_ships_only_what_was_used(baseline):
     assert set(out["cites"]) == {"tls_versions/TLSv1.3"}
     assert "nzism" in out["authorities"]
     assert out["status_notes"]["initial-public-draft"]
+
+
+# ── NZISM §17.2.13: the AES key-size table is guidance, not a control ──
+
+# Every graded row whose AES key is shorter than the table's 256 bits.
+SHORT_AES_ROWS = ("symmetric/aes128_gcm", "symmetric/aes128_ccm", "symmetric/aes128_ccm_8",
+                  "symmetric/aes192_cbc", "ike_encryption/aes-gcm-128", "ike_encryption/aes-cbc-128",
+                  "ike_encryption/aes-cbc-192", "ssh_cipher/aes128-gcm@openssh.com",
+                  "ssh_cipher/aes128-ctr", "ssh_cipher/aes128-cbc", "ssh_cipher/aes192-ctr",
+                  "ssh_cipher/aes192-cbc")
+
+
+def _table_note(cites: list[dict]) -> list[dict]:
+    return [c for c in cites if c["authority"] == "nzism" and c["control"] == "§17.2.13"]
+
+
+@pytest.mark.parametrize("key", SHORT_AES_ROWS)
+def test_a_short_aes_key_carries_the_table_as_a_note_not_a_breach(baseline, key):
+    cites = citations.resolve(baseline)[key]
+    note = _table_note(cites)
+    assert len(note) == 1, key
+    assert note[0]["breaches"] is False
+    assert note[0]["compliance"] == ""
+    assert "256-bit" in note[0]["note"] and "not a control" in note[0]["note"]
+
+
+@pytest.mark.parametrize("key", ["symmetric/aes256_gcm", "ike_encryption/aes-gcm-256",
+                                 "ssh_cipher/aes256-ctr"])
+def test_a_256_bit_aes_key_carries_no_shortfall_note(baseline, key):
+    assert not _table_note(citations.resolve(baseline)[key])
+
+
+def test_an_aes_128_tls_suite_cites_the_table_and_breaches_nothing(baseline):
+    from takestock import dispensation
+    from takestock.model import CryptoAsset
+    asset = Policy(baseline).apply(CryptoAsset(
+        name="t", data_state="in-transit", protocol="tls", host="www.example.test", port="443",
+        protocol_versions=["TLSv1.3"], symmetric=["TLS_AES_128_GCM_SHA256"], key_exchange=["x25519"]))
+    assert "symmetric/aes128_gcm" in asset.citations
+    resolved = citations.resolve(baseline)
+    assert _table_note(resolved["symmetric/aes128_gcm"])
+    breaches, questions = dispensation.breaches_and_questions(asset, resolved)
+    assert breaches == [] and questions == []
+
+
+def test_marking_a_paragraph_reference_as_breached_is_refused(baseline):
+    broken = copy.deepcopy(baseline)
+    broken["citations"]["symmetric"]["tokens"]["aes128_gcm"] = [
+        {"authority": "nzism", "control": "§17.2.13", "breaches": True,
+         "commentary": "Below the table's minimum."}]
+    with pytest.raises(citations.UnlevelledBreach):
+        citations.resolve(broken)
