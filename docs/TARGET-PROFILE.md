@@ -89,7 +89,7 @@ at it. Inside:
 | Path | Holds |
 |---|---|
 | `assets.json` | Every row, graded and with its disposition |
-| `summary.json` | Counts, coverage gaps with their classifications, collector failures, findings, which collectors ran and which did not, and why |
+| `summary.json` | Counts, coverage gaps with their classifications, collector failures, findings, each row's dispensation state, which collectors ran and which did not, and why |
 | `bom.cdx.json` | The rows as a CycloneDX 1.6 cryptographic bill of materials. Written last, so its presence marks a finished run |
 | `raw/` | Every transcript and reply the collectors kept |
 
@@ -251,8 +251,9 @@ even empty, must carry its record. See
 ### `scan_targets`
 
 The hosts each active probe may contact, by group. Where an entry gives both
-`host` and `ip`, the address is probed and, except in `ssh_22`, the name
-reported.
+`host` and `ip`, the address is probed; which one names the row depends on
+the collector (see
+[`COLLECTORS.md`](COLLECTORS.md#where-active-probes-point)).
 
 | Group | Entry | Read by |
 |---|---|---|
@@ -261,7 +262,7 @@ reported.
 | `mail_self` | a host name: the organisation's own published mail hosts | `tls_scan`, `hsts`, `plaintext_scan` |
 | `saas_443` | `{host}`, optionally `port` (default 443), `vendor`, `service`, `carries`, `domains`: a service an outside provider runs for the organisation | `tls_scan`, `hsts` |
 | `smtp_25` | `{host}`, optionally `vendor`, `service`, `carries`, `domains`: an inbound mail gateway | `smtp_starttls`, `spf_senders` |
-| `ssh_22` | a host, or `{host, ip, port}` (port default 22): an internet-facing SSH listener. Here the address is both probed and reported | `ssh_audit`, `plaintext_scan` |
+| `ssh_22` | a host or address, `host:port`, `[v6]:port`, or `{host, ip, port}` (port default 22): an internet-facing SSH listener. Given `host` and `ip`, the address is probed and the row named after the host, with the address beside it | `ssh_audit`, `plaintext_scan` |
 | `ssh_inside` | `{host, batch}`, optionally `ip`, `port` (default 22) | `ssh_audit_inside` |
 | `smb_445` | a host, or `{host, ip}` | `smb_scan` |
 | `rdp_3389` | a host, or `{host, ip, port}` (default 3389) | `rdp_scan` |
@@ -398,9 +399,10 @@ hold only these sections, and any other top-level key stops loading:
 | `rules` | Match-and-propose rules checked before the bundled ones |
 | `decisions` | The organisation's own decisions, checked first of all |
 | `adoptions` | Bundled rules the organisation adopts as written, by id and hash |
-| `dispensations` | Recorded exceptions to mandatory controls, assessed per row by `takestock.dispensation` (an observation does not yet run that assessment) |
+| `dispensations` | Recorded exceptions to mandatory controls, assessed per row on every observation and written to `summary.json` |
 
-The sample records one decision:
+The sample records one decision, and one dispensation for the same server
+(see [`DISPOSITIONS.md`](DISPOSITIONS.md#dispensations)):
 
 ```yaml
 decisions:

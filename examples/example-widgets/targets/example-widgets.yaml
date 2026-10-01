@@ -51,7 +51,7 @@ scan_targets:
   # Remote-access gateway: the name is reported, the address is probed.
   vpn_gateways:
     - {host: vpn.example.test, ip: 203.0.113.10}
-  # Inbound mail is filtered by an outside provider before it arrives.
+  # The inbound mail gateway, checked for STARTTLS on port 25.
   smtp_25:
     - host: mx1.example.test
       service: The organisation's own mail exchanger

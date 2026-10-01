@@ -13,9 +13,8 @@ rfc-editor.org
 iana.org
 nist.gov
 owasp.org
-# New Zealand government publishers of standards and guidance, named one by
-# one. Never the whole government suffix, because an organisation's own domain can
-# sit under it.
+# New Zealand government publishers of standards and guidance. Never a whole
+# public suffix: a publisher is allowed by its own name, one by one.
 nzism.gcsb.govt.nz
 gcsb.govt.nz
 ncsc.govt.nz

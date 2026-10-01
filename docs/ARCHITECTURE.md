@@ -86,12 +86,12 @@ collector's own signature to that shape.
 
 Then `normalise.not_measured_gaps` turns each `not-measured:` flag into a
 gap, `sge.apply_conformance` marks rows behind an unmet Secure Government
-Email MUST, `normalise.findings` picks out the findings, and
-`normalise.summarise` counts everything (post-quantum readiness, plaintext,
-dispositions, agility, hardware or software binding, evidence depth, the
-gaps and their classifications) into `summary.json`. Dispensations are
-assessed by `dispensation.py` from Python; an observation does not yet run
-that assessment.
+Email MUST, `normalise.findings` picks out the findings,
+`dispensation.payload` assesses each row's dispensation state on the
+observation's date, and `normalise.summarise` counts everything
+(post-quantum readiness, plaintext, dispositions, agility, hardware or
+software binding, evidence depth, the gaps and their classifications) into
+`summary.json`, with the dispensation states under `dispensations`.
 
 ### 3. Write (`model.py`)
 

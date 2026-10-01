@@ -253,8 +253,10 @@ change when the dispositions do; what it is judged against does.
 Deciding that a finding can wait is a priority call. It is not, by itself, a
 position on compliance. Where a finding breaches a MUST-level NZISM control,
 the manual lets the control go unmet only under a **dispensation**, and says
-who grants one and what it must record. takestock checks each row against
-the dispensations the overlay records.
+who grants one and what it must record. Every observation checks each row
+against the dispensations the overlay records, on the observation's date,
+and writes the result to `summary.json` (see
+[Where the assessment is written](#where-the-assessment-is-written)).
 
 ### Which rows need one
 
@@ -292,11 +294,12 @@ dispensations:
 The record itself is the retained record `1.1.69.C.01` asks for. Annual
 review (`1.1.68.C.01`) is a SHOULD.
 
-A dispensation's `match` block uses the same keys as a disposition's. For
-`third_party` to hold, the program assessing dispensations must pass the
-rules loaded for the target (`rules=` on `dispensation.assess` and
-`dispensation.payload`), which carry its outside-provider list; without them
-every host counts as the organisation's own.
+A dispensation's `match` block uses the same keys as a disposition's.
+`third_party` reads the target profile's outside-provider list, which
+`takestock observe` supplies. A program calling `dispensation.assess` or
+`dispensation.payload` itself must pass the rules loaded for the target
+(`rules=`) for the same effect; without them every host counts as the
+organisation's own.
 
 ### The states
 
@@ -314,3 +317,25 @@ The first record whose `match` fits the row and whose `controls` cover every
 breach is used. A malformed record is never refused: it is assessed
 `incomplete`, naming what is missing, so the gap shows in the report rather
 than in an error.
+
+### Where the assessment is written
+
+`takestock observe` assesses every row on the observation's date, using the
+overlay's records, the target profile's outside-provider list and the
+ladder's out-of-cycle rungs, and writes the result to `summary.json` under
+`dispensations`:
+
+| Key | Holds |
+|---|---|
+| `rows` | One entry per row, in the order of `assets.json`: `asset` (the row's name), `state`, the `breaches` and `questions` behind it, and for a matched record its `record` id, `review_by`, `authority` and any `missing` elements |
+| `counts` | Rows per state |
+| `by_control` | Rows per breached control |
+| `records` | How many dispensation records the overlay holds |
+| `asof` | The date assessed against |
+| `labels`, `adverse` | Each state's label, and which states are adverse |
+| `required`, `review_control`, `retention_control` | The elements a record must carry and the controls behind them |
+
+The states do not change the command's exit code. The sample organisation
+records one invented dispensation, `DSP-01`, for its build server's SSH key
+exchange, so its offline observation shows one row `covered` and the rest
+`not-applicable`.

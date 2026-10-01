@@ -48,15 +48,28 @@ names another file. The command exits 1 when any requirement stated as
 names no `discovery.email_domains`. (The sample's offline observation reads
 no mail records, so every requirement is *not measured* and it exits 0.)
 
-For a plain-text table instead, against the workspace's latest observation
-(or one named with `--observation`), there is no subcommand yet; run the
-module:
+For the same reading as plain text on the terminal, one line per reading
+and a closing list of unmet *must* requirements, use `takestock sge`:
 
 ```bash
-TAKESTOCK_HOME=<workspace> python -m takestock.sge <target-name> [--observation <dir>] [--json]
+takestock sge <observation_dir> <target> [--workspace <dir>]
 ```
 
-It too exits 1 when a *must* requirement is not met.
+It takes the same arguments as `sge-note` (without `--out`), writes no
+file, and exits the same way: 1 when a *must* requirement is not met, 0
+otherwise, 2 on an error.
+
+The module behind it can also be run directly, reading an observation by
+its directory name under the workspace's `observations/` (default
+`latest`), and with `--json` it prints every reading as data:
+
+```bash
+TAKESTOCK_HOME=<workspace> python -m takestock.sge <target-name> [--observation <name>] [--json]
+```
+
+It exits 1 when a *must* requirement is not met and 0 otherwise. An input it
+cannot read stops it with Python's own error rather than exit code 2, so
+scripts should prefer the subcommand.
 
 The target profile supplies:
 
@@ -151,28 +164,58 @@ from the `ct_dns` collector, the receiving mail hosts' TLS from
 `smtp_starttls`, and the sender-policy lookups from `spf_senders` (see
 [`COLLECTORS.md`](COLLECTORS.md)).
 
+### A missing record, and a lookup that did not settle
+
+`ct_dns` asks every configured resolver for each mail-authentication record
+and keeps each resolver's response code. Two cases are kept apart:
+
+- **The lookup settled** (at least one resolver replied, and every reply
+  was `NOERROR` or `NXDOMAIN`) and no SPF or DMARC record came back. That
+  is a measured absence: the observation holds a row for the record with
+  `extra.present: false`, the flag `no-spf-record` or `no-dmarc-record`, and
+  the resolvers' replies. The note grades it **not met** where the
+  requirement needs the record, and quotes the replies as the evidence.
+- **The lookup did not settle** (a reply carried another code, such as
+  `SERVFAIL`, or no resolver replied). Nothing is claimed either way: the
+  observation holds no row for that record, the run records one collector
+  failure per domain naming the records and the replies (so `observe` exits
+  2), and the note reads the requirement as **not measured**.
+
+The same holds for the MTA-STS and TLS-RPT records: a settled lookup gives
+a row (published or not), an unsettled one gives none. DKIM is different:
+selectors cannot be listed, so a selector that does not answer proves
+nothing and gives no row.
+
 ### Read from public DNS and the MTA-STS policy
+
+In the table, **none published** means a settled lookup found no such
+record, and **no reading** means the observation holds no row for it: the
+lookup did not settle, or the run read no DNS (an offline run, for
+example). See [A missing record, and a lookup that did not
+settle](#a-missing-record-and-a-lookup-that-did-not-settle).
 
 | Requirement | Level | Reads | Met | Not met | Not measured |
 |---|---|---|---|---|---|
-| SGE-SPF-01 SPF ending in hardfail | must | the domain's SPF record | ends `-all` | ends `~all`, or neither | no SPF record was read |
-| SGE-DMARC-01 DMARC reject | must | the DMARC record | `p=reject` at 100% (`pct` absent or 100) | any other policy, or `pct` below 100 | no DMARC record was read |
-| SGE-MTASTS-01 MTA-STS in enforce mode | must | the `_mta-sts` record and the policy file | `mode: enforce` | no record published, or any other mode | the policy file could not be fetched, so the mode was not read |
-| SGE-MTASTS-02 every MX listed, no wildcards | must | the policy's `mx:` lines against the MX records | every MX host matched, no wildcard | an MX host unmatched, or a wildcard used | no policy, unreachable policy, or no MX reading |
-| SGE-TLSRPT-01 TLS reporting | must | the record at `_smtp._tls.<domain>` | published with a `rua=` address | not published, or no `rua=` | no lookup recorded |
-| SGE-DMARC-04 a DMARC reporting tool | must | the DMARC record's `rua=` | never: a published address is consistent with a tool, not proof of one | no `rua=` address | an address is published (`no-instrument`) |
+| SGE-SPF-01 SPF ending in hardfail | must | the domain's SPF record | ends `-all` | ends `~all`, or neither; or no SPF record published | no SPF reading |
+| SGE-DMARC-01 DMARC reject | must | the DMARC record | `p=reject` at 100% (`pct` absent or 100) | any other policy, or `pct` below 100; or no DMARC record published | no DMARC reading |
+| SGE-MTASTS-01 MTA-STS in enforce mode | must | the `_mta-sts` record and the policy file | `mode: enforce` | no record published, or any other mode | no MTA-STS reading, or the policy file could not be fetched, so the mode was not read |
+| SGE-MTASTS-02 every MX listed, no wildcards | must | the policy's `mx:` lines against the MX records | every MX host matched, no wildcard | an MX host unmatched, or a wildcard used | no record published (graded under SGE-MTASTS-01), unreachable policy, no MTA-STS reading, or no MX reading |
+| SGE-TLSRPT-01 TLS reporting | must | the record at `_smtp._tls.<domain>` | published with a `rua=` address | not published, or no `rua=` | no TLS-RPT reading: the lookup did not settle, or was not made (`inconclusive`) |
+| SGE-DMARC-04 a DMARC reporting tool | must | the DMARC record's `rua=` | never: a published address is consistent with a tool, not proof of one | no `rua=` address, or no DMARC record published | an address is published (`no-instrument`), or no DMARC reading |
 | SGE-DKIM-R01 2048-bit DKIM keys | recommended | the key at each selector that answered | 2048 bits or more | shorter | no selector answered, or no size could be read |
-| SGE-DMARC-R01 strict DKIM alignment where no bulk mail | recommended | `adkim` | `adkim=s` | never | relaxed alignment: whether the domain sends bulk mail is not established |
-| SGE-DMARC-R02 strict SPF alignment | recommended | `aspf` | `aspf=s` | relaxed, including by omission | no DMARC record was read |
-| SGE-DMARC-R03 unwanted DMARC tags absent | recommended | the record's tags | none of `ruf`, `fo`, `pct`, `rf`, `ri` | any of them present | no DMARC record was read |
-| SGE-SPF-R01 no `ptr`, no overly broad ranges | recommended | the SPF terms | never: breadth of a range cannot be judged from DNS | `ptr` used | no `ptr` (`inconclusive`) |
-| SGE-SPF-R02 no legacy SPF2.0 records | recommended | every TXT record at the domain | none published | one or more published | no SPF reading, or the observation kept only the first SPF record |
+| SGE-DMARC-R01 strict DKIM alignment where no bulk mail | recommended | `adkim` | `adkim=s` | never | relaxed alignment: whether the domain sends bulk mail is not established; no DMARC record published (the missing record is graded under SGE-DMARC-01); or no DMARC reading |
+| SGE-DMARC-R02 strict SPF alignment | recommended | `aspf` | `aspf=s` | relaxed, including by omission; or no DMARC record published | no DMARC reading |
+| SGE-DMARC-R03 unwanted DMARC tags absent | recommended | the record's tags | none of `ruf`, `fo`, `pct`, `rf`, `ri` | any of them present | no DMARC record published (graded under SGE-DMARC-01), or no DMARC reading |
+| SGE-SPF-R01 no `ptr`, no overly broad ranges | recommended | the SPF terms | never: breadth of a range cannot be judged from DNS | `ptr` used | no `ptr` (`inconclusive`); no SPF record published (graded under SGE-SPF-01); or no SPF reading |
+| SGE-SPF-R02 no legacy SPF2.0 records | recommended | every TXT record at the domain | no SPF2.0 record | one or more published | no SPF reading, or the observation kept only the first SPF record |
 | SGE-DKIM-R02 a key per sending platform | recommended | the public keys of the selectors that answered | never | two selectors publish one key | no key shared (other selectors may exist) |
 
-A domain with no SPF or DMARC record at all produces no row for that record,
-so its reading is left *not measured* rather than *not met*. Read the
-explanation column: "no SPF record was read" on a domain that sends mail is
-worth checking by hand.
+A missing record is graded once, under the requirement that needs it. The
+recommendations that read a record's contents (SGE-DMARC-R01, SGE-DMARC-R03,
+SGE-SPF-R01) then read *not measured*, naming the requirement that carries
+the finding, rather than repeating it. SGE-DMARC-R02 and SGE-DMARC-04 are the
+exceptions: with no DMARC record, no alignment and no reporting address is
+published at all, so each is *not met* in its own right.
 
 For SGE-DMARC-R01, a domain whose sender policy authorises one of the
 `sge.bulk_mail_domains` is annotated as a reason to think the
@@ -188,8 +231,8 @@ defaults, are tried. A selector that does not answer proves nothing.
 |---|---|---|---|
 | SGE-NED-SPF-01 a denying SPF record (`v=spf1 -all`) on names that send no mail | must | any swept name lacks it | not measured |
 | SGE-NED-DKIM-01 an empty DKIM key (`v=DKIM1; p=`) on names that send no mail | must | any swept name lacks it | not measured |
-| SGE-NED-DMARC-01 a rejecting DMARC policy on names that send no mail | must | the domain's own record sets `sp=none`, or a swept name's own record, or the domain's record it falls back to, does not reject all failing mail | not measured |
-| SGE-NED-DMARC-R01 strict alignment and a reporting address on those names | recommended | a swept name, on its own record or the one it falls back to, lacks `adkim=s`, `aspf=s` or `rua=` | not measured |
+| SGE-NED-DMARC-01 a rejecting DMARC policy on names that send no mail | must | the domain's own record sets `sp=none`; or a swept name's own record, or the domain's record it falls back to, does not reject all failing mail; or a swept name has no record and the domain publishes none for it to fall back to | not measured |
+| SGE-NED-DMARC-R01 strict alignment and a reporting address on those names | recommended | a swept name, on its own record or the one it falls back to, lacks `adkim=s`, `aspf=s` or `rua=`, or has no record and nothing to fall back to | not measured |
 | SGE-DMARC-R05 `sp=` only on organisational domains | recommended | a swept sub-domain publishes its own `sp=` | not measured |
 
 Names the sweep finds sending mail are excluded and listed; names it could

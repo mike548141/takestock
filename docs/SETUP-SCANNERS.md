@@ -21,9 +21,9 @@ Without the record, every active collector contacts nothing.
 | Tool | Used by | Without it |
 |---|---|---|
 | `dig` | `ct_dns`, `spf_senders`, `dnssec`, `dane`, `caa`, `dns_zones`, `hsts` (HTTPS records) | DNS readings fail; `dnssec`, `dane` and `caa` read nothing and say so |
-| `curl` | `ct_dns` (search service, MTA-STS policy), `hsts`, `plaintext_scan` (cleartext confirmation), internet-registry lookups for the IP plan | `hsts` does not run and says the run holds no HSTS evidence |
-| `nmap` | `tls_scan`, `plaintext_scan`, `smb_scan`, `rdp_scan`; fallback for `ssh_audit` | `tls_scan`, `plaintext_scan`, `smb_scan` and `rdp_scan` report that they did not run |
-| `openssl` | `tls_scan` (version pins), `smtp_starttls`, `implicit_tls` | Versions that could not be asked about are flagged unknown, not absent |
+| `curl` | `ct_dns` (search service, MTA-STS policy), `hsts`, `plaintext_scan` (cleartext confirmation), `internal_scan` (plain HTTP requests, WinRM), `intel_amt`, internet-registry lookups for the IP plan | `hsts` does not run and says the run holds no HSTS evidence. `intel_amt` probes nothing, and `internal_scan` probes nothing if its plan has a TLS or HTTP port; each records one failure saying so |
+| `nmap` | `tls_scan`, `plaintext_scan`, `smb_scan`, `rdp_scan`, `internal_scan`; the TLS row of `intel_amt`; certificate detail (key, names, expiry) for `smtp_starttls`, `implicit_tls` and the relays `spf_senders` probes; fallback for `ssh_audit` | `tls_scan`, `plaintext_scan`, `smb_scan`, `rdp_scan` and `internal_scan` report that they did not run; `intel_amt` skips its TLS row. `smtp_starttls` and `implicit_tls` still grade the TLS session, note on each row that its certificate was not read (unknown, not clean), and record one failure naming the endpoints; `spf_senders` records a coverage gap instead |
+| `openssl` | `tls_scan` (version pins), `smtp_starttls`, `implicit_tls`, `internal_scan` (version pins), the TLS row of `intel_amt` | Versions that could not be asked about are flagged unknown, not absent. `internal_scan` probes nothing if its plan has a TLS or STARTTLS port; `intel_amt` skips its TLS row |
 | `ssh-audit` | `ssh_audit`, `ssh_audit_inside` (preferred) | The probe falls back to `nmap`, which reads the algorithm lists but not the banner, key sizes or known vulnerabilities |
 | `ike-scan` | `ike_scan` | Each gateway gets an `unknown` row and a coverage gap |
 
@@ -165,8 +165,10 @@ what is missing, and no rows.
 ### Probes inside the network
 
 Probes that run inside the organisation's network (`smb_scan`, `rdp_scan`,
-`ssh_audit_inside`) each need their own named, dated record under the same
-stanza, keyed by the `scan_targets` group they read:
+`ssh_audit_inside`, `internal_scan`, `intel_amt`) each need their own named,
+dated record under the same stanza, keyed by the `scan_targets` group they
+read (`smb_445`, `rdp_3389`, `ssh_inside`, `internal_services`,
+`intel_amt`):
 
 ```yaml
 authorisation:
@@ -211,8 +213,8 @@ deliberately slow. In outline:
 | Collector | Per target |
 |---|---|
 | `tls_scan` | nmap `ssl-enum-ciphers`, four pinned `openssl` handshakes (TLS 1.0 to 1.3), one default handshake, nmap `ssl-cert` |
-| `smtp_starttls` | four `openssl -starttls smtp` handshakes |
-| `implicit_tls` | a pinned handshake per TLS version on each of 465, 993 and 995 that the plan names |
+| `smtp_starttls` | four `openssl -starttls smtp` handshakes; nmap `ssl-cert` where a session was agreed |
+| `implicit_tls` | a pinned handshake per TLS version on each of 465, 993 and 995 that the plan names; nmap `ssl-cert` where a session was agreed |
 | `hsts` | one HTTPS request to `/` (three for an outside provider's endpoint), and a DNS HTTPS-record query |
 | `plaintext_scan` | one `nmap -sT` connect scan of the named ports only, at most 10 packets a second with a 200 ms delay, one retry and a 2-minute host timeout; two seconds between hosts; one `curl` request to confirm a cleartext page |
 | `ike_scan` | up to the probe budget of IKEv1 Main Mode probes, one second apart, and one IKEv2 probe |
@@ -220,6 +222,8 @@ deliberately slow. In outline:
 | `ssh_audit_inside` | as `ssh_audit`, one host at a time, two seconds between hosts and thirty between batches |
 | `smb_scan` | nmap's three SMB negotiation scripts on 445/tcp, plus one NetBIOS name query to 137/udp; never authenticates |
 | `rdp_scan` | nmap `rdp-enum-encryption` on the named port; never sends a credential |
+| `internal_scan` | per named port, by kind. TLS ports: as `tls_scan`, plus one plain `http://` request if no handshake completes. LDAP on 389: nmap `ssl-enum-ciphers` and `ssl-cert` only. STARTTLS mail ports: nmap's capability script for the service, nmap `ssl-enum-ciphers`, four pinned `openssl -starttls` handshakes, nmap `ssl-cert` where a session was agreed. HTTP ports: one slow nmap connect probe and one `http://` request. On 5985 and 5986, one unauthenticated `POST /wsman`. Two seconds between hosts; never authenticates |
+| `intel_amt` | one unauthenticated `GET /` with `curl` to 16992 (`http://`) and 16993 (`https://`); where 16993 answered, the `tls_scan` measurement on that port. Two seconds between hosts; never sends a credential |
 
 ## What the results contain
 

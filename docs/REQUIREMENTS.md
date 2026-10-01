@@ -36,9 +36,24 @@ observations/latest/requirements/requirements.json
 6 requirement(s) derived
 ```
 
-`out_dir` defaults to `<observation_dir>/requirements`. The command exits 1
-when at least one requirement was derived, 0 when none was, and 2 on an
-error.
+`out_dir` defaults to `<observation_dir>/requirements`.
+
+| Exit code | Means |
+|---|---|
+| `0` | No requirement was derived |
+| `1` | At least one requirement was derived |
+| `2` | An error: bad arguments, or an observation or catalogue that could not be read |
+
+The module behind the subcommand can be run directly, with the output
+directory required and the catalogue as an optional third argument:
+
+```bash
+python -m takestock.requirements <observation_dir> <out_dir> [<catalogue.yaml>]
+```
+
+It exits 0 and 1 the same way, and 2 when the arguments are wrong. An input
+it cannot read stops it with Python's own error (exit code 1, the same as
+"requirements derived"), so scripts should prefer the subcommand.
 
 It reads the observation's `assets.json` and, if present, `summary.json`,
 whose `gaps` list (and the parallel `gap_kinds` list) holds the coverage
@@ -176,7 +191,10 @@ varies by instrument.
 ```
 
 Matches every host that has a row of the `anchor` protocol and no row of the
-`missing` one. It counts **domains**, not assets.
+`missing` one. A row that records a measured absence (`extra.present:
+false`, written when a DNS lookup settled and found no SPF or DMARC record)
+does not count as the record, so such a domain matches too. It counts
+**domains**, not assets.
 
 ### Gap clause
 
@@ -223,6 +241,11 @@ When adding a template:
   tell.
 - Prefer a narrow clause. A clause such as `verdict: weak` alone matches
   every weak row in the estate.
+- Remember the absence rows. A domain with no SPF or DMARC record still has a
+  row of that protocol, flagged `no-spf-record` or `no-dmarc-record`, so a
+  clause about a record's contents should exclude it with `flags_none` (the
+  shipped MAIL.6 clause on the DMARC policy does) and leave the missing
+  record to an absent clause.
 - Give each clause its own `finding` phrase, so the evidence sentence says
   which part of the rule fired.
 - Run the register against an observation you know, and read the evidence

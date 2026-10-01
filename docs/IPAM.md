@@ -39,7 +39,7 @@ can therefore be traced to something outside the plan file.
 ## Building a plan
 
 ```bash
-takestock ipam <plan.ipam.yaml> <out_dir> [--exports <dir>] [--workspace <dir>]
+takestock ipam <plan.ipam.yaml> <out_dir> [--exports <dir>] [--lookup-asn] [--workspace <dir>]
 ```
 
 For the sample, from the repository root:
@@ -57,14 +57,11 @@ The command exits 0 when the plan is written and 2 on an error.
 - Source paths in the plan file are read relative to `--exports`. Without
   it they are read from the workspace's `inbox/` (or the directory named by
   `TAKESTOCK_INBOX`).
-- To look addresses up with the internet registries first (see
-  [Internet-registry lookups](#internet-registry-lookups)), run the module,
-  which takes the same arguments plus `--lookup-asn`; the subcommand does
-  not offer it yet:
-
-  ```bash
-  python -m takestock.ipam <plan.ipam.yaml> <out_dir> [--exports <dir>] --lookup-asn
-  ```
+- `--lookup-asn` first looks the plan's public addresses up with the
+  internet registries (see
+  [Internet-registry lookups](#internet-registry-lookups)), which sends
+  them over the network. Without it, saved answers are read and nothing is
+  sent.
 - A source whose input is missing stops the build: a plan built from fewer
   exports than it names would read as complete and not be. The one exception
   is a source of kind `asn-lookups`, whose folder may not exist yet.

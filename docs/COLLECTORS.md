@@ -45,8 +45,8 @@ the others loading.
 | `ssh_audit` | active | SSH algorithms on internet-facing listeners | `scan_targets.ssh_22` | `ssh-audit`, or `nmap` |
 | `plaintext_scan` | active | whether named ports carry traffic in clear | `plaintext_ports`, or a derived-ports overlay | `nmap`, `curl` |
 | `hsts` | active | the Strict-Transport-Security header | `scan_targets.tls_443`, `mail_self`, `saas_443` | `curl`, `dig` |
-| `smtp_starttls` | active | STARTTLS on the inbound mail gateways | `scan_targets.smtp_25` | `openssl` |
-| `implicit_tls` | active | TLS on ports 465, 993 and 995 | the cleartext probe plan | `openssl` |
+| `smtp_starttls` | active | STARTTLS on the inbound mail gateways | `scan_targets.smtp_25` | `openssl`; `nmap` for the certificate |
+| `implicit_tls` | active | TLS on ports 465, 993 and 995 | the cleartext probe plan | `openssl`; `nmap` for the certificate |
 | `smb_scan` | active, inside | SMB dialects and message signing | `scan_targets.smb_445` and `authorisation.smb_445` | `nmap` |
 | `rdp_scan` | active, inside | whether remote desktop requires authentication first | `scan_targets.rdp_3389` and `authorisation.rdp_3389` | `nmap` |
 | `ssh_audit_inside` | active, inside | SSH algorithms on internal hosts, in batches | `scan_targets.ssh_inside` and `authorisation.ssh_inside` | `ssh-audit`, or `nmap` |
@@ -90,15 +90,17 @@ Active probes read host lists from `scan_targets:` in the target profile:
 | `mail_self` | The organisation's own published mail hosts | `tls_scan`, `hsts`, `plaintext_scan` |
 | `saas_443` | Services an outside provider runs for the organisation: `{host, port, vendor, ...}` | `tls_scan`, `hsts` |
 | `smtp_25` | Inbound mail gateways: `{host, vendor, ...}` | `smtp_starttls` |
-| `ssh_22` | Internet-facing SSH listeners: a host, or `{host, ip, port}` | `ssh_audit`, `plaintext_scan` |
+| `ssh_22` | Internet-facing SSH listeners: a host or address, `host:port`, `[v6]:port`, or `{host, ip, port}` | `ssh_audit`, `plaintext_scan` |
 | `ssh_inside` | Internal SSH hosts: `{host, batch, port}` | `ssh_audit_inside` |
 | `smb_445` | Internal file servers: a host or `{host, ip}` | `smb_scan` |
 | `rdp_3389` | Internal remote-desktop hosts: a host or `{host, ip, port}` | `rdp_scan` |
 | `internal_services` | Internal services: `{host, port, role}`, from a fixed list of ports | `internal_scan` |
 | `intel_amt` | Internal machines whose management firmware to check: a host or `{host, ip}` | `intel_amt` |
 
-Where an entry gives both `host` and `ip`, the address is probed and the name
-reported (in `ssh_22`, the address is reported too).
+Where an entry gives both `host` and `ip`, the address is probed. `tls_scan`,
+`ike_scan`, `ssh_audit` and `rdp_scan` name the row after the host and keep
+the address beside it; `plaintext_scan`, `smb_scan`, `ssh_audit_inside` and
+`intel_amt` report the address.
 
 Every key the profile can carry is listed in
 [`TARGET-PROFILE.md`](TARGET-PROFILE.md).
@@ -121,6 +123,30 @@ hosts:
   DKIM records, then sweeps the sub-domain names the transparency read found
   for the denying SPF, empty DKIM and DMARC records a name that sends no mail
   should publish.
+
+**Missing records.** The SPF, DMARC, MTA-STS and TLS-RPT records are each
+asked of every configured resolver, keeping each resolver's response code.
+
+- When the lookup **settles** (at least one resolver replied, and every reply
+  was `NOERROR` or `NXDOMAIN`), a row is written whether or not the record
+  exists. A missing SPF or DMARC record gives an **absence row**:
+  `extra.present` is `false`, the row carries the flag `no-spf-record` or
+  `no-dmarc-record`, and `extra.lookup` holds the name asked and each
+  resolver's reply and time. A missing MTA-STS or TLS-RPT record gives a row
+  saying it is not published.
+- When the lookup **does not settle** (a reply carried another code, such as
+  `SERVFAIL`, or no resolver replied), no row is written for that record and
+  the run records one failure line per domain:
+
+  ```text
+  ct_dns example.test: DNS lookups that did not settle for DMARC (_dmarc.example.test: SERVFAIL), so those records are not measured: neither present nor absent is claimed
+  ```
+
+  It is a collector failure, so `observe` exits 2, and it is kept apart from
+  the certificate-transparency failures.
+
+DKIM is the exception: a selector that does not answer gives no row,
+because selectors are guessed.
 
 **Settings.** `ct_search_api` (see [DNS services](#dns-services)) must answer
 `<endpoint>?domain=<name>&include_subdomains=true&expand=dns_names&expand=issuer&expand=pubkey`
@@ -154,6 +180,9 @@ calls it, it also checks STARTTLS on each relay the SPF record names (hosts
 already listed under `scan_targets.smtp_25` are not probed twice). It
 checks the authorisation record itself before probing: without a complete
 one it contacts nothing and records the refusal as a gap.
+
+A relay certificate is read as `smtp_starttls` reads one; without `nmap` it
+is not read, and that is recorded as a coverage gap rather than a failure.
 
 **Cannot see.** Which of the authorised senders actually send. A relay probe
 measures what the relay accepts when it **receives**, never what it
@@ -305,6 +334,21 @@ coverage gap.
 **Probes** the listeners in `scan_targets.ssh_22` for their host keys, key
 exchange, ciphers and MACs. It never attempts a login.
 
+**Entries** take any of these forms; the port defaults to 22:
+
+```yaml
+scan_targets:
+  ssh_22:
+    - ssh.example.test                 # a host or address
+    - ssh.example.test:2222            # host:port
+    - "[2001:db8::22]:2222"            # an IPv6 address with a port, in brackets
+    - {host: ssh2.example.test, ip: 203.0.113.22, port: 22}
+```
+
+A bare IPv6 address is taken whole, because its colons cannot be told from a
+port separator. In the mapping form the address is probed and the row is
+named after the host, with the address beside it.
+
 **Tools.** `ssh-audit` is preferred (`TAKESTOCK_SSH_AUDIT` names it, else
 `PATH`). Without it the probe falls back to nmap's `ssh2-enum-algos`, which
 reads the same algorithm lists but not the banner, key sizes or known
@@ -339,6 +383,10 @@ beside the observation) before anything is contacted.
    list edited without redoing the arithmetic is caught;
 2. otherwise the profile's own `plaintext_ports:` list, applied to every host
    in `vpn_gateways`, `tls_443`, `mail_self` and `ssh_22`.
+
+Applied this way, an `ssh_22` entry contributes its host only: the port in
+`host:port` or `[v6]:port` is dropped, and a `{host, ip}` entry contributes
+its address.
 
 **Refuses** (contacting nothing): ranges, comma lists or wildcards in a port;
 more than 12 ports on a host, 60 hosts, or 400 host-and-port pairs in all
@@ -398,6 +446,14 @@ a pinned handshake shows the one it chose at that version, so the row records
 a preference, not a floor. A gateway that could not be reached is reported as
 a failure, never as clean.
 
+**The certificate.** Where a session was agreed, nmap's `ssl-cert` reads the
+certificate's key, names and expiry, and a certificate that does not carry
+the name the gateway was reached by is flagged `cert-name-mismatch`. Without
+`nmap` the TLS rows still stand, but the certificate is not read: each such
+row's notes say its key, names and expiry are unknown (not clean),
+`extra.cert_detail` reads `not read: nmap is not on PATH`, and the run
+records one failure line naming every endpoint affected.
+
 ### `implicit_tls`
 
 **Probes** ports 465 (SMTPS), 993 (IMAPS) and 995 (POP3S), where TLS starts
@@ -408,6 +464,9 @@ probe plan, so it contacts nothing that plan has not named, and a plan that
 session agreed (graded), something answered without completing a handshake
 (flagged), connection refused (nothing listens), and no answer (unmeasured,
 never read as closed).
+
+The certificate is read, and a missing `nmap` reported, as for
+`smtp_starttls`.
 
 ### `smb_scan` (inside)
 
@@ -451,7 +510,104 @@ three batches of 60 hosts), one host at a time with a pause between hosts
 and a longer one between batches. The whole plan is printed before anything
 is contacted. Tools as for `ssh_audit`.
 
-## The ingest collector
+### `internal_scan` (inside)
+
+**Probes** named services inside the network for TLS, STARTTLS and
+cleartext, one host and port at a time. It reads
+`scan_targets.internal_services` and needs `authorisation.internal_services`
+beside the profile's general record. Each entry names one host and one port,
+and optionally a `role`, which becomes the row's description:
+
+```yaml
+scan_targets:
+  internal_services:
+    - {host: dir-01.example.test, port: 636}
+    - {host: mail-01.example.test, port: 143, role: Staff mailbox retrieval}
+```
+
+**Refuses** (contacting nothing): a port that is not on the allow-list
+below, an `ip:` key (name the host to probe in `host:`), a port that is not
+one number, a host named twice on the same port, and lists over the
+cleartext probe's ceilings (60 hosts, 12 ports on a host, 400 pairs). Adding
+a port is a code change, not a profile edit.
+
+**The allow-list**, and how each kind of port is measured:
+
+| Kind | Ports | Measured with |
+|---|---|---|
+| TLS from the first byte | 443, 465, 636, 993, 995, 3269, 5986, 8443 | As `tls_scan` measures 443: nmap's suite enumeration, one pinned `openssl` handshake per version, one default handshake and nmap's `ssl-cert`. An open port that completes no handshake is then asked one plain `http://` request with `curl` |
+| LDAP with StartTLS | 389 | nmap's `ssl-enum-ciphers` and `ssl-cert`, which send the StartTLS operation themselves. No pinned handshake is made, so TLS 1.3 is marked unknown |
+| STARTTLS mail | 25, 110, 143, 587 | Two rows. The session row: nmap's suite enumeration over STARTTLS plus one pinned `openssl -starttls` handshake per version. The sign-in row: the capability list read on the plain connection |
+| HTTP | 80, 5985, 8080 | One port-state probe with nmap, then one explicit `http://` request with `curl` |
+
+**The sign-in row** asks whether a password is invited before encryption:
+IMAP `LOGIN` without `LOGINDISABLED`, or `AUTH=PLAIN` / `AUTH=LOGIN`; POP3
+`USER`, or a `PLAIN` or `LOGIN` SASL mechanism; SMTP `AUTH PLAIN` or
+`AUTH LOGIN`. Any of these makes the row weak, flagged
+`cleartext-auth-offered:<protocol>`, read against RFC 3501 § 6.2.3 (IMAP),
+RFC 4954 § 4 (SMTP) and NZISM 16.1.33.C.01. A STARTTLS service whose
+capability list names no STARTTLS is a measured cleartext finding.
+
+**On the WinRM ports** (5985 and 5986) it also sends one unauthenticated
+`POST /wsman` and records the authentication schemes the `401` answer
+offers, including whether Basic is offered over plain HTTP. That moves no
+verdict: an offered scheme is not an accepted one.
+
+**Tools.** `nmap` always; `openssl` when the plan has a TLS or STARTTLS
+port; `curl` when it has a TLS or HTTP port. If any needed tool is missing,
+no pair is probed and the run records one failure saying so. The plan is
+printed, and saved as `raw/internal-budget.txt`, before anything is
+contacted.
+
+**Cannot see.** A `400` answer to a plain request is not taken as cleartext,
+because a TLS server commonly answers that way on its TLS port. A sign-in
+row says what the service advertises, not what it would accept from a client
+that ignored the list. A pair for which nmap produced no port table gets an
+`unknown` row and a failure line, never a clean one. It never authenticates
+or sends a credential.
+
+### `intel_amt` (inside)
+
+**Asks** whether Intel Active Management Technology (AMT), the out-of-band
+management interface built into some machines' firmware, answers on the
+network. AMT runs below the operating system on its own ports, so a listener
+inventory taken from the operating system cannot show whether the firmware
+answers. It reads `scan_targets.intel_amt` (a host, or `{host, ip}`; the
+address is probed and reported) and needs `authorisation.intel_amt`.
+
+**Sends** one unauthenticated `GET /` per port with `curl`: 16992 as
+`http://`, 16993 as `https://` with the certificate not checked, because the
+question is identification, not trust. Hosts go one at a time, two seconds
+apart. The ports are fixed in code; a profile cannot add one. Where the 16993
+request reached something, the `tls_scan` measurement follows as a second
+row, `Intel AMT TLS <host>:16993`, graded by the baseline. It never sends a
+credential, answers a Digest challenge, or tests for a vulnerability.
+
+**Recognises** AMT by the `Server:` header, against the strings nmap's
+service-detection database uses for it: `Intel(R) Active Management
+Technology <version>`, `Intel(R) Standard Manageability <version>` and `AMT`.
+
+| Outcome (`extra.amt_outcome`) | Means | `extra.amt_listener_finding` |
+|---|---|---|
+| `amt-answered` | AMT's `Server:` header came back. On 16992 the row is graded weak through the port table, which records that port as the management interface in clear; on 16993 the row stays `unknown` and the TLS row carries the strength | `confirmed` |
+| `other-http` | An HTTP answer from something that is not AMT | `not-confirmed` |
+| `no-http-answer` | A connection was made and no HTTP answer came back | `not-confirmed` |
+| `no-connection` | Refused or no route; `curl` does not say which | `not-confirmed` |
+| `no-answer` | The attempt timed out, so nothing is measured | `unmeasured` |
+
+The listener finding is there to compare with a listener inventory.
+
+**Tools.** `curl`; without it nothing is probed and the run records one
+failure. `nmap` and `openssl` for the TLS row; without either, the TLS row is
+skipped on every host, one failure says so, and the `curl` rows stand. A
+host name that does not resolve is a failure for that host, and its ports
+are not probed.
+
+**Cannot see.** A `not-confirmed` is scoped to where the probe ran from: AMT
+answers only on the interface its firmware is provisioned on, so it is
+narrower than "AMT is off".
+
+## The ingest collectors
 
 ### `ssh_audit_inbox`
 
@@ -462,3 +618,113 @@ file's modification date is recorded as when the evidence was collected.
 
 **Cannot see** anything not supplied: a missing or empty folder is recorded
 as a coverage gap saying the internal SSH configuration was not checked.
+
+### `winrm_config`
+
+**Reads** a Windows Remote Management (WinRM) configuration export and says,
+per Windows host, whether the host *requires* encrypted remote
+administration. WinRM listens on 5985 (HTTP) and 5986 (HTTPS). A listener on
+5985 proves neither an exposure nor its absence: with the default Negotiate
+authentication (Kerberos, or NTLM where Kerberos is not available) WinRM
+encrypts each message itself, so the session is protected although the HTTP
+transport is plain. Two service settings switch that protection off, and only
+the configuration shows them.
+
+**The export** is a CSV, `inbox/winrm-config.csv` unless
+`winrm_inbox.export` names another file, one row per host. Columns are
+matched case-blind:
+
+| Column | Holds |
+|---|---|
+| `hostname` (or `computername`, `host`, `name`) | The host |
+| `host_id` (or `device_id`, `asset_id`) | Optional: a stable identifier that survives a rename; preferred for matching rows |
+| `allow_unencrypted_service`, `basic_service` | The two settings that decide the verdict |
+| `allow_unencrypted_client`, `basic_client`, `credssp_service`, `https_listener` | Context |
+
+Each setting reads `true` or `false` (also `1`/`0`, `yes`/`no`, `on`/`off`,
+`enabled`/`disabled`). PowerShell gives them from
+`Get-Item WSMan:\localhost\Service\AllowUnencrypted` and its siblings under
+`Service\Auth` and `Client`.
+
+**Grading**, one row per host on port 5985:
+
+| Verdict | When |
+|---|---|
+| weak | The service accepts unencrypted messages, Basic authentication is enabled on the service, or the host as a client will send unencrypted messages. None of these is a Windows default |
+| acceptable | Both deciding service settings were read and both are protective. Never strong: these are on/off settings, not graded algorithms |
+| unknown | A deciding setting is blank or unreadable. A blank cell is a setting nobody collected, never a setting that is off |
+
+Basic authentication on the **client** is on by default in Windows, so it is
+recorded and explained but never flagged. CredSSP on the service is flagged
+`winrm-credssp-service` (it passes the caller's credentials on to further
+systems) without moving the verdict, which is about encryption. An HTTPS
+listener is recorded and moves nothing: it does not close the plain-HTTP
+path. The row is dated by the export file's modification date.
+
+**Coverage gaps.** A missing or unreadable export is one gap. So are rows
+that name no host or repeat one (the first row for a host wins), hosts whose
+deciding settings are blank, and hosts another collector in the same run saw
+listening on 5985 that the export does not cover. That last check reads the
+run's other rows, so `winrm_config` runs after the probes.
+
+### `netdev`
+
+**Reads** cryptographic controls on network and out-of-band management
+equipment (switches, routers, firewalls, wireless controllers, server
+management processors, wide-area links) from a supplied export, one row per
+**control** on one device or link. No outside probe reaches these settings.
+The export uses a small vendor-neutral vocabulary: whoever holds the
+configuration writes each control down in it, and nothing here parses a
+vendor's configuration language, so a change between firmware releases
+cannot silently stop a control being found.
+
+**The export** is a CSV, `inbox/netdev-controls.csv` unless
+`netdev_inbox.devices` names another file. Columns are matched case-blind:
+
+| Column | Holds |
+|---|---|
+| `device` | Required: the device or link name |
+| `control` | Required: one of the controls below |
+| `device_class` | `switch`, `router`, `firewall`, `wireless`, `vpn-gateway`, `out-of-band`, `wan-link`, `storage` or `other` |
+| `state` | `enabled` or `disabled` and their synonyms (`on`, `off`, `yes`, `no`, `configured`, `cleartext` and the like); blank or `unknown` is unknown |
+| `algorithms` | `;`-separated tokens, bare (`aes256-ctr`) or placed in a baseline table (`ssh_kex=curve25519-sha256`) |
+| `key_custody` | Who holds the keys (`device`, `hsm`, ...) |
+| `vendor`, `peer`, `site`, `evidence`, `collected_on` | Context. `collected_on` dates the row; otherwise the file's modification date does |
+
+| Control | What it is | Graded as |
+|---|---|---|
+| `ssh-mgmt` | The administrative login service | SSH key exchange, cipher, MAC and host key |
+| `tls-mgmt` | The management web service | TLS versions, key exchange, signatures, ciphers, hashes |
+| `ipsec` | An encrypted tunnel to another network | IKE encryption, Diffie-Hellman group, PRF |
+| `macsec` | Link encryption between two devices | Cipher |
+| `wifi` | A wireless network's over-the-air protection | Cipher, hash |
+| `radius` | The network access authentication service | As `tls-mgmt` |
+| `snmp` | The monitoring service | Cipher, hash |
+| `wan-link` | A link across a network someone else runs | Cipher |
+| `at-rest` | Data stored on the equipment | Cipher |
+| `key-storage` | Whether a hardware key store holds the keys | Not graded: recorded as `hardware-key-store:present`, `absent` or `unknown` |
+
+Common spellings are mapped to the names the baseline grades, as naming
+differences only: MACsec `gcm-aes-128` and `gcm-aes-256` to AES-GCM, Wi-Fi
+`ccmp` to AES-128-CCM and `gcmp-256` to AES-256-GCM, `tkip` and `wep` to RC4,
+and an `open` network to no cipher. A bare token is placed only when the
+tables that know it agree on its grade; otherwise it is flagged
+`ungraded:netdev:<token>`.
+
+**Grading** is the baseline's. Two verdicts no table can express are set
+here: a control recorded **off** is weak (`encryption-off`), and a control
+recorded **on** that names no algorithm stays unknown, flagged
+`algorithms-not-recorded`. A control that names only some of the tables it
+should is flagged `algorithms-partial:<table>`; that flag never changes the
+verdict. A weak management service (`ssh-mgmt`, `tls-mgmt`, `snmp`) carries
+advice on putting it behind a secure access edge where the device offers
+nothing stronger.
+
+**Coverage.** `netdev_inbox.expect` lists the device classes the export
+should cover (default: switch, router, firewall, wireless, out-of-band).
+With no export there is one gap for the file and one per expected class.
+With an export, each expected class that has no row is its own gap, rows
+naming no device or no control are a gap, and a **scope row** states what the
+export covers (controls, devices, classes present and absent) without
+claiming a share of the estate. A missing or unreadable export never stops
+the run.

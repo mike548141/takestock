@@ -13,7 +13,7 @@ and writes:
 | **Observation** | Every row found, graded, with the coverage gaps, as JSON and as a CycloneDX 1.6 cryptographic bill of materials (CBOM) | `takestock observe` |
 | **Configuration register** | A draft CMDB: a schema plus every configuration item found, with how strongly each fact is known | `takestock cmdb` |
 | **IP address plan** | Every site, subnet and address the evidence shows, each with its source and date | `takestock ipam` |
-| **Secure Government Email note** | Every requirement of New Zealand's Secure Government Email framework, read as met, not met or not measured | `takestock sge-note` |
+| **Secure Government Email note** | Every requirement of New Zealand's Secure Government Email framework, read as met, not met or not measured | `takestock sge-note` (HTML), `takestock sge` (plain text) |
 | **Requirements** | Requirements derived from the findings, written from public standards, ready to put to a supplier | `takestock requirements` |
 
 > **Status:** version 0.1.0. The commands work end to end on the sample
@@ -172,7 +172,7 @@ Every command follows one contract, so a script can act on the result:
 | Code | Means |
 |---|---|
 | `0` | Clean: the command did its work and found nothing adverse |
-| `1` | Findings present: `observe` found a weak verdict or work on an out-of-cycle rung; `sge-note` found an unmet MUST requirement; `requirements` derived at least one requirement |
+| `1` | Findings present: `observe` found a weak verdict or work on an out-of-cycle rung; `sge` or `sge-note` found an unmet MUST requirement; `requirements` derived at least one requirement |
 | `2` | Error: bad arguments, an unreadable input, a refused scan, or an observation that could not judge because a collector failed. The observation is still written, and `summary.json` lists the failures |
 
 ## Documentation
