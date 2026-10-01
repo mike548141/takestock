@@ -1,0 +1,1702 @@
+"""Grade mail-authentication readings against Secure Government Email.
+
+New Zealand's Secure Government Email (SGE) Common Implementation Framework
+sets requirements for agencies' email domains: SPF ending in ``-all``, DMARC
+at ``p=reject``, MTA-STS in enforce mode, TLS Reporting, a TLS 1.2 floor,
+denying records on names that send no mail, and more. The requirement set,
+with each deciding sentence quoted, is ``data/secure-government-email.yaml``.
+
+:func:`evaluate` reads a run's rows (from ``ct_dns``, ``spf_senders`` and,
+where supplied, a mail-host TLS probe and a per-message mail transport
+export) and returns one :class:`Conformance` row per requirement and subject:
+``pass``, ``fail`` or ``not-measured``. Not measured is a first-class result
+with a reason: nothing outside the organisation can see it
+(``no-instrument``), nothing reads it yet (``not-collected``), or the check
+ran and could not settle it (``inconclusive``). A reading that can only ever
+find a breach (a sweep over an incomplete list of names, say) reports a
+failure when it finds one and stays unmeasured otherwise; it never claims
+conformance it cannot show.
+
+:func:`apply_conformance` marks the rows behind each unmet *must* with the
+requirement, so a reader of the asset sees the standard beside the grade.
+
+Run as ``python -m takestock.sge <target>`` for a text report.
+"""
+
+from __future__ import annotations
+
+import datetime
+import re
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from . import config
+from .plaintext import PLAINTEXT_FLAG
+
+PASS = "pass"
+FAIL = "fail"
+NOT_MEASURED = "not-measured"
+
+# Why a row is not measured.
+NO_INSTRUMENT = "no-instrument"
+NOT_COLLECTED = "not-collected"
+INCONCLUSIVE = "inconclusive"
+
+UNMEASURED_LABEL = {
+    NO_INSTRUMENT: "nothing outside the organisation can see this",
+    NOT_COLLECTED: "visible from outside, but nothing reads it yet",
+    INCONCLUSIVE: "the check ran and could not settle it",
+}
+
+
+@dataclass
+class Conformance:
+    """One requirement read against one subject (a domain, a host, or the organisation)."""
+
+    requirement: str
+    title: str
+    level: str
+    scope: str
+    subject: str
+    status: str
+    observed: str = ""
+    reason: str = ""
+    evidence: str = ""
+    source: str = ""
+    citation: str = ""
+    record: str = ""
+    subject_note: str = ""
+
+    @property
+    def breaches_must(self) -> bool:
+        """True for a failed requirement the standard states as must."""
+        return self.status == FAIL and self.level == "must"
+
+
+@dataclass
+class Report:
+    """Every conformance row, and the standard's own description."""
+
+    rows: list[Conformance] = field(default_factory=list)
+    standard: dict[str, Any] = field(default_factory=dict)
+
+    def counts(self) -> dict[str, int]:
+        out = {PASS: 0, FAIL: 0, NOT_MEASURED: 0}
+        for r in self.rows:
+            out[r.status] = out.get(r.status, 0) + 1
+        return out
+
+    def breaches(self) -> list[Conformance]:
+        return [r for r in self.rows if r.breaches_must]
+
+    def unmeasured_reasons(self) -> dict[str, int]:
+        out: dict[str, int] = {}
+        for r in self.rows:
+            if r.status == NOT_MEASURED:
+                out[r.reason] = out.get(r.reason, 0) + 1
+        return out
+
+
+def load_standard(path: str | None = None) -> dict:
+    """The requirement set: the workspace's copy if present, else the bundled one."""
+    p = config.data_file("secure-government-email.yaml") if path is None else path
+    return _isoformat_dates(config.load_yaml_strict(Path(p)))
+
+
+def _isoformat_dates(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {k: _isoformat_dates(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_isoformat_dates(v) for v in value]
+    if isinstance(value, (datetime.date, datetime.datetime)):
+        return value.isoformat()
+    return value
+
+
+def _get(asset: Any, key: str, default: Any = None) -> Any:
+    if isinstance(asset, dict):
+        return asset.get(key, default)
+    return getattr(asset, key, default)
+
+
+def _set(asset: Any, key: str, value: Any) -> None:
+    if isinstance(asset, dict):
+        asset[key] = value
+    else:
+        setattr(asset, key, value)
+
+
+def _by(assets: list[Any], protocol: str, host: str | None = None) -> list[Any]:
+    out = [a for a in assets if _get(a, "protocol") == protocol]
+    if host is not None:
+        out = [a for a in out if _get(a, "host") == host]
+    return out
+
+
+def _version_rank(v: str) -> tuple[int, int] | None:
+    m = re.match(r"^\s*(tls|ssl)v?\s*([0-9]+)(?:[._]([0-9]+))?\s*$", v.strip().lower())
+    if not m:
+        return None
+    family, major, minor = m.group(1), int(m.group(2)), int(m.group(3) or 0)
+    return (0 if family == "ssl" else 1, major * 100 + minor)
+
+
+def _floor_met(versions: list[str], minimum: str) -> tuple[bool, list[str]]:
+    floor = _version_rank(minimum)
+    if floor is None:                        # pragma: no cover — data would be wrong
+        return True, []
+    unorderable = [v for v in versions if _version_rank(v) is None]
+    ranked = [r for r in (_version_rank(v) for v in versions) if r is not None]
+    return any(r >= floor for r in ranked), unorderable
+
+
+def _version_ok(versions: list[str], forbidden: list[str]) -> tuple[bool, list[str]]:
+    def norm(v: str) -> str:
+        return re.sub(r"^(tls|ssl)v", r"\1", re.sub(r"[^a-z0-9]", "", v.lower()))
+
+    bad = {norm(f) for f in forbidden}
+    bad |= {"tls10"} if "tls1" in bad else set()
+    offered = [v for v in versions if norm(v) in bad]
+    return (not offered), offered
+
+
+def _eval_spf(req: dict, assets: list[Any], domains: list[str]) -> list[Conformance]:
+    rows = []
+    for d in domains:
+        found = _by(assets, "spf", d)
+        if not found:
+            rows.append(_unmeasured(req, d, INCONCLUSIVE,
+                                    "no SPF record was read for this domain"))
+            continue
+        a = found[0]
+        record = str((_get(a, "extra") or {}).get("record") or _get(a, "notes") or "")
+        flags = list(_get(a, "flags") or [])
+        if "hardfail-all" in flags:
+            status, reason, qualifier = PASS, "", "-all (hardfail)"
+        elif "softfail-all" in flags:
+            status = FAIL
+            qualifier = "~all (softfail)"
+            reason = ("record ends ~all (softfail); the standard requires -all, "
+                      "and calls softfail a weak posture that permits unknown senders")
+        else:
+            status = FAIL
+            qualifier = "no -all or ~all"
+            reason = "record ends neither -all nor ~all, so no sender is denied"
+        reason = "; ".join(x for x in [reason, _spf_evaluability(assets, d)] if x)
+        rows.append(Conformance(req["id"], req["title"], req["level"], req["scope"],
+                                d, status, observed=qualifier, reason=reason,
+                                evidence=str(_get(a, "name") or ""), source=req["source"],
+                                record=record))
+    return rows
+
+
+_VOID_OVER = "spf-void-lookup-limit-exceeded"
+_VOID_AT = "spf-void-lookup-limit-reached"
+_TERMS_OVER = "spf-lookup-limit-exceeded"
+
+
+def _spf_evaluability(assets: list[Any], domain: str) -> str:
+    found = _by(assets, "spf-senders", domain)
+    if not found:
+        return ""
+    a = found[0]
+    flags = list(_get(a, "flags") or [])
+    extra = _get(a, "extra") or {}
+    when = extra.get("dns_read_at") or ""
+    resolver = extra.get("dns_resolver") or ""
+    taken = (f" as resolved by {resolver} at {when}" if when and resolver else "")
+    if _TERMS_OVER in flags:
+        return (f"and the record spends {extra.get('dns_lookups')} DNS-consuming terms "
+                f"against the {extra.get('dns_lookup_limit')} RFC 7208 §4.6.4 permits, so "
+                "a conforming receiver returns permerror and never reaches this qualifier")
+    if _VOID_OVER in flags:
+        return (f"and {extra.get('void_lookups')} of its DNS lookups returned nothing"
+                f"{taken}, over the {extra.get('void_lookup_limit')} RFC 7208 §4.6.4 "
+                "recommends, so an evaluator applying that recommendation returns "
+                "permerror and never reaches this qualifier")
+    if _VOID_AT in flags:
+        return (f"and {extra.get('void_lookups')} of its DNS lookups returned nothing"
+                f"{taken} — exactly the ceiling RFC 7208 §4.6.4 recommends, so the record "
+                "is evaluable today with no margin, and one further term ceasing to "
+                "resolve makes it permerror before this qualifier is read")
+    return ""
+
+
+def _eval_dmarc(req: dict, assets: list[Any], domains: list[str]) -> list[Conformance]:
+    rows = []
+    for d in domains:
+        found = _by(assets, "dmarc", d)
+        if not found:
+            rows.append(_unmeasured(req, d, INCONCLUSIVE,
+                                    "no DMARC record was read for this domain"))
+            continue
+        a = found[0]
+        record = str(_get(a, "notes") or "")
+        p = re.search(r"\bp=(\w+)", record)
+        policy = p.group(1) if p else "absent"
+        pct = re.search(r"\bpct=(\d+)", record)
+        share = int(pct.group(1)) if pct else 100
+        if policy != "reject":
+            status = FAIL
+            reason = f"policy is p={policy}; the standard requires p=reject"
+        elif share < 100:
+            status = FAIL
+            reason = (f"the record reads p=reject but pct={share}, so the reject policy "
+                      f"is applied to {share}% of failing mail and the other "
+                      f"{100 - share}% falls through to no action at all — the domain "
+                      "does not have a reject policy for most of the mail this "
+                      "requirement is about")
+        else:
+            status, reason = PASS, ""
+        rows.append(Conformance(req["id"], req["title"], req["level"], req["scope"],
+                                d, status, observed=f"p={policy}; pct={share}",
+                                reason=reason, evidence=str(_get(a, "name") or ""),
+                                source=req["source"], record=record))
+    return rows
+
+
+def _eval_mta_sts(req: dict, assets: list[Any], domains: list[str]) -> list[Conformance]:
+    rows = []
+    for d in domains:
+        found = _by(assets, "mta-sts", d)
+        if not found:
+            rows.append(_unmeasured(req, d, INCONCLUSIVE,
+                                    "no MTA-STS record was read for this domain"))
+            continue
+        a = found[0]
+        record = str(_get(a, "notes") or "")
+        extra = _get(a, "extra") or {}
+        published = bool(extra["published"]) if "published" in extra else True
+        if not published:
+            rows.append(Conformance(
+                req["id"], req["title"], req["level"], req["scope"], d, FAIL,
+                observed="no _mta-sts record",
+                reason=("no _mta-sts TXT record is published, so no sender ever fetches "
+                        "a policy for this domain and the mode in any policy file is "
+                        "never read — the requirement's 'enabled' clause, unmet, "
+                        "independently of the mode"),
+                evidence=str(_get(a, "name") or ""), source=req["source"], record=record))
+            continue
+        mode = re.search(r"mode=(\w+)", record)
+        value = mode.group(1) if mode else "unknown"
+        if value == "unknown" and extra.get("policy_reachable") is False:
+            rows.append(_unmeasured(
+                req, d, INCONCLUSIVE,
+                "the TXT record is published but the policy file could not be fetched "
+                "from this machine, so the mode was not read; that is a limit of this "
+                "instrument, not a finding about the domain, and it is not graded as a "
+                "breach"))
+            continue
+        status = PASS if value == "enforce" else FAIL
+        reason = "" if status == PASS else (
+            f"policy mode is {value}; only enforce mandates TLS and prevents a "
+            "downgrade to sending in the clear")
+        rows.append(Conformance(req["id"], req["title"], req["level"], req["scope"],
+                                d, status, observed=f"mode={value}", reason=reason,
+                                evidence=str(_get(a, "name") or ""), source=req["source"],
+                                record=record))
+    return rows
+
+
+def _eval_dkim_keysize(req: dict, assets: list[Any], domains: list[str]) -> list[Conformance]:
+    rows = []
+    minimum = int(req.get("minimum_bits", 2048))
+    for d in domains:
+        found = _by(assets, "dkim", d)
+        if not found:
+            rows.append(_unmeasured(
+                req, d, INCONCLUSIVE,
+                "no DKIM selector answered; the probe tries known selectors, so "
+                "this is silence rather than proof that none is published"))
+            continue
+        for a in found:
+            bits = (_get(a, "extra") or {}).get("key_bits")
+            if not bits:
+                rows.append(_unmeasured(req, d, INCONCLUSIVE,
+                                        "selector answered but no key size could be read"))
+                continue
+            status = PASS if int(bits) >= minimum else FAIL
+            reason = "" if status == PASS else (
+                f"{bits}-bit key is below the {minimum}-bit the standard strongly "
+                "recommends — permitted on legacy systems, so a recommendation "
+                "unmet rather than a requirement breached")
+            rows.append(Conformance(req["id"], req["title"], req["level"], req["scope"],
+                                    d, status, observed=f"{bits}-bit RSA", reason=reason,
+                                    evidence=str(_get(a, "name") or ""), source=req["source"]))
+    return rows
+
+
+def _bulk_mail_indicator(assets: list[Any], domain: str,
+                         bulk_mail_domains: tuple[str, ...] = ()) -> str:
+    """A note when the domain's sender policy includes a known bulk-mail provider's policy."""
+    found = _by(assets, "spf-senders", domain)
+    if not found or not bulk_mail_domains:
+        return ""
+    traversed = str((_get(found[0], "extra") or {}).get("policies_traversed") or "")
+    named = sorted({p for p in bulk_mail_domains if p in traversed})
+    if not named:
+        return ""
+    return (f"its sender policy authorises {', '.join(named)}, a bulk-mail provider "
+            "— a reason to think the recommendation may not apply to this domain at "
+            "all, though authorising a provider is not evidence that mail went that "
+            "way")
+
+
+def _eval_dkim_alignment(req: dict, assets: list[Any], domains: list[str],
+                         bulk_mail_domains: tuple[str, ...] = ()) -> list[Conformance]:
+    rows = []
+    for d in domains:
+        found = _by(assets, "dmarc", d)
+        if not found:
+            rows.append(_unmeasured(req, d, INCONCLUSIVE,
+                                    "no DMARC record was read for this domain"))
+            continue
+        a = found[0]
+        record = str(_get(a, "notes") or "")
+        m = re.search(r"adkim=(\w)", record)
+        value = m.group(1) if m else "r"
+        if value == "s":
+            rows.append(Conformance(
+                req["id"], req["title"], req["level"], req["scope"], d, PASS,
+                observed=f"adkim={value}",
+                reason=("strict DKIM alignment is published, which is the value the "
+                        "standard recommends; the standard permits relaxed alignment "
+                        "for bulk-sending domains but forbids strict for none, so this "
+                        "meets the recommendation without having to establish "
+                        "whether the domain sends bulk mail"),
+                evidence=str(_get(a, "name") or ""), source=req["source"], record=record))
+            continue
+        detail = (
+            "relaxed DKIM alignment is published"
+            + ("" if m else ", by omitting the tag, which RFC 7489 reads as relaxed")
+            + ", and the standard recommends strict ONLY where a domain is not "
+              "involved with bulk mail sending — which of the organisation's domains "
+              "are is not established, so whether this recommendation applies here is "
+              "unsettled and no verdict is claimed in either direction. What would "
+              "settle it: the sending sources the organisation's DMARC aggregate "
+              "reports name per domain, or a per-sending-domain breakdown of a "
+              "per-message transport export")
+        rows.append(Conformance(
+            req["id"], req["title"], req["level"], req["scope"], d, NOT_MEASURED,
+            observed=f"adkim={value}", reason=NOT_COLLECTED, evidence=detail,
+            source=req["source"], record=record,
+            subject_note=_bulk_mail_indicator(assets, d, bulk_mail_domains)))
+    return rows
+
+
+def _eval_tls_rpt(req: dict, assets: list[Any], domains: list[str]) -> list[Conformance]:
+    rows = []
+    for d in domains:
+        found = _by(assets, "tls-rpt", d)
+        if not found:
+            rows.append(_unmeasured(req, d, NOT_COLLECTED,
+                                    "no TLS-RPT lookup was recorded for this domain"))
+            continue
+        a = found[0]
+        extra = _get(a, "extra") or {}
+        published = bool(extra.get("published"))
+        record = str(extra.get("record") or "")
+        rua = re.search(r"rua=([^;\s]+)", record)
+        if not published:
+            status, reason = FAIL, "no _smtp._tls TXT record is published for this domain"
+        elif not rua:
+            status, reason = FAIL, (
+                "a v=TLSRPTv1 record is published but carries no rua= reporting "
+                "address, so no receiver has anywhere to send a report and a failed "
+                "delivery is never seen; the standard's expected value is "
+                "'v=TLSRPTv1; rua=mailto:<address>'")
+        else:
+            status, reason = PASS, ""
+        rows.append(Conformance(
+            req["id"], req["title"], req["level"], req["scope"], d,
+            status, observed=str(_get(a, "notes") or ""), reason=reason,
+            evidence=str(_get(a, "name") or ""), source=req["source"], record=record))
+    return rows
+
+
+def _eval_ned_dmarc(req: dict, assets: list[Any], domains: list[str]) -> list[Conformance]:
+    rows = []
+    partial = str(req.get("partial") or "").strip()
+    for d in domains:
+        found = _by(assets, "dmarc", d)
+        if not found:
+            rows.append(_unmeasured(req, d, INCONCLUSIVE,
+                                    "no DMARC record was read for this domain"))
+            continue
+        a = found[0]
+        record = str(_get(a, "notes") or "")
+        m = re.search(r"\bsp=(\w+)", record)
+        sp = m.group(1) if m else ""
+        if sp == "none":
+            rows.append(Conformance(
+                req["id"], req["title"], req["level"], req["scope"], d, FAIL,
+                observed="sp=none",
+                reason="; ".join(x for x in [
+                    ("the root record sets sp=none, so every sub-domain without a "
+                     "DMARC record of its own inherits no policy; the DMARC guide "
+                     "says all domains must have a p=reject policy, and the "
+                     "framework says even sp=reject only partially resolves this"),
+                    (f"what this row does NOT read: {partial}" if partial else ""),
+                ] if x),
+                evidence=str(_get(a, "name") or ""), source=req["source"], record=record))
+        else:
+            rows.append(_ned_dmarc_from_sweep(req, assets, d, _dmarc_record(a), sp, partial))
+    return rows
+
+
+def _rejects(tags: dict[str, str], policy_key: str) -> bool:
+    policy = tags.get(policy_key) or tags.get("p", "")
+    return policy.lower() == "reject" and _int(tags.get("pct", "100")) >= 100
+
+
+def _ned_dmarc_from_sweep(req: dict, assets: list[Any], domain: str,
+                          root_record: str, sp: str, partial: str) -> Conformance:
+    found = _by(assets, "ned-dmarc", domain)
+    head = (f"root record has sp={sp or 'unset'}, which is not the failing value, "
+            "so the root alone settles nothing; proving the requirement needs each "
+            "sub-domain's own record — ")
+    if not found:
+        return _unmeasured(req, domain, NOT_COLLECTED, head + _subdomain_limit(
+            assets, [domain], "DMARC", owed=(
+                "this observation carries no reading of each name's own DMARC record — "
+                "a run with the sub-domain sweep reads them")))
+    a = found[0]
+    extra = _get(a, "extra") or {}
+    if not extra.get("control_usable", False):
+        return _unmeasured(
+            req, domain, INCONCLUSIVE,
+            "the sweep's control name answered when it should not have, so this run "
+            "cannot tell a record that is absent from a resolver that did not reply; "
+            "nothing is graded against this domain from it")
+    in_scope = _int(extra.get("names_in_scope"))
+    if not in_scope:
+        return _unmeasured(
+            req, domain, NOT_COLLECTED,
+            head + "and no sub-domain of this domain was both enumerated and found not "
+            "to send mail, so there is nothing to read it against")
+    records = dict(extra.get("dmarc_records") or {})
+    own_bad = sorted(n for n, rec in records.items()
+                     if not _rejects(_dmarc_tags(str(rec)), "p"))
+    without_own = in_scope - len(records)
+    fallback_ok = _rejects(_dmarc_tags(root_record), "sp")
+    fallback_bad = without_own if (without_own and not fallback_ok) else 0
+    limit = f"what this row does NOT read: {partial}" if partial else ""
+    note = [f"read {extra.get('read_at', '')} via {', '.join(extra.get('resolvers') or [])}"]
+    if fallback_bad:
+        note.insert(0, f"{without_own} of the {in_scope} enumerated sub-domain(s) that show "
+                       "no sign of sending mail publish no DMARC record of their own and "
+                       "fall back to the root record, which does not reject all failing mail")
+    if own_bad:
+        note.insert(0, f"{len(own_bad)} publish a record of their own that does not reject "
+                       f"all failing mail: {', '.join(own_bad)}")
+    if own_bad or fallback_bad:
+        return Conformance(
+            req["id"], req["title"], req["level"], req["scope"], domain, FAIL,
+            observed=f"{len(own_bad) + fallback_bad} of {in_scope} sub-domains without a "
+                     "reject policy",
+            reason="; ".join(x for x in [
+                ("a sub-domain that sends no mail is left without a reject policy, on its "
+                 "own record or on the root record it falls back to; the DMARC guide says "
+                 "all domains must have a p=reject policy"),
+                _SWEEP_INSTRUMENT, limit] if x),
+            evidence=str(_get(a, "name") or ""), source=req["source"],
+            record="; ".join(filter(None, [
+                f"root record: {root_record}",
+                *(f"{n}: {records[n]}" for n in own_bad)])),
+            subject_note="; ".join(note))
+    return Conformance(
+        req["id"], req["title"], req["level"], req["scope"], domain, NOT_MEASURED,
+        observed=f"all {in_scope} sub-domains read reject",
+        reason=NOT_COLLECTED,
+        evidence=("every enumerated sub-domain that shows no sign of sending mail rejects, "
+                  "on its own record or through the root record's sub-domain policy, and "
+                  "that is not the same as every sub-domain doing so: " + _SWEEP_POPULATION
+                  + ". No verdict is claimed in either direction"
+                  + (f". What this row does not read either: {partial}" if partial else "")),
+        source=req["source"], subject_note="; ".join(note))
+
+
+_SWEEP_INSTRUMENT = (
+    "read from public DNS, each name asked of every configured resolver with "
+    "retries, and with a name nobody has registered asked in the same batch so "
+    "that a run which simply failed to reach the resolvers cannot read as a run "
+    "that found nothing"
+)
+
+_SWEEP_POPULATION = (
+    "an incomplete list of sub-domains still settles this in one direction, and "
+    "only one: the framework asks for the record on every sub-domain, so a single "
+    "name without it is the answer, while any number of names carrying it says "
+    "nothing about the names not seen. That is why this row can report a "
+    "breach and can never report conformance"
+)
+
+
+def _eval_ned_records(req: dict, assets: list[Any], domains: list[str],
+                      protocol: str, record_kind: str) -> list[Conformance]:
+    rows = []
+    partial = str(req.get("partial") or "").strip()
+    for d in domains:
+        found = _by(assets, protocol, d)
+        if not found:
+            rows.append(_unmeasured(
+                req, d, NOT_COLLECTED,
+                "no sub-domain record sweep is in this observation, so no sub-domain's "
+                "own record has been read — "
+                + _subdomain_limit(assets, [d], record_kind, wired=True)))
+            continue
+        a = found[0]
+        extra = _get(a, "extra") or {}
+        expected = str(extra.get("expected_record") or "")
+        wildcard = str(extra.get("wildcard_name") or "")
+        wildcard_ok = bool(extra.get("wildcard_conformant"))
+        in_scope = _int(extra.get("names_in_scope"))
+        missing = list(extra.get("names_without_record") or [])
+        sending = list(extra.get("names_email_enabled") or [])
+        unread = list(extra.get("names_unread") or [])
+        record = (f"{wildcard} → {extra.get('wildcard_record') or 'no record'} "
+                  f"({extra.get('wildcard_rcode') or 'no agreed status'})")
+
+        if not extra.get("control_usable", False):
+            rows.append(_unmeasured(
+                req, d, INCONCLUSIVE,
+                "the sweep's control name answered when it should not have, so this run "
+                "cannot tell a record that is absent from a resolver that did not reply; "
+                "nothing is graded against this domain from it"))
+            continue
+        declared = str(req.get("record") or "").replace("<domain>", d)
+        if declared and wildcard and declared.lower() != wildcard.lower():
+            rows.append(_unmeasured(
+                req, d, INCONCLUSIVE,
+                f"the standard names {declared} as the record to publish and the sweep "
+                f"read {wildcard} instead, so what was measured is not what the "
+                "requirement asks about and nothing is graded against this domain"))
+            continue
+        if not in_scope:
+            rows.append(_unmeasured(
+                req, d, NOT_COLLECTED,
+                "no sub-domain of this domain was both enumerated and found not to send "
+                "mail, so there is nothing here to read the requirement against — "
+                + _subdomain_limit(assets, [d], record_kind, wired=True)))
+            continue
+
+        note = [
+            f"{len(missing)} of the {in_scope} enumerated sub-domain name(s) beneath this "
+            f"domain that show no sign of sending mail publish no {expected} record"
+            if missing else
+            f"all {in_scope} enumerated sub-domain name(s) beneath this domain carry "
+            f"{expected}",
+            (f"the wildcard {wildcard} carries {expected}, which covers every name beneath "
+             "with no record of its own" if wildcard_ok else
+             f"no wildcard record is published at {wildcard}, so there is no blanket "
+             "control and each name answers only for itself"),
+            f"read {extra.get('read_at', '')} via {', '.join(extra.get('resolvers') or [])}",
+        ]
+        if sending:
+            note.append(f"excluded as email-enabled on the evidence: {', '.join(sending)}")
+        if unread:
+            note.append(f"NOT READ, so not counted either way: {', '.join(unread)}")
+        if extra.get("names_dropped_by_cap"):
+            note.append(f"{extra['names_dropped_by_cap']} further name(s) were beyond the "
+                        "sweep's ceiling and were not read")
+
+        if missing:
+            rows.append(Conformance(
+                req["id"], req["title"], req["level"], req["scope"], d, FAIL,
+                observed=f"{len(missing)} of {in_scope} sub-domains without {expected}",
+                reason="; ".join(x for x in [
+                    (f"the framework asks for {expected} on every sub-domain that does not "
+                     "send mail, and sub-domains that carry no record of their own are not "
+                     "covered by the parent domain's, because a receiver asks the name "
+                     "itself and stops there"),
+                    _SWEEP_INSTRUMENT,
+                    _SWEEP_POPULATION,
+                    (f"what this row does NOT read: {partial}" if partial else ""),
+                ] if x),
+                evidence=str(_get(a, "name") or ""), source=req["source"],
+                record=record, subject_note="; ".join(note)))
+            continue
+        rows.append(_unmeasured(
+            req, d, NOT_COLLECTED,
+            f"every sub-domain name read for this domain carries {expected}, and that "
+            "is not the same as every sub-domain carrying it: " + _SWEEP_POPULATION
+            + ". No verdict is claimed in either direction"
+            + (f". What this row does not read either: {partial}" if partial else "")))
+    return rows
+
+
+def _eval_ned_spf(req: dict, assets: list[Any], domains: list[str]) -> list[Conformance]:
+    return _eval_ned_records(req, assets, domains, "ned-spf", "SPF")
+
+
+def _eval_ned_dkim(req: dict, assets: list[Any], domains: list[str]) -> list[Conformance]:
+    return _eval_ned_records(req, assets, domains, "ned-dkim", "DKIM")
+
+
+_TLS_FLOOR_UNREAD = (
+    "reads the receiving path only — what the organisation's mail hosts offer an "
+    "inbound sender; the same requirement's sending clause is not measured by this "
+    "check, and is read from a per-message mail transport export when one is supplied"
+)
+
+_TLS_FLOOR_READ_ELSEWHERE = (
+    "reads the receiving path only — what the organisation's mail hosts offer an inbound "
+    "sender; the same requirement's sending clause is measured separately, on "
+    "the {subject} row below"
+)
+
+_SENDING_SUBJECT = "outbound mail (all paths)"
+
+#: The ``source`` of rows from a per-message mail transport export. Each row is one
+#: mail path and carries, in ``extra``: ``direction`` (inbound or outbound),
+#: ``messages``, ``no_tls_messages``, ``tls_distribution`` ("TLS1.2=n; ..."),
+#: ``window`` (the period the export covers), ``connector_present`` (yes/no:
+#: whether a configured route, such as a connector or relay definition, governs
+#: the path, where the platform routes mail that way), and for mail exchanged with
+#: government organisations ``govt_messages``, ``govt_no_tls_messages``,
+#: ``govt_tls_distribution``, ``govt_days``, ``govt_identified_by`` and
+#: ``govt_counterparty_domains`` (``_total`` for the whole export).
+TRANSPORT_SOURCE = "mail_transport"
+_SENDING_SOURCE = TRANSPORT_SOURCE
+
+_NO_TLS = "no tls"
+
+_SENDING_LIMITS = (
+    "each reading is the transport negotiated with the IMMEDIATE peer for one "
+    "delivery, which, where the platform routes mail through configured connectors "
+    "or a relay, is that relay and not the final recipient, so onward legs are out "
+    "of frame; and the finding is bounded by "
+    "the export's own window"
+)
+
+
+def _eval_tls_floor(req: dict, assets: list[Any], domains: list[str]) -> list[Conformance]:
+    forbidden = list(req.get("forbidden_versions") or [])
+    sending = _eval_tls_sending(req, assets, forbidden)
+    measured_sending = sending.status != NOT_MEASURED
+    limit = (_TLS_FLOOR_READ_ELSEWHERE.format(subject=_SENDING_SUBJECT)
+             if measured_sending else _TLS_FLOOR_UNREAD)
+
+    hosts = _mail_hosts(assets, domains)
+    if not hosts:
+        return [_unmeasured(req, "", NOT_COLLECTED,
+                            "no MX host has been measured for TLS versions"), sending]
+    rows = []
+    for host, a in sorted(hosts.items()):
+        versions = list(_get(a, "protocol_versions") or [])
+        if not versions:
+            if _no_encryption_offered(a):
+                rows.append(Conformance(
+                    req["id"], req["title"], req["level"], req["scope"], host,
+                    FAIL, observed="no TLS offered",
+                    reason=("the gateway answered EHLO without advertising STARTTLS, so "
+                            "mail delivered to it crosses the network in clear — the "
+                            "'no-TLS' the requirement forbids by name; measured, not "
+                            "inferred from the port number"),
+                    evidence=str(_get(a, "name") or ""), source=req["source"]))
+            else:
+                rows.append(_unmeasured(req, host, INCONCLUSIVE,
+                                        "host was reached but offered no version list"))
+            continue
+        ok, offered = _version_ok(versions, forbidden)
+        if not ok:
+            rows.append(Conformance(
+                req["id"], req["title"], req["level"], req["scope"], host,
+                FAIL, observed=", ".join(versions),
+                reason=f"offers {', '.join(offered)}, which the standard forbids",
+                evidence=str(_get(a, "name") or ""), source=req["source"]))
+            continue
+        met, unorderable = _floor_met(versions, str(req.get("minimum_version") or ""))
+        if not met:
+            rows.append(_unmeasured(
+                req, host, INCONCLUSIVE,
+                f"the host offers {', '.join(versions)}, none of which this check can "
+                f"place at or above the {req.get('minimum_version')} floor the same "
+                "requirement sets — and nothing it offers is on the standard's "
+                "forbidden list either, so the floor is unconfirmed rather than "
+                "breached"
+                + (f"; the version spelling(s) it could not order were "
+                   f"{', '.join(unorderable)}" if unorderable else "")))
+            continue
+        rows.append(Conformance(
+            req["id"], req["title"], req["level"], req["scope"], host,
+            PASS, observed=", ".join(versions),
+            reason=(f"offers {req.get('minimum_version')} or better and nothing the "
+                    f"standard forbids; {limit}"),
+            evidence=str(_get(a, "name") or ""), source=req["source"]))
+    rows.append(sending)
+    return rows
+
+
+def _no_encryption_offered(asset: Any) -> bool:
+    return any(str(f).startswith(PLAINTEXT_FLAG) for f in (_get(asset, "flags") or []))
+
+
+def _eval_tls_sending(req: dict, assets: list[Any],
+                      forbidden: list[str]) -> Conformance:
+    paths = [a for a in assets
+             if _get(a, "source") == _SENDING_SOURCE
+             and str((_get(a, "extra") or {}).get("direction", "")).lower() == "outbound"]
+    if not paths:
+        return _unmeasured(
+            req, _SENDING_SUBJECT, NOT_COLLECTED,
+            "the per-message mail transport export is not in this observation, so "
+            "what the organisation's own outbound deliveries negotiated has not been "
+            "read; the routing configuration cannot answer it, because an opportunistic "
+            "path and an enforced one look identical until a far end offers no TLS")
+
+    total = clear = 0
+    versions: dict[str, int] = {}
+    for a in paths:
+        extra = _get(a, "extra") or {}
+        total += _int(extra.get("messages"))
+        clear += _int(extra.get("no_tls_messages"))
+        for name, count in _distribution(str(extra.get("tls_distribution") or "")).items():
+            versions[name] = versions.get(name, 0) + count
+
+    named = [v for v in versions if v.strip().lower() != _NO_TLS]
+    _, legacy = _version_ok(named, forbidden)
+    window = _sending_window(assets)
+    evidence = EVIDENCE_SEPARATOR.join(str(_get(a, "name") or "") for a in paths)
+    observed = (f"{clear:,} of {total:,} outbound messages with no TLS at all"
+                if total else "no outbound messages in the export")
+
+    faults = []
+    if clear:
+        faults.append(
+            f"{clear:,} of the {total:,} outbound messages in this record left with no "
+            f"transport encryption at all{window} — readable to anyone positioned on the "
+            "network path, and the 'sending unencrypted' the requirement forbids by name")
+    if legacy:
+        faults.append(
+            f"deliveries negotiated {', '.join(sorted(legacy))}{window}, below the "
+            "TLS 1.2 minimum the same sentence sets")
+    if faults:
+        return Conformance(
+            req["id"], req["title"], req["level"], req["scope"], _SENDING_SUBJECT,
+            FAIL, observed=observed,
+            reason="; ".join(faults) + f". What this cannot say: {_SENDING_LIMITS}.",
+            evidence=evidence, source=req["source"],
+            record="; ".join(f"{v}={n:,}" for v, n in sorted(versions.items(),
+                                                             key=lambda kv: -kv[1])))
+    return Conformance(
+        req["id"], req["title"], req["level"], req["scope"], _SENDING_SUBJECT,
+        PASS, observed=observed,
+        reason=(f"every one of the {total:,} outbound messages in this record left at "
+                f"TLS 1.2 or better{window}, with none in clear. What this cannot say: "
+                f"{_SENDING_LIMITS}."),
+        evidence=evidence, source=req["source"],
+        record="; ".join(f"{v}={n:,}" for v, n in sorted(versions.items(),
+                                                         key=lambda kv: -kv[1])))
+
+
+_ITLS_SUBJECT = "mail with government organisations"
+
+_ITLS_GLOSS = (
+    "Implicit TLS means the session is encrypted from its first byte on a "
+    "dedicated port, as against STARTTLS, where the session opens in the clear "
+    "and upgrades")
+
+
+def _eval_implicit_tls(req: dict, assets: list[Any],
+                       domains: list[str]) -> list[Conformance]:
+    transport = [a for a in assets
+                 if _get(a, "source") == _SENDING_SOURCE
+                 and str((_get(a, "extra") or {}).get("direction", "")).strip()]
+    paths = [a for a in transport
+             if "govt_messages" in (_get(a, "extra") or {})]
+    if not paths:
+        if transport:
+            return [_unmeasured(
+                req, _ITLS_SUBJECT, NOT_COLLECTED,
+                f"this observation carries the per-message mail transport export "
+                f"in {len(transport)} path rows, but none of them carries the "
+                f"government-counterparty split this requirement is read against; "
+                f"reading the same export with that split produces the population")]
+        return [_unmeasured(
+            req, _ITLS_SUBJECT, NOT_COLLECTED,
+            "the per-message mail transport export is not in this observation, so "
+            "the mail exchanged with government organisations — the population "
+            "the TLS Deployment Guide narrows this requirement to — has not been "
+            "read at all. " + _ITLS_GLOSS + ", and no external probe can see "
+            "either one on a path the organisation sends over; the export is what "
+            "puts a measured population under the requirement")]
+
+    totals: dict[str, int] = {}
+    clear: dict[str, int] = {}
+    unenforced: dict[str, int] = {}
+    unenforced_clear = 0
+    unenforced_days = 0
+    versions: dict[str, int] = {}
+    domain_tally = 0
+    classifier = ""
+    for a in paths:
+        extra = _get(a, "extra") or {}
+        direction = str(extra.get("direction", "")).strip().lower() or "unknown"
+        n = _int(extra.get("govt_messages"))
+        if not n:
+            continue
+        totals[direction] = totals.get(direction, 0) + n
+        clear[direction] = clear.get(direction, 0) + _int(extra.get("govt_no_tls_messages"))
+        classifier = classifier or str(extra.get("govt_identified_by") or "")
+        if str(extra.get("connector_present", "")).strip().lower() == "no":
+            unenforced[direction] = unenforced.get(direction, 0) + n
+            unenforced_clear += _int(extra.get("govt_no_tls_messages"))
+            unenforced_days = max(unenforced_days, _int(extra.get("govt_days")))
+        for name, count in _distribution(
+                str(extra.get("govt_tls_distribution") or "")).items():
+            if name.strip().lower() != "none":
+                versions[name] = versions.get(name, 0) + count
+
+    total = sum(totals.values())
+    domain_tally = max(
+        [_int((_get(a, "extra") or {}).get("govt_counterparty_domains_total"))
+         for a in assets if _get(a, "source") == _SENDING_SOURCE]
+        + [_int((_get(a, "extra") or {}).get("govt_counterparty_domains"))
+           for a in paths] or [0])
+    window = _sending_window(assets)
+    evidence_names = EVIDENCE_SEPARATOR.join(str(_get(a, "name") or "") for a in paths)
+    if not total:
+        return [_unmeasured(
+            req, _ITLS_SUBJECT, INCONCLUSIVE,
+            "the per-message mail transport export was read and carries no message "
+            "to or from a government counterparty" + window + ", identified by "
+            + (classifier or "counterparty domain") + " — so this requirement's "
+            "population is empty in what was read rather than measured and clean")]
+
+    split = ", ".join(f"{n:,} {d}" for d, n in sorted(totals.items(),
+                                                      key=lambda kv: -kv[1]))
+    total_clear = sum(clear.values())
+    measured = (
+        f"The organisation exchanged {total:,} messages with government counterparties across "
+        f"{domain_tally:,} of their domains{window} ({split}; counterparties "
+        f"identified by {classifier or 'counterparty domain'}), and "
+        + (f"{total_clear:,} of them crossed with no transport encryption at all"
+           if total_clear else
+           "every one of them was carried under TLS 1.2 or better, with none in "
+           "the clear")
+        + ".")
+    shortfall = (
+        f" That is a necessary condition for this requirement rather than the "
+        f"requirement itself. {_ITLS_GLOSS}. Neither the per-message export nor "
+        f"a per-route report, where the platform keeps one, records the port or how "
+        f"a session was established, so a forced-STARTTLS path and an Implicit TLS "
+        f"path are written identically and what was read cannot tell them apart.")
+    applicability = (
+        " Whether the requirement binds the organisation is also open: the TLS "
+        "Deployment Guide makes Implicit TLS mandatory between SGE Restricted Group "
+        "members, and nothing read here establishes membership.")
+    unenforced_total = sum(unenforced.values())
+    enforcement = ""
+    if unenforced_total:
+        enforcement = (
+            f" One part of the population is measured rather than inferred: "
+            f"{unenforced_total:,} of those {total:,} messages, on at least "
+            f"{unenforced_days:,} separate days of the window, travelled on a path with no "
+            f"configured route (a connector or relay definition) governing them, where "
+            f"transport security is negotiated with each peer rather than required by "
+            f"a routing policy"
+            + (f" — and that path carried {unenforced_clear:,} of the cleartext "
+               f"deliveries" if unenforced_clear else "")
+            + ".")
+    parts = [f"{v}={n:,}" for v, n in sorted(versions.items(), key=lambda kv: -kv[1])]
+    if evidence_names:
+        parts.append(f"read from {evidence_names}")
+    distribution = "; ".join(parts)
+    closes = (
+        " What would close this row: written confirmation of the organisation's SGE "
+        "Restricted Group membership status, and — where it applies, and where the "
+        "platform routes mail through configured connectors or a relay — the full "
+        "definitions of the routes carrying government traffic, including the relay "
+        "hosts and ports, which is the record that says how the session is "
+        "established. Both are administrative reads, not probes.")
+    return [Conformance(
+        req["id"], req["title"], req["level"], req["scope"], _ITLS_SUBJECT,
+        NOT_MEASURED, reason=INCONCLUSIVE,
+        observed=(f"{total:,} messages with government organisations, "
+                  f"{total_clear:,} with no TLS"),
+        evidence=measured + shortfall + applicability + enforcement + closes,
+        source=req["source"], record=distribution)]
+
+
+def _int(value: Any) -> int:
+    try:
+        return int(str(value).replace(",", "").strip())
+    except (TypeError, ValueError):
+        return 0
+
+
+def _distribution(value: str) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for part in value.split(";"):
+        name, _, count = part.rpartition("=")
+        if name.strip():
+            out[name.strip()] = out.get(name.strip(), 0) + _int(count)
+    return out
+
+
+def _sending_window(assets: list[Any]) -> str:
+    for a in assets:
+        if _get(a, "source") != _SENDING_SOURCE:
+            continue
+        window = str((_get(a, "extra") or {}).get("window") or "").strip()
+        if window:
+            return f" over the window the export covers, {window}"
+    return ""
+
+
+def _mail_hosts(assets: list[Any], domains: list[str]) -> dict[str, Any]:
+    named: set[str] = set()
+    for d in domains:
+        for a in _by(assets, "mx", d):
+            for rec in (_get(a, "extra") or {}).get("records", []) or []:
+                m = re.search(r"(\d+\s+)?([\w.-]+?)\.?$", str(rec).strip())
+                if m:
+                    named.add(m.group(2).lower())
+    out: dict[str, Any] = {}
+    for a in assets:
+        host = str(_get(a, "host") or "").lower()
+        if host not in named or _get(a, "protocol") != "tls":
+            continue
+        if host in out and not _get(a, "protocol_versions"):
+            continue
+        out[host] = a
+    return out
+
+
+def _discovered_subdomains(assets: list[Any], domain: str) -> list[str]:
+    out = set()
+    suffix = "." + domain.lower().strip(".")
+    for a in assets:
+        if _get(a, "data_state") != "discovery":
+            continue
+        host = str(_get(a, "host") or "").lower().strip(".")
+        if host.endswith(suffix):
+            out.add(host)
+    return sorted(out)
+
+
+def _subdomain_limit(assets: list[Any], domains: list[str], record: str,
+                     wired: bool = False, owed: str | None = None) -> str:
+    counts = {d: len(_discovered_subdomains(assets, d)) for d in domains}
+    total = sum(counts.values())
+    if owed is None:
+        owed = ("this observation carries no reading from that sweep — a run with the "
+                "sub-domain sweep reads it"
+                if wired else
+                "reading the record over that list needs one DNS lookup per name")
+    if not total:
+        return ("no sub-domain names have been enumerated in this run, so the "
+                f"{record} record on each of them is unread; certificate-transparency "
+                "enumeration is the route already built for this and produced nothing "
+                "here")
+    where = (f"under {domains[0]}" if len(domains) == 1 else
+             f"across {len([d for d in counts if counts[d]])} of the {len(domains)} "
+             f"domains ({max(counts.values())} of them under "
+             f"{max(counts, key=lambda d: counts[d])} alone)")
+    return (f"{total} sub-domain name(s) {where} are already enumerated in this run "
+            f"from certificate transparency, and {owed}. What that would still not "
+            "prove: certificate transparency lists names that appeared in a public "
+            "certificate, and a sub-domain needing a denying record is exactly one "
+            "nobody serves TLS on, so even a complete join would bound this "
+            "requirement rather than close it")
+
+
+def _dmarc_record(asset: Any) -> str:
+    return str((_get(asset, "extra") or {}).get("record") or _get(asset, "notes") or "")
+
+
+def _dmarc_tags(record: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for part in record.strip().strip('"').split(";"):
+        key, sep, value = part.partition("=")
+        if sep and key.strip():
+            out[key.strip().lower()] = value.strip()
+    return out
+
+
+def _eval_dmarc_reporting(req: dict, assets: list[Any], domains: list[str]) -> list[Conformance]:
+    rows = []
+    for d in domains:
+        found = _by(assets, "dmarc", d)
+        if not found:
+            rows.append(_unmeasured(req, d, INCONCLUSIVE,
+                                    "no DMARC record was read for this domain"))
+            continue
+        a = found[0]
+        record = _dmarc_record(a)
+        rua = _dmarc_tags(record).get("rua", "")
+        if not rua:
+            rows.append(Conformance(
+                req["id"], req["title"], req["level"], req["scope"], d, FAIL,
+                observed="no rua= address",
+                reason=("the DMARC record publishes no aggregate reporting address, so "
+                        "no receiver sends a report anywhere and no reporting tool can be "
+                        "receiving one"),
+                evidence=str(_get(a, "name") or ""), source=req["source"], record=record))
+            continue
+        hosts = sorted({m.group(1).lower() for m in re.finditer(r"@([\w.-]+)", rua)})
+        rows.append(Conformance(
+            req["id"], req["title"], req["level"], req["scope"], d, NOT_MEASURED,
+            observed=f"reports addressed to {', '.join(hosts) or rua}",
+            reason=NO_INSTRUMENT,
+            evidence=("aggregate reports are addressed to a published reporting "
+                      "destination, which is consistent with a reporting tool but does "
+                      "not show that one processes them or that anyone reads its output; "
+                      "that is inside the organisation and cannot be seen from here"),
+            source=req["source"], record=record))
+    return rows
+
+
+def _eval_spf_alignment(req: dict, assets: list[Any], domains: list[str]) -> list[Conformance]:
+    rows = []
+    for d in domains:
+        found = _by(assets, "dmarc", d)
+        if not found:
+            rows.append(_unmeasured(req, d, INCONCLUSIVE,
+                                    "no DMARC record was read for this domain"))
+            continue
+        a = found[0]
+        record = _dmarc_record(a)
+        tags = _dmarc_tags(record)
+        value = tags.get("aspf", "r").lower() or "r"
+        if value == "s":
+            status, reason = PASS, ""
+        else:
+            status = FAIL
+            reason = ("relaxed SPF alignment is published"
+                      + ("" if "aspf" in tags else
+                         ", by omitting the tag, which RFC 7489 reads as relaxed")
+                      + "; the DMARC guide recommends strict (aspf=s) — a recommendation "
+                        "unmet, not a requirement breached")
+        rows.append(Conformance(req["id"], req["title"], req["level"], req["scope"],
+                                d, status, observed=f"aspf={value}", reason=reason,
+                                evidence=str(_get(a, "name") or ""), source=req["source"],
+                                record=record))
+    return rows
+
+
+def _eval_dmarc_unused_tags(req: dict, assets: list[Any], domains: list[str]) -> list[Conformance]:
+    unwanted = [str(t).lower() for t in (req.get("tags") or [])]
+    rows = []
+    for d in domains:
+        found = _by(assets, "dmarc", d)
+        if not found:
+            rows.append(_unmeasured(req, d, INCONCLUSIVE,
+                                    "no DMARC record was read for this domain"))
+            continue
+        a = found[0]
+        record = _dmarc_record(a)
+        tags = _dmarc_tags(record)
+        present = [t for t in unwanted if t in tags]
+        if not present:
+            status, reason = PASS, ""
+        else:
+            status = FAIL
+            why = []
+            if "ruf" in present or "fo" in present:
+                why.append("forensic reporting (ruf, and fo which configures it) is the "
+                           "guide's most emphatic case — 'Do not enable RUF reporting' — "
+                           "because forensic reports can carry message headers, subjects "
+                           "and bodies to a third party")
+            if any(t in present for t in ("pct", "rf", "ri")):
+                why.append("pct, rf and ri are deprecated in DMARCbis")
+            reason = (f"the record publishes {', '.join(present)}, which the DMARC guide "
+                      "says should not be used; " + "; ".join(why)
+                      + " — a recommendation unmet, not a requirement breached")
+        rows.append(Conformance(
+            req["id"], req["title"], req["level"], req["scope"], d, status,
+            observed=("none of " + ", ".join(unwanted)) if not present else
+            "; ".join(f"{t}={tags[t]}" for t in present),
+            reason=reason, evidence=str(_get(a, "name") or ""), source=req["source"],
+            record=record))
+    return rows
+
+
+def _eval_spf_mechanisms(req: dict, assets: list[Any], domains: list[str]) -> list[Conformance]:
+    rows = []
+    limit = " ".join(str(req.get("partial") or "").split())
+    for d in domains:
+        found = _by(assets, "spf", d)
+        if not found:
+            rows.append(_unmeasured(req, d, INCONCLUSIVE,
+                                    "no SPF record was read for this domain"))
+            continue
+        a = found[0]
+        record = str((_get(a, "extra") or {}).get("record") or _get(a, "notes") or "")
+        terms = record.strip().strip('"').split()
+        ptr = [t for t in terms if re.match(r"^[+\-~?]?ptr(:|$)", t, re.IGNORECASE)]
+        ranges = [t for t in terms if re.match(r"^[+\-~?]?ip[46]:", t, re.IGNORECASE)]
+        listed = ", ".join(ranges) if ranges else "no ip4 or ip6 ranges"
+        if ptr:
+            rows.append(Conformance(
+                req["id"], req["title"], req["level"], req["scope"], d, FAIL,
+                observed=" ".join(ptr),
+                reason=("the record uses the ptr mechanism, which the SPF guide says not "
+                        "to use — a recommendation unmet, not a requirement breached"),
+                evidence=str(_get(a, "name") or ""), source=req["source"], record=record))
+            continue
+        rows.append(Conformance(
+            req["id"], req["title"], req["level"], req["scope"], d, NOT_MEASURED,
+            observed=f"no ptr; {listed}", reason=INCONCLUSIVE,
+            evidence=("the record uses no ptr mechanism. " + limit).strip(),
+            source=req["source"], record=record))
+    return rows
+
+
+def _partial(req: dict) -> str:
+    return " ".join(str(req.get("partial") or "").split())
+
+
+def _mx_hosts(assets: list[Any], domain: str) -> list[str] | None:
+    found = _by(assets, "mx", domain)
+    if not found:
+        return None
+    out = []
+    for rec in (_get(found[0], "extra") or {}).get("records", []) or []:
+        m = re.search(r"(\d+\s+)?([\w.-]+?)\.?$", str(rec).strip())
+        if m:
+            out.append(m.group(2).lower())
+    return sorted(set(out))
+
+
+def _mta_sts_matches(pattern: str, host: str) -> bool:
+    pattern, host = pattern.lower().rstrip("."), host.lower().rstrip(".")
+    if pattern.startswith("*."):
+        return "." in host and host.split(".", 1)[1] == pattern[2:]
+    return pattern == host
+
+
+def _eval_mta_sts_mx(req: dict, assets: list[Any], domains: list[str]) -> list[Conformance]:
+    rows = []
+    for d in domains:
+        found = _by(assets, "mta-sts", d)
+        if not found:
+            rows.append(_unmeasured(req, d, INCONCLUSIVE,
+                                    "no MTA-STS record was read for this domain"))
+            continue
+        a = found[0]
+        extra = _get(a, "extra") or {}
+        if "published" in extra and not extra["published"]:
+            rows.append(_unmeasured(
+                req, d, INCONCLUSIVE,
+                "no _mta-sts TXT record is published, so no policy is ever fetched and "
+                "there are no mx entries to compare; the missing record is graded under "
+                "SGE-MTASTS-01"))
+            continue
+        if extra.get("policy_reachable") is False:
+            rows.append(_unmeasured(
+                req, d, INCONCLUSIVE,
+                "the policy file could not be fetched from this machine, so its mx "
+                "entries were not read; that is a limit of this instrument, not a "
+                "finding about the domain"))
+            continue
+        if "mx" not in extra:
+            rows.append(_unmeasured(
+                req, d, NOT_COLLECTED,
+                "this observation does not carry the policy file's mx entries, so "
+                "they were not compared"))
+            continue
+        entries = [str(e).strip() for e in (extra.get("mx") or []) if str(e).strip()]
+        hosts = _mx_hosts(assets, d)
+        if hosts is None:
+            rows.append(_unmeasured(req, d, INCONCLUSIVE,
+                                    "no MX record reading exists for this domain, so there "
+                                    "is nothing to compare the policy's entries with"))
+            continue
+        wild = [e for e in entries if "*" in e]
+        unmatched = [h for h in hosts if not any(_mta_sts_matches(e, h) for e in entries)]
+        extra_entries = [e for e in entries
+                         if "*" not in e and e.lower().rstrip(".") not in hosts]
+        record = f"policy mx: {', '.join(entries) or 'none'}; MX: {', '.join(hosts) or 'none'}"
+        faults = []
+        if unmatched:
+            faults.append(f"the domain's MX host(s) {', '.join(unmatched)} are matched by no "
+                          "mx entry in the policy, so a sending server enforcing the policy "
+                          "refuses to deliver to them")
+        if wild:
+            faults.append(f"the policy uses the wildcard entry {', '.join(wild)}, which the "
+                          "MTA-STS guide says must not be used")
+        aside = (f"the policy also lists {', '.join(extra_entries)}, which the domain does "
+                 "not publish as an MX host; the requirement's sentence does not forbid "
+                 "that, so it is reported and not graded" if extra_entries else "")
+        if faults:
+            rows.append(Conformance(
+                req["id"], req["title"], req["level"], req["scope"], d, FAIL,
+                observed=f"{len(unmatched)} of {len(hosts)} MX host(s) unlisted"
+                         + (f"; wildcard {', '.join(wild)}" if wild else ""),
+                reason="; ".join(faults), evidence=str(_get(a, "name") or ""),
+                source=req["source"], record=record, subject_note=aside))
+            continue
+        rows.append(Conformance(
+            req["id"], req["title"], req["level"], req["scope"], d, PASS,
+            observed=f"all {len(hosts)} MX host(s) listed; no wildcard",
+            reason=("every MX host the domain publishes is named by an mx entry in the "
+                    "policy, and no entry uses a wildcard; read from the published MX "
+                    "records and the policy file in the same run"),
+            evidence=str(_get(a, "name") or ""), source=req["source"], record=record,
+            subject_note=aside))
+    return rows
+
+
+def _eval_spf_legacy(req: dict, assets: list[Any], domains: list[str]) -> list[Conformance]:
+    rows = []
+    for d in domains:
+        found = _by(assets, "spf", d)
+        if not found:
+            rows.append(_unmeasured(
+                req, d, INCONCLUSIVE,
+                "no sender-policy reading exists for this domain, so its TXT records "
+                "were not examined for an SPF2.0 record"))
+            continue
+        a = found[0]
+        extra = _get(a, "extra") or {}
+        if "legacy_spf2_records" not in extra:
+            rows.append(_unmeasured(
+                req, d, NOT_COLLECTED,
+                "this observation kept only the first v=spf1 record at the domain, so "
+                "an SPF2.0 record beside it would not have been seen"))
+            continue
+        legacy = [str(r).strip().strip('"') for r in (extra.get("legacy_spf2_records") or [])]
+        spf1 = list(extra.get("spf_records") or [])
+        aside = (f"the domain also publishes {len(spf1)} v=spf1 records where there "
+                 "should be one; that is not what this row grades" if len(spf1) > 1 else "")
+        if legacy:
+            rows.append(Conformance(
+                req["id"], req["title"], req["level"], req["scope"], d, FAIL,
+                observed=f"{len(legacy)} SPF2.0 record(s)",
+                reason=("the domain publishes an SPF2.0 record, which the SPF guide says "
+                        "should be removed from DNS — a recommendation unmet, not a "
+                        "requirement breached"),
+                evidence=str(_get(a, "name") or ""), source=req["source"],
+                record=" | ".join(legacy), subject_note=aside))
+            continue
+        rows.append(Conformance(
+            req["id"], req["title"], req["level"], req["scope"], d, PASS,
+            observed="no SPF2.0 record",
+            reason="no SPF2.0 record is published among the TXT records at the domain",
+            evidence=str(_get(a, "name") or ""), source=req["source"],
+            record=str(extra.get("record") or ""), subject_note=aside))
+    return rows
+
+
+def _eval_dkim_distinct_keys(req: dict, assets: list[Any],
+                             domains: list[str]) -> list[Conformance]:
+    readings = [a for a in assets if _get(a, "protocol") == "dkim"]
+    by_key: dict[str, set[str]] = {}
+    for a in readings:
+        extra = _get(a, "extra") or {}
+        key = str(extra.get("public_key") or "")
+        if key:
+            by_key.setdefault(key, set()).add(str(extra.get("selector") or ""))
+    rows = []
+    for d in domains:
+        found = _by(assets, "dkim", d)
+        if not found:
+            rows.append(_unmeasured(
+                req, d, INCONCLUSIVE,
+                "no DKIM selector answered; the probe tries known selectors, so "
+                "this is silence rather than proof that none is published"))
+            continue
+        if any("public_key" not in (_get(a, "extra") or {}) for a in found):
+            rows.append(_unmeasured(
+                req, d, NOT_COLLECTED,
+                "this observation kept only each DKIM key's size, so two selectors "
+                "publishing one key could not be told apart"))
+            continue
+        selectors = sorted({str((_get(a, "extra") or {}).get("selector") or "")
+                            for a in found})
+        shared = sorted({
+            sel for a in found
+            for key in [str((_get(a, "extra") or {}).get("public_key") or "")]
+            if key and len(by_key.get(key, set())) > 1
+            for sel in by_key[key]})
+        evidence = EVIDENCE_SEPARATOR.join(str(_get(a, "name") or "") for a in found)
+        if shared:
+            rows.append(Conformance(
+                req["id"], req["title"], req["level"], req["scope"], d, FAIL,
+                observed=f"one public key under selectors {', '.join(shared)}",
+                reason=("the selectors named publish the same public key, so they sign "
+                        "with the same private key; the DKIM guide gives each platform its "
+                        "own selector and says not to share a private key across services "
+                        "— a recommendation unmet, not a requirement breached. What this "
+                        "cannot exclude: one platform publishing its key under two names. "
+                        + _partial(req)),
+                evidence=evidence, source=req["source"]))
+            continue
+        rows.append(Conformance(
+            req["id"], req["title"], req["level"], req["scope"], d, NOT_MEASURED,
+            observed=f"{len(selectors)} selector(s), no key shared",
+            reason=INCONCLUSIVE,
+            evidence=("no selector that answered shares its public key with any other "
+                      "selector read in this run. " + _partial(req)
+                      + " No verdict is claimed in either direction."),
+            source=req["source"],
+            subject_note=f"selector(s) that answered: {', '.join(selectors)}"))
+    return rows
+
+
+def _ned_dmarc_asset(req: dict, assets: list[Any], domain: str
+                     ) -> tuple[Any, dict] | Conformance:
+    found = _by(assets, "ned-dmarc", domain)
+    if not found:
+        return _unmeasured(
+            req, domain, NOT_COLLECTED,
+            "this observation holds no reading of the sub-domains' own DMARC records, "
+            "so nothing is graded against this domain; a run with the sub-domain "
+            "sweep reads them")
+    a = found[0]
+    extra = _get(a, "extra") or {}
+    if not extra.get("control_usable", False):
+        return _unmeasured(
+            req, domain, INCONCLUSIVE,
+            "the sweep's control name answered when it should not have, so this run "
+            "cannot tell a record that is absent from a resolver that did not reply; "
+            "nothing is graded against this domain from it")
+    if not _int(extra.get("names_in_scope")):
+        return _unmeasured(
+            req, domain, NOT_COLLECTED,
+            "no sub-domain of this domain was both enumerated and found not to send "
+            "mail, so there is nothing here to read the requirement against")
+    return a, extra
+
+
+def _ned_scope_note(extra: dict) -> str:
+    note = [f"read {extra.get('read_at', '')} via {', '.join(extra.get('resolvers') or [])}"]
+    if extra.get("names_email_enabled"):
+        note.append("excluded as email-enabled, so not read for this: "
+                    + ", ".join(extra["names_email_enabled"]))
+    if extra.get("names_unread"):
+        note.append("NOT READ, so not counted either way: "
+                    + ", ".join(extra["names_unread"]))
+    if extra.get("names_dropped_by_cap"):
+        note.append(f"{extra['names_dropped_by_cap']} further name(s) were beyond the "
+                    "sweep's ceiling and were not read")
+    return "; ".join(note)
+
+
+def _eval_subdomain_sp(req: dict, assets: list[Any], domains: list[str]) -> list[Conformance]:
+    rows = []
+    for d in domains:
+        got = _ned_dmarc_asset(req, assets, d)
+        if isinstance(got, Conformance):
+            rows.append(got)
+            continue
+        a, extra = got
+        records = dict(extra.get("dmarc_records") or {})
+        with_sp = sorted(n for n, rec in records.items() if "sp" in _dmarc_tags(str(rec)))
+        in_scope = _int(extra.get("names_in_scope"))
+        if with_sp:
+            rows.append(Conformance(
+                req["id"], req["title"], req["level"], req["scope"], d, FAIL,
+                observed=f"{len(with_sp)} of {in_scope} sub-domains set sp=",
+                reason="; ".join([
+                    ("a sub-domain beneath this organisational domain publishes its own "
+                     "sp= tag, which the DMARC guide says should only ever be set on "
+                     "organisation level domains — a recommendation unmet, not a "
+                     "requirement breached"),
+                    _SWEEP_INSTRUMENT,
+                    f"what this row does NOT read: {_partial(req)}"]),
+                evidence=str(_get(a, "name") or ""), source=req["source"],
+                record="; ".join(f"{n}: {records[n]}" for n in with_sp),
+                subject_note="; ".join([f"sub-domains setting sp=: {', '.join(with_sp)}",
+                                        _ned_scope_note(extra)])))
+            continue
+        rows.append(Conformance(
+            req["id"], req["title"], req["level"], req["scope"], d, NOT_MEASURED,
+            observed=f"none of {in_scope} sub-domains sets sp=",
+            reason=NOT_COLLECTED,
+            evidence=("no enumerated sub-domain that shows no sign of sending mail "
+                      "publishes its own sp= tag, and that is not the same as none doing "
+                      "so. " + _partial(req) + " No verdict is claimed in either direction."),
+            source=req["source"], subject_note=_ned_scope_note(extra)))
+    return rows
+
+
+def _eval_subdomain_dmarc_alignment(req: dict, assets: list[Any],
+                                    domains: list[str]) -> list[Conformance]:
+    rows = []
+    for d in domains:
+        got = _ned_dmarc_asset(req, assets, d)
+        if isinstance(got, Conformance):
+            rows.append(got)
+            continue
+        a, extra = got
+        records = dict(extra.get("dmarc_records") or {})
+        root = _by(assets, "dmarc", d)
+        root_record = _dmarc_record(root[0]) if root else ""
+        root_tags = _dmarc_tags(root_record)
+        in_scope = _int(extra.get("names_in_scope"))
+
+        def short(tags: dict[str, str]) -> list[str]:
+            out = []
+            if tags.get("adkim", "r").lower() != "s":
+                out.append(f"adkim={tags.get('adkim', 'r (by default)')}")
+            if tags.get("aspf", "r").lower() != "s":
+                out.append(f"aspf={tags.get('aspf', 'r (by default)')}")
+            if not tags.get("rua"):
+                out.append("no rua=")
+            return out
+
+        own_short = {n: short(_dmarc_tags(str(rec))) for n, rec in records.items()}
+        own_failing = sorted(n for n, s in own_short.items() if s)
+        without_own = in_scope - len(records)
+        inherited = short(root_tags) if root_record else ["no DMARC record at all"]
+        failing_by_fallback = without_own if (without_own and inherited) else 0
+
+        if own_failing or failing_by_fallback:
+            parts = []
+            if failing_by_fallback:
+                parts.append(
+                    f"{without_own} of the {in_scope} enumerated sub-domain(s) that show no "
+                    "sign of sending mail publish no DMARC record of their own, so a receiver "
+                    "applies the organisational domain's record to them, which reads "
+                    f"{', '.join(inherited)}"
+                    if root_record else
+                    f"{without_own} of the {in_scope} enumerated sub-domain(s) publish no "
+                    "DMARC record of their own and no organisational record was read for "
+                    "them to fall back to")
+            if own_failing:
+                parts.append(
+                    f"{len(own_failing)} publish a record of their own short of it: "
+                    + "; ".join(f"{n} ({', '.join(own_short[n])})" for n in own_failing))
+            rows.append(Conformance(
+                req["id"], req["title"], req["level"], req["scope"], d, FAIL,
+                observed=f"{failing_by_fallback + len(own_failing)} of {in_scope} "
+                         "sub-domains without strict alignment and a reporting address",
+                reason="; ".join([
+                    ("the framework's record for non-email sub-domains sets strict SPF "
+                     "and DKIM alignment and a reporting address — a recommendation "
+                     "unmet, not a requirement breached. The stricter reading of 'set "
+                     "every sub-domain's record', that each must publish its own, would "
+                     "fail a sub-domain with no record of its own outright"),
+                    _SWEEP_INSTRUMENT,
+                    f"what this row does NOT read: {_partial(req)}"]),
+                evidence=str(_get(a, "name") or ""), source=req["source"],
+                record="; ".join(filter(None, [
+                    f"organisational record: {root_record}" if root_record else "",
+                    *(f"{n}: {records[n]}" for n in own_failing)])),
+                subject_note="; ".join([*parts, _ned_scope_note(extra)])))
+            continue
+        rows.append(Conformance(
+            req["id"], req["title"], req["level"], req["scope"], d, NOT_MEASURED,
+            observed=f"all {in_scope} sub-domains read meet it",
+            reason=NOT_COLLECTED,
+            evidence=("every enumerated sub-domain that shows no sign of sending mail "
+                      "carries strict alignment and a reporting address, on its own "
+                      "record or the organisational one it falls back to, and that is not "
+                      "the same as every sub-domain doing so. " + _partial(req)
+                      + " No verdict is claimed in either direction."),
+            source=req["source"], subject_note=_ned_scope_note(extra)))
+    return rows
+
+
+def _unmeasured(req: dict, subject: str, reason_kind: str, detail: str) -> Conformance:
+    return Conformance(req["id"], req["title"], req["level"], req["scope"], subject,
+                       NOT_MEASURED, reason=reason_kind, observed="",
+                       evidence=detail, source=req["source"])
+
+
+#: The evaluator for each observable requirement.
+_EVALUATORS: dict[str, Callable[..., list[Conformance]]] = {
+    "SGE-SPF-01": _eval_spf,
+    "SGE-DMARC-01": _eval_dmarc,
+    "SGE-MTASTS-01": _eval_mta_sts,
+    "SGE-DKIM-R01": _eval_dkim_keysize,
+    "SGE-DMARC-R01": _eval_dkim_alignment,
+    "SGE-TLS-01": _eval_tls_floor,
+    "SGE-TLSRPT-01": _eval_tls_rpt,
+    "SGE-NED-DMARC-01": _eval_ned_dmarc,
+    "SGE-ITLS-01": _eval_implicit_tls,
+    "SGE-NED-SPF-01": _eval_ned_spf,
+    "SGE-NED-DKIM-01": _eval_ned_dkim,
+    "SGE-DMARC-04": _eval_dmarc_reporting,
+    "SGE-DMARC-R02": _eval_spf_alignment,
+    "SGE-DMARC-R03": _eval_dmarc_unused_tags,
+    "SGE-SPF-R01": _eval_spf_mechanisms,
+    "SGE-MTASTS-02": _eval_mta_sts_mx,
+    "SGE-SPF-R02": _eval_spf_legacy,
+    "SGE-DKIM-R02": _eval_dkim_distinct_keys,
+    "SGE-DMARC-R05": _eval_subdomain_sp,
+    "SGE-NED-DMARC-R01": _eval_subdomain_dmarc_alignment,
+}
+
+
+def _awaiting(req: dict, assets: list[Any], domains: list[str]) -> str:
+    return str(req.get("awaiting") or "no collector produces this fact yet").strip()
+
+
+def citation(std: dict, req: dict) -> str:
+    """The source document a requirement was read from: title, version, date, index, digest."""
+    key = req.get("document")
+    if not key:
+        return ""
+    d = (std.get("documents") or {}).get(key)
+    if not d:
+        return ""
+    out = str(d.get("title", key))
+    if d.get("version"):
+        out += f" v{d['version']}"
+    if d.get("date"):
+        out += f" ({d['date']})"
+    if d.get("index"):
+        out += f", index {d['index']}"
+    if d.get("sha256"):
+        out += f", SHA-256 {d['sha256']}…"
+    return out
+
+
+def evaluate(assets: list[Any], domains: list[str], standard: dict | None = None,
+             bulk_mail_domains: tuple[str, ...] = ()) -> Report:
+    """Read every requirement against ``assets`` for the email ``domains``.
+
+    ``bulk_mail_domains`` are SPF policy domains of bulk-mail providers; a
+    sender policy that includes one is noted beside the strict-alignment row.
+    """
+    std = standard or load_standard()
+    rows: list[Conformance] = []
+    for req in std.get("requirements", []):
+        measurable = req.get("measurable")
+        if measurable == "no-instrument":
+            rows.append(_unmeasured(
+                req, "", NO_INSTRUMENT,
+                req.get("note") or "not observable from outside the organisation"))
+            continue
+        if measurable == "not-collected":
+            detail = _awaiting(req, assets, domains)
+            if req.get("scope") == "email-domain":
+                rows.extend(_unmeasured(req, d, NOT_COLLECTED, detail) for d in domains)
+            else:
+                rows.append(_unmeasured(req, "", NOT_COLLECTED, detail))
+            continue
+        fn = _EVALUATORS.get(req["id"])
+        if fn is None:
+            rows.append(_unmeasured(req, "", NOT_COLLECTED,
+                                    "marked observable but no evaluator is wired for it"))
+            continue
+        if fn is _eval_dkim_alignment:
+            rows.extend(fn(req, assets, domains, bulk_mail_domains))
+        else:
+            rows.extend(fn(req, assets, domains))
+    cites = {r["id"]: citation(std, r) for r in std.get("requirements", [])}
+    for row in rows:
+        row.citation = cites.get(row.requirement, "")
+    return Report(rows=rows, standard=std.get("standard", {}))
+
+
+#: The ``standards_verdict`` a row behind an unmet must receives.
+NON_CONFORMANT = "non-conformant"
+
+SAME_FACT = ("This is the same finding as the conformance table's row for the "
+             "requirement above, seen from the asset rather than from the "
+             "standard — one fact, not two.")
+
+
+def apply_conformance(assets: list[Any], domains: list[str],
+                      standard: dict | None = None,
+                      bulk_mail_domains: tuple[str, ...] = ()) -> int:
+    """Evaluate, then mark the rows behind each unmet must; returns how many were marked."""
+    if not domains:
+        return 0
+    return _mark(assets, evaluate(assets, domains, standard, bulk_mail_domains))
+
+
+#: Joins several asset names in one conformance row's ``evidence``.
+EVIDENCE_SEPARATOR = " · "
+
+
+def _mark(assets: list[Any], report: Report) -> int:
+    by_name: dict[str, list[Conformance]] = {}
+    for row in report.breaches():
+        for name in str(row.evidence or "").split(EVIDENCE_SEPARATOR):
+            if name.strip():
+                by_name.setdefault(name.strip(), []).append(row)
+    marked = 0
+    for a in assets:
+        rows = by_name.get(str(_get(a, "name") or ""))
+        if not rows:
+            continue
+        _set(a, "standards_verdict", NON_CONFORMANT)
+        _set(a, "standards_requirement", " · ".join(
+            f"{r.requirement} ({r.level}) — {r.title}" for r in rows))
+        _set(a, "standards_observed", " · ".join(
+            filter(None, [" · ".join(r.observed for r in rows if r.observed),
+                          next((r.record for r in rows if r.record), "")])))
+        _set(a, "standards_citation", " · ".join(
+            dict.fromkeys(r.citation for r in rows if r.citation)))
+        marked += 1
+    return marked
+
+
+def _format(report: Report, domains: list[str]) -> str:
+    std = report.standard
+    counts = report.counts()
+    out = [
+        f"{std.get('name', 'Secure Government Email')} v{std.get('version', '?')}"
+        " — conformance",
+        f"deadline {std.get('deadline', '')} · {len(domains)} domain(s) · "
+        f"{counts[PASS]} pass · {counts[FAIL]} fail · {counts[NOT_MEASURED]} not measured",
+        "",
+    ]
+    mark = {PASS: "PASS", FAIL: "FAIL", NOT_MEASURED: "----"}
+    for row in report.rows:
+        subject = row.subject or "(organisation)"
+        line = f"{mark[row.status]}  {row.requirement:<16} {subject:<26} {row.observed[:44]}"
+        out.append(line.rstrip())
+        if row.status == NOT_MEASURED:
+            out.append(f"      {row.reason}: {row.evidence}")
+        elif row.reason:
+            out.append(f"      {row.reason}")
+    breaches = report.breaches()
+    out += ["", f"{len(breaches)} unmet MUST requirement(s)."]
+    if breaches:
+        by_req: dict[str, list[str]] = {}
+        for b in breaches:
+            by_req.setdefault(f"{b.requirement} — {b.title}", []).append(b.subject)
+        for req, subjects in by_req.items():
+            out.append(f"  {req}: {', '.join(subjects)}")
+    return "\n".join(out)
+
+
+def bulk_mail_domains(target: dict) -> tuple[str, ...]:
+    """Bulk-mail providers' SPF policy domains, from the profile's ``sge.bulk_mail_domains``."""
+    own = (target.get("sge") or {}).get("bulk_mail_domains") or []
+    return tuple(str(d).strip().lower() for d in own if str(d).strip())
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Print the conformance report for a target's latest (or named) observation."""
+    import argparse
+    import json
+
+    ap = argparse.ArgumentParser(prog="takestock.sge",
+                                 description=(__doc__ or "").split("\n")[0])
+    ap.add_argument("target", help="target profile name, e.g. the stem of targets/<name>.yaml")
+    ap.add_argument("--observation", default="latest",
+                    help="observation directory under observations/ (default: latest)")
+    ap.add_argument("--json", action="store_true", help="emit rows as JSON")
+    args = ap.parse_args(argv)
+
+    from dataclasses import asdict
+
+    cfg = config.load_target(args.target)
+    domains = list((cfg.get("discovery") or {}).get("email_domains") or [])
+    path = config.observations_dir() / args.observation / "assets.json"
+    with path.open() as f:
+        assets = json.load(f)
+
+    report = evaluate(assets, domains, bulk_mail_domains=bulk_mail_domains(cfg))
+    if args.json:
+        print(json.dumps({"standard": report.standard,
+                          "counts": report.counts(),
+                          "rows": [asdict(r) for r in report.rows]},
+                         indent=2, default=str))
+    else:
+        print(_format(report, domains))
+    return 1 if report.breaches() else 0
+
+
+if __name__ == "__main__":       # pragma: no cover
+    raise SystemExit(main())

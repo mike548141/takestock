@@ -1,0 +1,770 @@
+# Secure Government Email (SGE) Common Implementation Framework: the
+# requirement set, machine-readable.
+#
+# This file encodes a public New Zealand government standard, published at
+# digital.govt.nz, and is read by `takestock.sge`. Every requirement is
+# transcribed from the source documents listed under `documents:`, and every
+# `level_basis.quote` is the deciding sentence, verbatim. Where a quotation
+# had to be shortened, the row says so.
+#
+# How `level` is decided, one sentence at a time:
+#   must         the requirement's own sentence says must, must not or
+#                mandatory (NZISM prints the same word as MUST). "Is
+#                required" counts only where the reading is unambiguous, and
+#                such a row says so in `level_basis.judgement`.
+#   recommended  the sentence says should, recommended, strongly recommended
+#                or advised; and also wherever the wording is vague or a bare
+#                imperative with no such word: "needs to", "will need to",
+#                "Enforce…", "Set…", "Do not…".
+# A heading or a list lead-in ("Requirement", "technologies required to be
+# deployed") confers nothing on the sentences beneath it. The strongest
+# explicit sentence in any listed source decides, so a requirement a guide
+# states as "must" is not demoted because the framework phrased it as
+# "needs to". The documents use no "could" or "won't" as a grading.
+#
+# `level_basis` carries the deciding sentence and where it was read. A
+# `must` whose quote has no must or mandatory word, or a `recommended` whose
+# quote has no should, recommend or advise word, carries a `judgement` saying
+# why.
+#
+# `measurable` says what an outside observer can establish, and drives the
+# not-measured outcome `takestock.sge` treats as a first-class result:
+#   observed       a collector produces the fact
+#   not-collected  measurable from outside, but no collector reads it yet
+#   no-instrument  cannot be seen from outside the organisation at all
+#
+# `partial` is quoted into the evaluator's row: what the reading does not
+# cover, written as a sentence a reader can use. `record`, where present,
+# names the DNS record the standard asks for; the evaluator checks it against
+# the name actually read rather than taking it as an instruction.
+
+standard:
+  id: sge
+  name: Secure Government Email Common Implementation Framework
+  short: SGE
+  version: "1.1"
+  issuer: Government Chief Digital Officer, Government Digital Delivery Agency
+  applies_to: New Zealand government agencies
+  replaces: SEEMail (Secure Encrypted Email)
+  classification_ceiling: IN-CONFIDENCE
+  deadline: 2026-10
+  deadline_note: >-
+    The framework requires implementation by October 2026, and SEEMail is
+    intended to be decommissioned during 2026. Both dates are the
+    document's own wording.
+  home: https://www.digital.govt.nz/products-and-services/products-and-services-a-z/secure-government-email
+
+# The source documents, so a requirement can cite the thing it was read from.
+# `sha256` is the first sixteen hexadecimal characters of the published
+# file's SHA-256: enough to tell two versions apart. Re-fetch and compare
+# before relying on a quotation.
+documents:
+  framework:
+    title: SGE Common Implementation Framework (PDF)
+    version: "1.1"
+    sha256: 3f00d7b16cd85e36
+  spf-guide:
+    title: SPF Deployment Guide
+    version: "1.0"
+    date: "2025-11-03"
+    index: AoGSD.SGE.Guidance.2025_249
+    sha256: ca53bf325c14574a
+  dkim-guide:
+    title: DKIM Deployment Guide
+    version: "1.0"
+    date: "2025-11-04"
+    index: AoGSD.SGE.Guidance.2025_250
+    sha256: d8ae0fc9042404e2
+  dmarc-guide:
+    title: DMARC Deployment Guide
+    version: "1.0"
+    date: "2025-11-04"
+    index: AoGSD.SGE.Guidance.2025_252
+    sha256: c9e12c4494a95d7a
+  tls-rpt-guide:
+    title: TLS-RPT Deployment Guide
+    version: "1.0"
+    date: "2025-11-04"
+    index: AoGSD.SGE.Guidance.2025_254
+    sha256: 799e2162d5ef4c0c
+  mta-sts-guide:
+    title: MTA-STS Deployment Guide
+    version: "1.1"
+    date: "2025-11-05"
+    index: AoGSD.SGE.Guidance.2025_256
+    sha256: 41642bd45b8be21f
+  tls-guide:
+    title: TLS Deployment Guide
+    # The document's control table says v1.0; the file is published as v2.0.
+    version: "1.0 (published as v2.0)"
+    date: "2026-02-02"
+    index: GDSD.SGE.Guidance.2026_043
+    sha256: 346d10ac3e2f3794
+  keyword-guide:
+    title: Keyword Blocking Deployment Guide
+    version: "1.2 (published as v2.2)"
+    date: "2026-02-12"
+    index: GDSD.SGE.Guidance.2026_040
+    sha256: c487970ff0041d7f
+
+requirements:
+  # ── All email-enabled domains ────────────────────────────────────────
+  - id: SGE-TLS-01
+    title: Minimum TLS 1.2 on email connections
+    level: must
+    level_basis:
+      quote: "A minimum of TLS1.2 must be used. TLS1.1, 1.0, SSL, no-TLS, or sending unencrypted must not be used."
+      where: "framework §8, TLS"
+    scope: mail-path
+    text: >-
+      A minimum of TLS 1.2 must be used. TLS 1.1, 1.0, SSL, no-TLS, or
+      sending unencrypted must not be used.
+    source: framework §"Securing all email enabled domains" — TLS requirement
+    document: framework
+    measurable: observed
+    # Both are read. `forbidden_versions` answers the "must not be used" list;
+    # `minimum_version` answers "a minimum of TLS 1.2" positively, so a version
+    # the evaluator cannot place is reported as an unconfirmed floor rather
+    # than passing for being on no list. Keep them consistent: every version
+    # below the floor belongs on the forbidden list too.
+    forbidden_versions: [SSLv2, SSLv3, TLSv1, TLSv1.0, TLSv1.1]
+    minimum_version: TLSv1.2
+
+  - id: SGE-TLSRPT-01
+    title: TLS Reporting enabled
+    level: must
+    level_basis:
+      quote: "All email sending domains must have TLS Reporting enabled."
+      where: "framework §8, TLS-RPT; TLS-RPT guide §3 quotes it"
+    scope: email-domain
+    text: All email sending domains must have TLS Reporting enabled.
+    source: TLS-RPT Deployment Guide v1.0 §3, quoting the framework
+    document: tls-rpt-guide
+    measurable: observed
+    # Documentation only: the evaluator does not read these two fields. The
+    # name to publish and the shape to look for are fixed in the evaluator.
+    record: _smtp._tls.<domain>
+    expect: "v=TLSRPTv1; rua=mailto:<address>"
+
+  - id: SGE-SPF-01
+    title: SPF record ending in hardfail
+    level: must
+    level_basis:
+      quote: "All email sending domains must have an SPF record and it must end with a hardfail -all to prevent spoofing of messages via untrusted sources."
+      where: "framework §8, SPF; SPF guide §3 (\"must have an SPF record finishing with -all\")"
+    scope: email-domain
+    text: >-
+      All mail sending domains must have an SPF record finishing with -all.
+    source: SPF Deployment Guide v1.0 §3; framework SPF requirement
+    document: spf-guide
+    measurable: observed
+    note: >-
+      A softfail ~all is explicitly called out as a weak posture: it permits
+      unknown sending servers, so the message neither passes nor fails.
+
+  - id: SGE-DKIM-01
+    title: All outbound email DKIM signed
+    level: must
+    level_basis:
+      quote: "All outbound email from all sending services must be DKIM signed."
+      where: "framework §8, DKIM; DKIM guide §3"
+    scope: organisation
+    text: >-
+      All outbound email from all sending services must be DKIM signed. "If
+      you use an external email security provider to process your outbound
+      email, DKIM signing must happen at that point."
+    source: DKIM Deployment Guide v1.0 §3; framework §8 DKIM requirement
+    document: dkim-guide
+    measurable: no-instrument
+    note: >-
+      A published selector proves a key exists, never that outbound mail is
+      signed with it. The claim is about mail flow, which cannot be seen from
+      outside; a DNS answer is evidence toward it, not proof of it.
+
+  - id: SGE-DMARC-01
+    title: DMARC policy of reject
+    level: must
+    level_basis:
+      quote: "All domains must have a p=reject DMARC policy."
+      where: "DMARC guide §3. The framework's own sentence (\"DMARC needs to be set to p=reject\") is vague; the guide's decides. NZISM v3.9 15.2.36.C.02 is tagged Must"
+    scope: email-domain
+    text: All domains must have a p=reject DMARC policy.
+    source: DMARC Deployment Guide v1.0 §3; framework DMARC requirement
+    document: dmarc-guide
+    measurable: observed
+
+  - id: SGE-DMARC-02
+    title: Inbound mail checked for DMARC compliance and acted on
+    level: must
+    level_basis:
+      quote: "Inbound emails must be checked for DMARC compliance and acted on based on the sending domains DMARC policy."
+      where: "framework §8, DMARC; DMARC guide §3 (\"must be scanned by DMARC and acted on\")"
+    scope: organisation
+    text: >-
+      Inbound emails must be checked for DMARC compliance and acted on based
+      on the sending domain's DMARC policy.
+    source: framework DMARC requirements; DMARC Deployment Guide v1.0 §3
+    document: framework
+    measurable: no-instrument
+
+  - id: SGE-DMARC-03
+    title: DMARC reports reviewed regularly
+    level: must
+    level_basis:
+      quote: "DMARC Reports must be reviewed on a regular basis."
+      where: "DMARC guide §3; NZISM v3.9 15.2.36.C.04, tagged Must (\"Agencies MUST review DMARC reports on a regular basis\")"
+    scope: organisation
+    text: DMARC reports must be reviewed on a regular basis.
+    # The PDF framework (§8) and the DMARC guide (§4 step 1) print the control
+    # number as 15.2.36.C.06; NZISM v3.9's review control is C.04, which the
+    # web framework prints. C.04 is cited.
+    source: DMARC Deployment Guide v1.0 §3; NZISM 15.2.36.C.04 (printed C.06 in the PDF framework and the DMARC guide)
+    document: dmarc-guide
+    measurable: no-instrument
+    note: >-
+      A published rua= address shows reports are being sent somewhere. It
+      says nothing about whether anyone reads them.
+
+  - id: SGE-MTASTS-01
+    title: MTA-STS enabled in enforce mode
+    level: must
+    level_basis:
+      quote: "An MTA record must be defined and set to enforce."
+      where: "framework §10 checklist, MTA-STS row. The §8 requirement sentence (\"needs to be enabled and set to 'enforce'\") is vague and does not decide; NZISM v3.9 15.2.48.C.01 is tagged only Should"
+    scope: email-domain
+    # The checklist row sits under "All Email Enabled Domains": a heading can
+    # scope a sentence, though it cannot grade one.
+    text: >-
+      "An MTA record must be defined and set to enforce." (deployment
+      checklist, MTA-STS row, under all email enabled domains)
+    source: framework §10 checklist; §8 and MTA-STS Deployment Guide v1.1 §3 state the same as "needs to"
+    document: framework
+    measurable: observed
+
+  - id: SGE-ITLS-01
+    title: Implicit TLS configured and enforced
+    level: must
+    level_basis:
+      quote: "Implicit TLS must be configured and enforced for all connections."
+      where: "framework §10 checklist, Implicit TLS row"
+    scope: organisation
+    text: Implicit TLS must be configured and enforced for all connections.
+    source: framework §"Agency deployment checklist"
+    document: framework
+    measurable: observed
+    note: >-
+      The TLS Deployment Guide narrows this: the requirement "has been
+      further defined as applying to all email transmitted between
+      Government organisations", and Implicit TLS is mandatory only between
+      SGE Restricted Group members. It is sender-side configuration either
+      way, so no external probe can establish it.
+
+      What is observed is the narrowed population: mail exchanged with
+      government organisations, from a per-message transport export. The
+      evaluator never returns a pass for this row, because such an export
+      records the protocol version negotiated and not the port or how the
+      session was established.
+
+  - id: SGE-DLP-01
+    title: Data Loss Prevention enforced
+    level: must
+    level_basis:
+      quote: "DLP must be enabled in line with your Agencies requirements under the NZISM"
+      where: "framework §10 checklist, DLP row. Also \"Agencies are required to review and apply their own DLP settings\" (§8), judged unambiguous but not needed to decide"
+    scope: organisation
+    # Two sentences from two places, quoted as printed. The second sits under
+    # the lead-in "The technologies required to be deployed are:", which
+    # grades nothing; the blocking it describes is NZISM 15.2.40.C.01, tagged
+    # MUST in NZISM v3.9.
+    text: >-
+      "DLP must be enabled in line with your Agencies requirements under the
+      NZISM" (deployment checklist). "Data Loss Prevention (DLP) for ensuring
+      messages marked with classifications higher than IN-CONFIDENCE are
+      blocked" (technologies required to be deployed).
+    source: framework §4 and §10 checklist; §8 "Enforce DLP in line with the PSR and NZISM requirements"
+    document: framework
+    measurable: no-instrument
+    note: >-
+      DLP is sender-side mail-flow policy; an export of the mail platform's
+      data-loss-prevention policies would show it, and nothing collected here
+      reads one. The requirement also carries two qualifiers no outside
+      instrument can settle: enforcement aligned with the agency's own NZISM
+      requirements, and specifically that messages marked above
+      IN-CONFIDENCE are blocked.
+
+  - id: SGE-DMARC-04
+    title: A DMARC reporting tool is in use
+    level: must
+    level_basis:
+      quote: "A DMARC reporting tool is required."
+      where: "framework §4 (a stand-alone sentence in the web framework); DMARC guide §4 step 1 (\"To adhere to this requirement a DMARC reporting tool is required.\")"
+      judgement: "\"Is required\", with no MoSCoW word. Judged unambiguous and recorded as must: it is a plain statement that the tool is necessary, not a vague \"will need to\", and the guide ties it to NZISM 15.2.36.C.04, which is tagged Must in NZISM v3.9. The framework sentence sits under the lead-in \"technologies required to be deployed\"; the lead-in is not what decides it."
+    scope: email-domain
+    text: >-
+      "A DMARC reporting tool is required." (technologies required to be
+      deployed) "To adhere to this requirement a DMARC reporting tool is
+      required." (DMARC guide, step 1, on reviewing DMARC reports)
+    source: framework §4; DMARC Deployment Guide v1.0 §4 step 1
+    document: framework
+    # Graded in one direction only. A record with no aggregate reporting
+    # address sends reports nowhere, so no tool can be receiving them. An
+    # address that is published shows where reports go, never that a tool
+    # processes them, so that row stays unmeasured and names the destination.
+    measurable: observed
+
+  - id: SGE-DKIM-02
+    title: Third-party sending platforms sign with the organisation's own domain
+    level: must
+    level_basis:
+      quote: "You must configure the platform to sign emails using your domain (e.g., d=…)."
+      where: "DKIM guide Appendix 1, Bulk Senders. The guide's example signing domain is elided here"
+    scope: organisation
+    text: >-
+      "You must configure the platform to sign emails using your domain (e.g.,
+      d=…)." The guide's example domain is elided.
+    source: DKIM Deployment Guide v1.0 Appendix 1, "Bulk Senders (e.g., CRMs, ESPs)"
+    document: dkim-guide
+    measurable: no-instrument
+    note: >-
+      The signing domain is carried in each message's DKIM-Signature header,
+      not in DNS, so it can be read only from mail each platform has actually
+      sent. The sentence sits in the guide's explanation of DKIM alignment,
+      and its purpose is that mail from bulk and CRM platforms passes DMARC
+      under the organisation's own domain.
+
+  - id: SGE-MTASTS-02
+    title: MTA-STS policy lists every MX host, with no wildcards
+    level: must
+    level_basis:
+      quote: "The MX entries must match all MX servers configured for your domain, including any alternate servers. Note: You must not use * wildcards in the mx records in your mta-sts.txt file."
+      where: "MTA-STS guide §4 step 2"
+    scope: email-domain
+    text: >-
+      "The MX entries must match all MX servers configured for your domain,
+      including any alternate servers." "You must not use * wildcards in the mx
+      records in your mta-sts.txt file."
+    source: MTA-STS Deployment Guide v1.1 §4 step 2
+    document: mta-sts-guide
+    # Both clauses are graded, from the policy file's mx lines and the MX
+    # records read in the same run, so this row can pass.
+    measurable: observed
+    note: >-
+      A policy entry naming a host the domain does not publish as an MX host is
+      reported and not graded: the sentence asks that every MX server be
+      listed, not that nothing else is.
+
+  - id: SGE-DLP-02
+    title: Classification keywords blocked on inbound and outbound mail
+    level: must
+    level_basis:
+      quote: "15.2.41.C.01 Agencies MUST configure email systems to reject, log and report inbound emails with protective markings indicating that the content of the email exceeds the accreditation of the receiving system."
+      where: "NZISM control quoted verbatim in the Keyword Blocking guide §3, with 15.2.40.C.01 (outbound, also MUST); both tagged Must in NZISM v3.9. The guide's own sentences (\"inbound email still needs to be blocked\", \"requirements is the applicable keywords are blocked\") carry no MoSCoW word and would not decide it alone"
+    scope: organisation
+    text: >-
+      NZISM 15.2.41.C.01: "Agencies MUST configure email systems to reject, log
+      and report inbound emails with protective markings indicating that the
+      content of the email exceeds the accreditation of the receiving system."
+      NZISM 15.2.40.C.01: "Agencies MUST configure systems to block any
+      outbound emails with a protective marking or endorsement indicating that
+      the content of the email exceeds the classification of the communication
+      path." The guide: "The NZISM and SGE Framework requirements is the
+      applicable keywords are blocked on inbound and outbound mail flows."
+    source: Keyword Blocking Deployment Guide v1.2 §3 (quoting NZISM 15.2.40.C.01 and 15.2.41.C.01, both MUST in NZISM v3.9) and §4
+    document: keyword-guide
+    measurable: no-instrument
+    note: >-
+      Blocking is mail-flow policy (transport rules, a data-loss-prevention
+      policy or an external gateway rule) and none of it is visible from
+      outside. An export of the transport rules would show it. SGE-DLP-01
+      reads the framework's outbound sentence; this is the guide's inbound
+      half, which the framework's own wording does not state.
+
+  - id: SGE-NED-SPF-01
+    title: Blank denying SPF record on non-email-enabled domains
+    level: must
+    level_basis:
+      quote: "Blank SPF records with a -all suffix must be configured on non-email enabled domains."
+      where: "SPF guide §3; §4.2 (\"each subdomain must have its own blank SPF record\"). The framework's \"Set every sub-domains' SPF record\" and \"needs to deny all senders\" are an imperative and a vague phrase, and do not decide"
+    scope: non-email-domain
+    text: >-
+      "Blank SPF records with a -all suffix must be configured on non-email
+      enabled domains." "SPF records do not inherit across subdomains so each
+      subdomain must have its own blank SPF record." The record is
+      "v=spf1 -all".
+    source: SPF Deployment Guide v1.0 §3 and §4.2; framework §9 "Securing non-email enabled domains" for the record value
+    document: spf-guide
+    measurable: observed
+    partial: >-
+      Which sub-domains exist. The names read are the ones that have appeared in
+      a public certificate, and that list leans away from the very names this
+      requirement is about, because a sub-domain needing a denying record is
+      usually one nobody serves web traffic on. So the count of names missing
+      the record is a floor, and the true number is higher.
+    note: >-
+      A sender policy does not carry down. A receiver checking mail that claims
+      to come from a sub-domain asks that sub-domain for a policy and stops
+      there, so the parent's own record, however strict, denies nobody on its
+      behalf. That is why the framework asks for a record on each one, and why
+      this cannot be read off the parent.
+
+  - id: SGE-NED-DKIM-01
+    title: Blank DKIM record on non-email-enabled domains
+    level: must
+    level_basis:
+      quote: "Blank DKIM records must be configured on non-email enabled domains."
+      where: "DKIM guide §3. The framework's \"Set every sub-domains' DKIM record\" is an imperative and does not decide"
+    scope: non-email-domain
+    text: >-
+      "Blank DKIM records must be configured on non-email enabled domains." The
+      record is "v=DKIM1; p=" — a key with no public key.
+    source: DKIM Deployment Guide v1.0 §3; framework §9 "Securing non-email enabled domains" for the record value
+    document: dkim-guide
+    measurable: observed
+    # A DNS wildcard: published, it answers for every selector beneath that has
+    # no record of its own, which is what "no mail from here is ever signed"
+    # needs to say. The evaluator compares this with the name the sweep read
+    # and refuses to grade a domain where they differ.
+    record: "*._domainkey.<domain>"
+    partial: >-
+      Which sub-domains exist. The names read are the ones that have appeared in
+      a public certificate, and that list leans away from the very names this
+      requirement is about, because a sub-domain needing a denying record is
+      usually one nobody serves web traffic on. So the count of names missing
+      the record is a floor, and the true number is higher.
+    note: >-
+      Publishing the empty key on a domain that does send signed mail is safe:
+      an explicit selector record takes precedence over a wildcard, so a live
+      selector keeps answering with its own key and every name nobody has
+      issued a key for answers "no key". A domain that sends no mail at all
+      needs only the wildcard.
+
+  - id: SGE-NED-DMARC-01
+    title: Rejecting DMARC record on non-email-enabled domains
+    level: must
+    level_basis:
+      quote: "All domains must have a p=reject DMARC policy."
+      where: "DMARC guide §3, applied to non-email domains by its §4 (\"The framework requires p=reject policies are applied to all non-mail-enabled domains\") and the framework §9 scope sentence. The rest of the framework's checklist row is SGE-NED-DMARC-R01"
+    scope: non-email-domain
+    # Only the reject clause has a sentence that says must. The alignment and
+    # reporting clauses of the same checklist row exist only as an imperative
+    # and an example record, so they are SGE-NED-DMARC-R01, at recommended.
+    text: >-
+      "All domains must have a p=reject DMARC policy." The DMARC guide applies
+      this to non-email domains, and the framework adds that the requirement
+      "remains even if the root level domain has SP=reject set".
+    source: DMARC Deployment Guide v1.0 §3 and §4 "Deploying DMARC on non-mail-enabled domains"; framework §9
+    document: dmarc-guide
+    measurable: observed
+    partial: >-
+      Whether every sub-domain rejects. The root domain's sub-domain policy tag
+      decides it for sub-domains that carry no DMARC record of their own. The
+      sub-domains read for a record of their own are the ones that have
+      appeared in a public certificate and show no sign of sending mail, so a
+      sub-domain outside that list is not seen, and every name read rejecting
+      cannot show that every sub-domain does.
+
+  - id: SGE-NED-DMARC-R01
+    title: Strict alignment and a reporting address on non-email-enabled domains
+    level: recommended
+    level_basis:
+      quote: "Set every sub-domains' DMARC record to \"V=DMARC1;p=reject; adkim-s; aspf=s; rua=mailto:<your dmarc report RUA email address>;\""
+      where: "framework §10 checklist, non-email DMARC row; §9 example record"
+      judgement: "A bare imperative (\"Set\") and an example record, with no MoSCoW word, so recommended. The p=reject clause of the same row has its own must sentence and is SGE-NED-DMARC-01."
+    scope: non-email-domain
+    text: >-
+      The framework's record for non-email domains sets strict alignment on
+      both SPF and DKIM and a reporting address: "These settings set the
+      alignment to strict for both SPF and DKIM". "The purpose of setting RUA
+      reports is to provide you the ability to check for any sources
+      attempting to spoof messages from those domains."
+    source: framework §9 "Securing non-email enabled domains" and §10 checklist
+    document: framework
+    # Graded in one direction only, like the other sub-domain rows, because
+    # the names read are a floor.
+    measurable: observed
+    partial: >-
+      Which sub-domains exist, and the ones that send mail. The names read are
+      the ones that have appeared in a public certificate, and only those that
+      show no sign of sending mail are read, so the count of names short of the
+      record is a floor. A sub-domain with no DMARC record of its own is read
+      through the organisational domain's record, which a receiver applies to
+      it.
+    note: >-
+      The framework's own example record for this requirement is printed as
+      "adkim-s", a hyphen where the tag syntax needs "adkim=s". Copied
+      literally it is not a valid tag and is ignored; do not reproduce the
+      typo.
+
+  # ── Recommendations ──────────────────────────────────────────────────
+  - id: SGE-DKIM-R01
+    title: 2048-bit RSA DKIM keys
+    level: recommended
+    level_basis:
+      quote: "The use of 2048-bit RSA keys are strongly recommended."
+      where: "DKIM guide §4.2"
+    scope: email-domain
+    text: >-
+      The use of 2048-bit RSA keys is strongly recommended. 1024-bit keys
+      may be reverted to on legacy systems if needed.
+    source: DKIM Deployment Guide v1.0 §4 and its FAQ
+    document: dkim-guide
+    measurable: observed
+    minimum_bits: 2048
+    note: >-
+      This is the only key-length statement in the whole SGE document set,
+      and it is a recommendation with an explicit legacy exemption. A
+      1024-bit DKIM key does not breach SGE. Grade it against the NZISM and
+      `data/baseline.yaml` instead, and say which bar the verdict came from.
+
+  - id: SGE-DMARC-R01
+    title: Strict DKIM alignment where the domain does not send bulk mail
+    level: recommended
+    level_basis:
+      quote: "adkim=s is recommended where domains are not involved with bulk mail sending."
+      where: "framework §8, DMARC; checklist \"Domains not used for bulk mailing should use the flag adkim=s\""
+    scope: email-domain
+    text: >-
+      adkim=s is recommended where domains are not involved with bulk mail
+      sending.
+    source: framework DMARC requirements; §"DKIM alignment within DMARC"
+    document: framework
+    measurable: observed
+
+  - id: SGE-DMARC-R02
+    title: Strict SPF alignment in the DMARC record
+    level: recommended
+    level_basis:
+      quote: "If you are enforcing strict alignment for SPF (recommended) then for DMARC aspf=s should be used."
+      where: "DMARC guide §4 step 2"
+    scope: email-domain
+    text: >-
+      "If you are enforcing strict alignment for SPF (recommended) then for
+      DMARC aspf=s should be used. If you require relaxed mode use aspf=r"
+    source: DMARC Deployment Guide v1.0 §4 step 2
+    document: dmarc-guide
+    measurable: observed
+    note: >-
+      Unlike SGE-DMARC-R01, the guide attaches no bulk-mail condition to this
+      recommendation, so relaxed SPF alignment is a recommendation unmet rather
+      than an unsettled one. It is never a breach: the guide itself offers
+      aspf=r where relaxed mode is required.
+
+  - id: SGE-DMARC-R03
+    title: DMARC tags the guide says not to use are absent
+    level: recommended
+    level_basis:
+      quote: "The following tags are not required and should not be used with the deployment of DMARC in line with the Framework: ruf, fo, pct, rf, ri."
+      where: "DMARC guide Appendix 2. The FAQ's \"Do not enable RUF reporting\" is an imperative and does not raise it"
+    scope: email-domain
+    text: >-
+      "The following tags are not required and should not be used with the
+      deployment of DMARC in line with the Framework: ruf, fo, pct, rf, ri."
+      On ruf: "No. Do not enable RUF reporting. If you have it enabled, it
+      should be removed from your DMARC record in DNS. The failure options (fo)
+      tag is associated with RUF and also should also be removed if present."
+    source: DMARC Deployment Guide v1.0 Appendix 2, "What tags should not be used?" and "Can I use DMARC Forensic (RUF) Reports?"
+    document: dmarc-guide
+    measurable: observed
+    # The five tags the evaluator reads. The guide's reasons: forensic reports
+    # carry message content; pct, rf and ri are deprecated in DMARCbis.
+    tags: [ruf, fo, pct, rf, ri]
+
+  - id: SGE-DMARC-R04
+    title: Mail failing DMARC goes to an administrator quarantine, never a junk folder
+    level: recommended
+    level_basis:
+      quote: "Emails which fail DMARC (either reject or quarantine) should never make it to the users' mailboxes."
+      where: "framework §8, Inbound messages and DMARC"
+    scope: organisation
+    text: >-
+      "Emails which fail DMARC (either reject or quarantine) should never make
+      it to the users' mailboxes. Where the sending domain policy has
+      p=quarantine these emails should not go to users' junk mail folders but
+      should go to the email platform quarantine for release only by
+      administrators (secops team) after review."
+    source: framework §8 "Inbound messages and DMARC"
+    document: framework
+    measurable: no-instrument
+    note: >-
+      Inbound handling is the receiving mail platform's own policy and cannot
+      be seen from outside. The DMARC guide shows one platform's default
+      anti-phishing settings, where p=quarantine goes to quarantine but
+      spoof intelligence goes to the junk folder, so platform defaults do not
+      settle it either way.
+
+  - id: SGE-DMARC-R05
+    title: Sub-domain policy tag set only on organisational domains
+    level: recommended
+    level_basis:
+      quote: "To avoid confusion sp= should only ever be set on organisation level domains."
+      where: "DMARC guide §4 step 2"
+    scope: non-email-domain
+    text: "To avoid confusion sp= should only ever be set on organisation level domains."
+    source: DMARC Deployment Guide v1.0 §4 step 2
+    document: dmarc-guide
+    # Fails a domain on any sub-domain publishing its own sp= tag; never
+    # passes, because the names read are a floor.
+    measurable: observed
+    partial: >-
+      Which sub-domains exist, and the ones that send mail. The names read are
+      the ones that have appeared in a public certificate, and only those that
+      show no sign of sending mail are read, so a sub-domain setting sp= that
+      is not among them is not seen.
+
+  - id: SGE-DMARC-R06
+    title: Bulk mail sent from a sub-domain separate from staff mail
+    level: recommended
+    level_basis:
+      quote: "The recommended solution is to have bulk mail senders operating from a different subdomain to end users"
+      where: "framework §8, DKIM alignment within DMARC"
+    scope: organisation
+    text: >-
+      "The recommended solution is to have bulk mail senders operating from a
+      different subdomain to end users, though it is understood changing
+      existing services to this could be disruptive."
+    source: framework §8 "DKIM alignment within DMARC"; DKIM Deployment Guide v1.0 Appendix 2 ("best practice")
+    document: framework
+    measurable: not-collected
+    awaiting: >-
+      which domains the organisation's bulk and CRM platforms send as is named
+      per domain in the DMARC aggregate reports its reporting service receives,
+      and no collector reads them; a sender policy that authorises a bulk
+      provider is an indicator, not evidence of where its mail comes from
+
+  - id: SGE-SPF-R01
+    title: No ptr mechanism and no overly broad ranges in SPF
+    level: recommended
+    level_basis:
+      quote: "Do not use ptr or overly broad IP ranges."
+      where: "SPF guide §4 step 6"
+      judgement: "A bare imperative with no MoSCoW word, under a best-practice heading, so recommended."
+    scope: email-domain
+    text: "Do not use ptr or overly broad IP ranges."
+    source: SPF Deployment Guide v1.0 §4 step 6, "Avoid Deprecated or Risky Mechanisms"
+    document: spf-guide
+    measurable: observed
+    partial: >-
+      The guide gives no size at which an address range becomes overly broad,
+      so that half is not graded; the ranges the record lists are reported so
+      a reader can judge them.
+
+  - id: SGE-SPF-R02
+    title: No legacy SPF2.0 records
+    level: recommended
+    level_basis:
+      quote: "If you have SPF2.0 type records these should be removed from DNS."
+      where: "SPF guide Appendix 2"
+    scope: email-domain
+    text: "If you have SPF2.0 type records these should be removed from DNS."
+    source: SPF Deployment Guide v1.0 Appendix 2, "Does the SGE project recommend SPF2.0/PRA?"
+    document: spf-guide
+    # A second v=spf1 record is reported on the row, not graded: that is a
+    # different sentence.
+    measurable: observed
+
+  - id: SGE-DKIM-R02
+    title: A distinct DKIM selector and key for each sending platform
+    level: recommended
+    level_basis:
+      quote: "When using multiple different platforms for sending emails, each platform should be configured with its own DKIM selector and associated DNS record(s)."
+      where: "DKIM guide Appendix 1. The next sentence, \"Do not use the same private key\", is an imperative and does not raise it"
+    scope: email-domain
+    text: >-
+      "When using multiple different platforms for sending emails, each
+      platform should be configured with its own DKIM selector and associated
+      DNS record(s). Do not use the same private key for DKIM signing across
+      multiple services."
+    source: DKIM Deployment Guide v1.0 Appendix 1, "Multiple Platforms, Multiple Selectors"
+    document: dkim-guide
+    # Fails a domain whose selector shares its key with a differently named
+    # selector; never passes.
+    measurable: observed
+    partial: >-
+      Which platforms sign the organisation's mail, and under which selectors,
+      is not visible from outside, and the probe tries a list of known selector
+      names. So a key shared between two selectors can be found, and every
+      platform having its own selector cannot be shown.
+
+  - id: SGE-MTASTS-R01
+    title: MTA-STS policy hosted securely and highly available
+    level: recommended
+    level_basis:
+      quote: "The mta-sts.txt file should be accessible in a highly available location."
+      where: "MTA-STS guide §4 step 2; Appendix 2 (\"should be hosted in a high security, highly available location\")"
+    scope: email-domain
+    text: >-
+      "The mta-sts.txt file should be accessible in a highly available
+      location." "The mta-sts.txt file should be hosted in a high security,
+      highly available location."
+    source: MTA-STS Deployment Guide v1.1 §4 step 2 and Appendix 2
+    document: mta-sts-guide
+    measurable: no-instrument
+    note: >-
+      One successful fetch shows the file was reachable at that moment. How
+      available and how well protected the hosting is sits with whoever hosts
+      it, and cannot be measured from a single outside request.
+
+  - id: SGE-DLP-R01
+    title: The recommended minimum classification keywords are blocked
+    level: recommended
+    level_basis:
+      quote: "It recommends, at a minimum, the following keywords be added to your DLP block lists"
+      where: "Keyword Blocking guide §3"
+    scope: organisation
+    text: >-
+      "It recommends, at a minimum, the following keywords be added to your
+      DLP block lists: [RESTRICTED], [SENSITIVE], [CONFIDENTIAL], [SECRET],
+      [TOPSECRET], [TOP SECRET], and [TOP-SECRET]. To allow for typing errors
+      each keyword is repeated with variations using {}, [}, and {]."
+    source: Keyword Blocking Deployment Guide v1.2 §3; SGE Keyword Blocking Scripts (text file)
+    document: keyword-guide
+    measurable: no-instrument
+    note: >-
+      The word list is in transport-rule configuration, which is not visible
+      from outside. The guide's published scripts create four rules (inbound
+      and outbound, message and attachment) and note that encrypted or
+      unsupported attachments are not scanned.
+
+  - id: SGE-TLS-R01
+    title: Unencrypted mail in and out is monitored
+    level: recommended
+    level_basis:
+      quote: "It is recommended email platform administrators review their TLS-RPT logs or TLS session logs to understand what email they are transmitting or receiving unencrypted."
+      where: "TLS guide §4.4. Appendix 1's \"Agencies will need to monitor their Mail Flow Reports\" is vague and does not raise it"
+    scope: organisation
+    text: >-
+      "It is recommended email platform administrators review their TLS-RPT
+      logs or TLS session logs to understand what email they are transmitting
+      or receiving unencrypted." Appendix 1: "Agencies will need to monitor
+      their Mail Flow Reports to confirm if they are sending or receiving email
+      via non-TLS channels."
+    source: TLS Deployment Guide §4.4 and Appendix 1
+    document: tls-guide
+    measurable: no-instrument
+    note: >-
+      A per-message transport export shows how much mail travelled without
+      TLS; whether anyone reviews it is a practice, and nothing outside the
+      team doing it can see that.
+
+  - id: SGE-TLS-R02
+    title: Where the organisation's systems cannot use TLS, it is raised as a risk and addressed
+    level: recommended
+    level_basis:
+      quote: "It is recommended where Agencies platforms do not support TLS, or where clients' platforms do not support TLS, this be raised as a security risk, and options to secure the platforms be considered."
+      where: "TLS guide Appendix 1; §4.4 (\"measures should be taken to address this\")"
+    scope: organisation
+    text: >-
+      "If it is your systems which do not support TLS, measures should be
+      taken to address this." "It is recommended where Agencies platforms do
+      not support TLS, or where clients' platforms do not support TLS, this be
+      raised as a security risk, and options to secure the platforms be
+      considered." On sending platforms: "it is strongly recommended you engage
+      with the supplier to find out why not, and when this will be resolved."
+    source: TLS Deployment Guide §4.2, §4.3, §4.4 and Appendix 1
+    document: tls-guide
+    measurable: no-instrument
+    note: >-
+      The condition can be measured (a gateway offering no TLS, or messages
+      in a transport export sent in clear) and SGE-TLS-01 reports it. The
+      response the guide recommends is a risk-register and supplier action,
+      which is not visible from outside.

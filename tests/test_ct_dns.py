@@ -1,0 +1,232 @@
+"""Certificate transparency paging, certificates, mail-authentication rows and the sub-domain rows.
+
+The transparency answers are synthetic issuance records with invented ids and
+times; no network is used.
+"""
+
+from __future__ import annotations
+
+import json
+from datetime import UTC, datetime
+from urllib.parse import parse_qs, urlparse
+
+import pytest
+
+from takestock import ctcache, dnsevidence
+from takestock.collectors import ct_dns
+
+NOW = datetime(2030, 6, 15, tzinfo=UTC)
+API = "https://ct.example.com/v1/issuances"
+
+
+def issuance(ident: str, names: list[str], not_before: str, not_after: str,
+             issuer: str = "Example CA") -> dict:
+    return {"id": ident, "dns_names": names, "not_before": not_before, "not_after": not_after,
+            "issuer": {"friendly_name": issuer, "name": f"C=ZZ, O={issuer}"},
+            "pubkey": {"type": "ecdsa", "bit_length": 256, "curve": "P-256"},
+            "cert_sha256": "0" * 64, "pubkey_sha256": "1" * 64}
+
+
+PAGES = {
+    "": [issuance("100", ["www.example.com", "*.example.com"],
+                  "2030-01-01T00:00:00Z", "2030-04-01T00:00:00Z"),
+         issuance("101", ["www.example.com"], "2030-04-01T00:00:00Z", "2030-06-20T00:00:00Z",
+                  "Other CA")],
+    "101": [issuance("102", ["api.example.com", "api.example.net"],
+                     "2030-02-01T00:00:00Z", "2031-02-01T00:00:00Z")],
+    "102": [],
+}
+
+
+@pytest.fixture(autouse=True)
+def _quiet(monkeypatch):
+    monkeypatch.setattr(ct_dns, "token", lambda: "")
+    monkeypatch.setattr(ct_dns, "CT_PAGE_PAUSE_SECONDS", 0.0)
+    monkeypatch.setattr(ct_dns, "dig", lambda name, rtype="A", short=True:
+                        ["192.0.2.80"] if rtype == "A" and name.startswith("www") else [])
+
+
+def serve(pages: dict, statuses: dict | None = None):
+    asked: list[str] = []
+
+    def http_json(url, timeout=25, bearer="", meta=None):
+        q = parse_qs(urlparse(url).query)
+        after = (q.get("after") or [""])[0]
+        asked.append(after)
+        if statuses and after in statuses:
+            meta.update(statuses[after])
+            return {"code": "rate_limited"}
+        if meta is not None:
+            meta["status"] = 200
+        return pages.get(after)
+    return http_json, asked
+
+
+def test_pages_are_read_to_the_end_and_kept(monkeypatch, tmp_path):
+    fake, asked = serve(PAGES)
+    monkeypatch.setattr(ct_dns, "http_json", fake)
+    read = ct_dns._ct_names("example.com", tmp_path, API)
+    assert read.ok and read.pages == 3 and read.records == 3 and asked == ["", "101", "102"]
+    assert sorted(read.names) == ["api.example.com", "example.com", "www.example.com"]
+    www = read.names["www.example.com"]
+    assert www["issuers"] == {"Example CA", "Other CA"} and www["current"]["id"] == "101"
+    raw = json.loads((tmp_path / ctcache.raw_name("example.com")).read_text())
+    pages = json.loads((tmp_path / ctcache.pages_name("example.com")).read_text())
+    assert len(raw) == 3 and pages["exhausted"] is True and pages["last_id"] == "102"
+
+
+def test_endpoint_and_certificate_rows(monkeypatch):
+    fake, _ = serve(PAGES)
+    monkeypatch.setattr(ct_dns, "http_json", fake)
+    read = ct_dns._ct_names("example.com", None, API)
+    rows = ct_dns._endpoint_assets("example.com", read.names, "2030-06-15", NOW, lambda m: None)
+    www = next(a for a in rows if a.name == "endpoint www.example.com")
+    assert www.extra["ip_stack"] == "ipv4-only" and www.data_state == "discovery"
+    cert = next(a for a in rows if a.name == "certificate www.example.com")
+    assert cert.signatures == ["ecdsa_p256"] and cert.extra["issuer"] == "Other CA"
+    assert cert.flags == ["renewal-overdue"]  # 80-day certificate, 5 days left
+    api = next(a for a in rows if a.name == "endpoint api.example.com")
+    assert api.extra["ip_stack"] == "unresolved"
+
+
+@pytest.mark.parametrize("not_after, flag", [
+    ("2030-06-01T00:00:00Z", "expired"),
+    ("2030-06-25T00:00:00Z", "expiry-soon"),
+    ("2031-06-25T00:00:00Z", None),
+])
+def test_long_lived_certificate_expiry(not_after, flag):
+    a = ct_dns._cert_asset("www.example.com",
+                           issuance("1", ["www.example.com"], "2029-06-01T00:00:00Z", not_after),
+                           NOW)
+    assert a is not None and (a.flags == [flag] if flag else a.flags == [])
+    assert ct_dns._cert_asset("x.example.com", {"not_after": ""}, NOW) is None
+
+
+def test_a_rate_limit_parks_the_domain_and_resume_finishes_it(monkeypatch, tmp_path):
+    fake, asked = serve(PAGES, statuses={"101": {"status": 429,
+                                                 "headers": {"retry-after": "30"}}})
+    monkeypatch.setattr(ct_dns, "http_json", fake)
+    clock = [1000.0]
+    monkeypatch.setattr(ct_dns, "_now", lambda: clock[0])
+    waited: list[float] = []
+    monkeypatch.setattr(ct_dns, "_wait", lambda s: (waited.append(s), clock.__setitem__(0, clock[0] + s)))
+    monkeypatch.setattr(dnsevidence, "capture_subdomains", lambda *a, **k: pytest.fail("no sweep"))
+    deferral = ct_dns.CTDeferral()
+    target = {"discovery": {"domains": ["example.com", "example.net"]},
+              "dns": {"ct_search_api": API}}
+    assets, failures, reused = ct_dns.collect(target, tmp_path, NOW, deferral=deferral)
+    assert assets == [] and failures == [] and reused == []
+    assert [c.domain for c in deferral.pending] == ["example.com", "example.net"]
+    assert deferral.retry_after_seconds == [30.0]
+
+    fake2, _ = serve({**PAGES, "": PAGES[""]})
+    monkeypatch.setattr(ct_dns, "http_json", fake2)
+    more, more_failures = ct_dns.resume(deferral)
+    assert waited == [30.0] and more_failures == []
+    assert {a.host for a in more if a.data_state == "discovery"} >= {"api.example.com"}
+    assert deferral.record()["outcome"] == "every deferred lookup was resumed"
+
+
+def test_the_page_ceiling_is_reported(monkeypatch):
+    endless = {str(i): [issuance(str(i + 1), ["a.example.com"], "2030-01-01T00:00:00Z",
+                                 "2031-01-01T00:00:00Z")] for i in range(1, 10)}
+    endless[""] = [issuance("1", ["a.example.com"], "2030-01-01T00:00:00Z",
+                            "2031-01-01T00:00:00Z")]
+    fake, _ = serve(endless)
+    monkeypatch.setattr(ct_dns, "http_json", fake)
+    monkeypatch.setattr(ct_dns, "CT_MAX_PAGES", 3)
+    read = ct_dns._ct_names("example.com", None, API)
+    assert not read.ok and "3-page ceiling" in read.partial and read.names
+
+
+def test_an_error_page_with_nothing_read_is_a_failure(monkeypatch):
+    fake, _ = serve({"": {"code": "not_allowed"}})
+    monkeypatch.setattr(ct_dns, "http_json", fake)
+    read = ct_dns._ct_names("example.com", None, API)
+    assert "returned error 'not_allowed'" in read.failure
+
+
+def test_no_endpoint_means_no_transparency_read(monkeypatch, tmp_path):
+    from takestock import config
+    config.set_workspace(tmp_path)
+    monkeypatch.setattr(ct_dns, "http_json", lambda *a, **k: pytest.fail("asked"))
+    assets, failures, _ = ct_dns.collect({"discovery": {"domains": ["example.com"]}})
+    assert assets == [] and "no certificate-transparency search endpoint" in failures[0]
+
+
+DNS = {
+    ("example.com", "MX"): ["10 mx1.example.com."],
+    ("example.com", "TXT"): ['"v=spf1 ip4:192.0.2.0/24 ~all"', '"v=spf1 -all"',
+                             '"spf2.0/pra -all"', '"site-verification=abc"'],
+    ("_dmarc.example.com", "TXT"): ['"v=DMARC1; p=reject; sp=none; rua=mailto:d@example.com"'],
+    ("_mta-sts.example.com", "TXT"): ['"v=STSv1; id=1"'],
+    ("_smtp._tls.example.com", "TXT"): ['"v=TLSRPTv1; rua=mailto:t@example.com"'],
+    ("s1._domainkey.example.com", "CNAME"): ["s1.dkim.example.net."],
+    ("s1.dkim.example.net", "TXT"): ['"v=DKIM1; k=rsa; p=' + "A" * 216 + '"'],
+    ("s2._domainkey.example.com", "TXT"): ['"v=DKIM1; k=rsa; p=' + "B" * 392 + '"'],
+}
+
+
+def test_mail_authentication_rows(monkeypatch):
+    monkeypatch.setattr(ct_dns, "dig", lambda n, t="A", short=True: DNS.get((n, t), []))
+    monkeypatch.setattr(ct_dns, "http_get",
+                        lambda url, *a, **k: "version: STSv1\nmode: enforce\nmx: mx1.example.com\n")
+    rows = {a.protocol: a for a in ct_dns._email_assets("example.com", NOW, ["s1", "s2", "s3"])}
+    assert rows["mx"].extra["records"] == ["10 mx1.example.com."]
+    assert set(rows["spf"].flags) == {"softfail-all", "duplicate-spf", "legacy-spf2"}
+    assert set(rows["dmarc"].flags) == {"dmarc-reject", "subdomains-unprotected"}
+    assert rows["mta-sts"].flags == ["enforce"] and rows["mta-sts"].extra["mx"] == ["mx1.example.com"]
+    assert rows["tls-rpt"].notes == "reports to mailto:t@example.com"
+    dkim = [a for a in ct_dns._email_assets("example.com", NOW, ["s1", "s2"])
+            if a.protocol == "dkim"]
+    assert [(a.extra["selector"], a.flags) for a in dkim] == [("s1", ["weak-key-1024"]), ("s2", [])]
+    assert dkim[0].notes.endswith("via s1.dkim.example.net")
+
+
+def test_no_mta_sts_or_tls_rpt_record(monkeypatch):
+    monkeypatch.setattr(ct_dns, "dig", lambda n, t="A", short=True: [])
+    monkeypatch.setattr(ct_dns, "http_get", lambda url, *a, **k: "__ERROR__ refused")
+    rows = {a.protocol: a for a in ct_dns._email_assets("example.com", NOW, [])}
+    assert rows["mta-sts"].flags == ["no-mta-sts-record"]
+    assert rows["mta-sts"].extra["policy_reachable"] is False
+    assert rows["tls-rpt"].flags == ["no-tls-reporting"]
+    assert "spf" not in rows and "dmarc" not in rows
+
+
+def _sub(name: str, *, enabled: bool = False, spf: bool = True, dkim: bool = True,
+         dmarc: str = "", read: bool = True) -> dict:
+    return {"name": name, "email_enabled": enabled, "read": read, "exists": True,
+            "spf_conformant": spf, "dkim_conformant": dkim, "dmarc_record": dmarc}
+
+
+def test_sub_domain_rows_from_a_sweep():
+    cap = {
+        "resolvers": ["192.0.2.53"], "tries": 3, "captured_at": "2030-06-15T00:00:00Z",
+        "control": {"name": "x", "rcode": "NXDOMAIN", "usable": True},
+        "names_offered": 5, "names_dropped_by_cap": 0,
+        "wildcard_spf": {"name": "*.example.com", "record": "v=spf1 -all", "rcode": "NOERROR",
+                         "agreed": True},
+        "wildcard_dkim": {"name": "*._domainkey.example.com", "record": "", "rcode": "NXDOMAIN",
+                          "agreed": True},
+        "subdomains": [
+            _sub("a.example.com"),
+            _sub("b.example.com", spf=False, dmarc="v=DMARC1; p=reject; sp=reject"),
+            _sub("c.example.com", enabled=True, spf=False, dkim=False),
+            _sub("d.example.com", read=False),
+        ],
+    }
+    rows = {a.protocol: a for a in ct_dns.ned_rows("example.com", cap, NOW)}
+    spf, dkim, dmarc = rows["ned-spf"], rows["ned-dkim"], rows["ned-dmarc"]
+    assert spf.extra["names_in_scope"] == 2 and spf.extra["names_without_record"] == ["b.example.com"]
+    assert spf.extra["wildcard_conformant"] and not dkim.extra["wildcard_conformant"]
+    assert spf.extra["names_email_enabled"] == ["c.example.com"]
+    assert spf.extra["names_unread"] == ["d.example.com"]
+    assert dmarc.extra["names_with_sp_tag"] == ["b.example.com"]
+
+
+def test_only_the_domain_and_names_beneath_it_are_kept(monkeypatch):
+    fake, _ = serve({"": [issuance("1", ["widgets.test", "www.widgets.test", "notwidgets.test"],
+                                   "2030-01-01T00:00:00Z", "2031-01-01T00:00:00Z")], "1": []})
+    monkeypatch.setattr(ct_dns, "http_json", fake)
+    read = ct_dns._ct_names("widgets.test", None, API)
+    assert sorted(read.names) == ["widgets.test", "www.widgets.test"]

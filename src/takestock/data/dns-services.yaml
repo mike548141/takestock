@@ -1,0 +1,37 @@
+# Public services the DNS, mail-authentication and certificate-transparency
+# collectors use when a target profile names none of its own. A target
+# profile's `dns:` mapping overrides any key here.
+#
+# Placeholder: no public service is recorded yet, so each collector falls back
+# as described below. Fill a key in a workspace copy (`data/dns-services.yaml`
+# in the workspace) or in the target profile.
+schema: 1
+
+# Recursive resolvers to ask, by address. Two or more independent resolvers let
+# a finding be corroborated and let DNSSEC validation be confirmed by more than
+# one party. Empty: the machine's own resolver is asked, alone.
+resolvers: []
+
+# A public zone deliberately signed wrongly, published for testing whether a
+# resolver validates DNSSEC: a validating resolver answers SERVFAIL for it.
+# Empty: no resolver's validation can be confirmed, and the DNSSEC collector
+# records that instead of a reading.
+validation_control: ""
+
+# A certificate-transparency search endpoint that answers
+# `<endpoint>?domain=<name>&include_subdomains=true&expand=dns_names&expand=issuer&expand=pubkey`
+# with a JSON list of issuances, paged by `after=<id>`. Empty: certificate
+# transparency is not read, and the run records that as a coverage gap.
+ct_search_api: ""
+
+# Certificate authority name, lower case, as certificate-transparency records
+# give it -> the issuer domain(s) that authority names in CAA records
+# (RFC 8659). An issuer missing here is reported as unmapped, never as
+# unauthorised.
+caa_issuers: {}
+
+# DNS namespaces a cloud provider documents as claimable by another customer
+# once the original resource is deleted (a "dangling" alias then hands that
+# customer the traffic). Suffix -> service name. A target outside these is
+# reported without that claim.
+takeover_namespaces: {}
