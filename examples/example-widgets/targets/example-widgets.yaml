@@ -1,0 +1,80 @@
+# Target profile for Example Widgets Ltd, a fictional manufacturer.
+#
+# A target profile says what takestock should collect for one organisation.
+# This one is a worked example: every name is a reserved domain (RFC 2606,
+# RFC 6761) and every address is from a documentation range (RFC 5737,
+# RFC 3849), so nothing here is a real host.
+#
+# Run it from the repository root, offline (sends nothing over the network):
+#
+#   takestock observe example-widgets --offline \
+#       --workspace examples/example-widgets --inbox examples/example-widgets/exports
+#
+# Without --offline the passive collectors read public DNS for the domains
+# below. Three public services are optional and ship unconfigured: a
+# certificate-transparency search endpoint (`ct_search_api`), a DNSSEC
+# validation control zone (`validation_control`) and independent resolvers
+# (`resolvers`). Set them under `dns:` here, or in the workspace's
+# data/dns-services.yaml. Until then each one is recorded as a coverage gap
+# ("not measured: ..."), not a failure, so the run still exits 0 or 1. A
+# service that is configured and then errors is a failure, and exits 2.
+
+name: example-widgets
+
+organisation:
+  name: Example Widgets Ltd
+
+# Left to the defaults: a neutral palette and the system font. Any of
+# `palette`, `palette_dark`, `font`, `mono`, `logo` and `name` may be set here.
+branding: {}
+
+discovery:
+  # Domains whose certificates and names are looked up.
+  domains: [example.com, example.net]
+  # Domains whose mail-authentication records (SPF, DKIM, DMARC, MTA-STS,
+  # TLS-RPT) are read and graded against Secure Government Email.
+  email_domains: [example.com, example.net]
+
+# Active probes run only with `--scan`, and only while this record is
+# complete. It is a record of who authorised what, not a technical control.
+authorisation:
+  scope: >-
+    Loopback addresses, the documentation ranges 192.0.2.0/24, 198.51.100.0/24,
+    203.0.113.0/24 and 2001:db8::/32, and names under example.test. Nothing else.
+  authorised_by: Example Widgets Ltd, IT manager (a fictional person)
+  date: "2030-01-31"
+
+scan_targets:
+  # The organisation's own published web and mail endpoints.
+  tls_443: [www.example.test, shop.example.test]
+  mail_self: [mail.example.test]
+  # Remote-access gateway: the name is reported, the address is probed.
+  vpn_gateways:
+    - {host: vpn.example.test, ip: 203.0.113.10}
+  # Inbound mail is filtered by an outside provider before it arrives.
+  smtp_25:
+    - host: mx1.example.test
+      service: The organisation's own mail exchanger
+  # SSH reachable from the internet.
+  ssh_22: [203.0.113.22]
+
+# The cleartext check: these ports, on every published host above. Ports
+# where TLS is always on (465, 993) are also given a TLS handshake.
+plaintext_ports: ["21/tcp", "80/tcp", "110/tcp", "465/tcp", "993/tcp"]
+
+# Supplied exports (read from the inbox; see --inbox):
+#   inbox/ssh-audit/  ssh-audit JSON, one file per internal host
+#   inbox/dns-zones/  zone files exported from the DNS host
+#   inbox/winrm-config.csv     WinRM service settings, one row per Windows host
+#   inbox/netdev-controls.csv  network device encryption controls, one row each
+ssh_inbox:
+  dir: inbox/ssh-audit
+
+# What is planned for a system, and whether its vendor still supports it.
+# Each entry is a regular expression matched against a row's host or name.
+lifecycle:
+  migration_strategy:
+    retire: ['^build-01\.example\.test$']
+  support_status:
+    end-of-support:
+      - {match: '^build-01\.example\.test$', ends: "2029-12-31"}

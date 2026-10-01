@@ -52,6 +52,31 @@ def test_a_workspace_data_file_overrides_the_bundled_one(tmp_path):
     assert config.load_baseline() == {"tls_versions": {"TLSv1.3": "strong"}}
 
 
+def test_a_data_folder_in_the_current_directory_is_never_read(tmp_path, monkeypatch):
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "baseline.yaml").write_text("tls_versions: {}\n")
+    monkeypatch.chdir(tmp_path)
+    assert config.explicit_workspace() is None
+    assert config.workspace_root() == tmp_path.resolve()
+    assert config.data_file("baseline.yaml") == config.BUNDLED_DATA_DIR / "baseline.yaml"
+
+
+def test_a_data_folder_is_read_when_the_environment_names_the_workspace(tmp_path, monkeypatch):
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "baseline.yaml").write_text("tls_versions: {}\n")
+    monkeypatch.setenv(config.ENV_VAR, str(tmp_path))
+    assert config.data_file("baseline.yaml") == tmp_path.resolve() / "data" / "baseline.yaml"
+
+
+def test_the_inbox_override_beats_the_environment(tmp_path, monkeypatch):
+    monkeypatch.setenv(config.INBOX_ENV_VAR, str(tmp_path / "env"))
+    config.set_inbox(tmp_path / "cli")
+    assert config.inbox_dir() == (tmp_path / "cli").resolve()
+    assert config.inbox_path("inbox/x.csv") == (tmp_path / "cli").resolve() / "x.csv"
+    config.set_inbox(None)
+    assert config.inbox_dir() == (tmp_path / "env").resolve()
+
+
 def test_a_missing_data_file_names_the_bundled_location(tmp_path):
     config.set_workspace(tmp_path)
     assert config.data_file("absent.yaml") == config.BUNDLED_DATA_DIR / "absent.yaml"

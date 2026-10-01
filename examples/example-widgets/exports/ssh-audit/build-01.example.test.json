@@ -1,0 +1,49 @@
+{
+  "banner": {
+    "raw": "SSH-2.0-OpenSSH_7.4",
+    "software": "OpenSSH_7.4",
+    "protocol": "2.0"
+  },
+  "target": "build-01.example.test:22",
+  "kex": [
+    {
+      "algorithm": "curve25519-sha256"
+    },
+    {
+      "algorithm": "diffie-hellman-group14-sha1"
+    },
+    {
+      "algorithm": "diffie-hellman-group1-sha1"
+    }
+  ],
+  "key": [
+    {
+      "algorithm": "ssh-rsa"
+    },
+    {
+      "algorithm": "ecdsa-sha2-nistp256"
+    }
+  ],
+  "enc": [
+    {
+      "algorithm": "aes128-ctr"
+    },
+    {
+      "algorithm": "aes256-ctr"
+    },
+    {
+      "algorithm": "aes128-cbc"
+    },
+    {
+      "algorithm": "3des-cbc"
+    }
+  ],
+  "mac": [
+    {
+      "algorithm": "hmac-sha2-256"
+    },
+    {
+      "algorithm": "hmac-sha1"
+    }
+  ]
+}

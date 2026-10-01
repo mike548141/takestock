@@ -1,0 +1,15 @@
+# Decisions Example Widgets Ltd (a fictional manufacturer) has made about its
+# own assets. They are checked before the generic rules that ship with
+# takestock, and every asset they match is marked `decided` rather than
+# `proposed`.
+
+decisions:
+  - match:
+      host_pattern: '^build-01\.example\.test$'
+      protocol: ssh
+    disposition: accept-replacement-planned
+    reason: >
+      The build server is being replaced by a hosted build service, so its SSH
+      settings are left as they are until it is switched off.
+    until: the hosted build service runs every build
+    review: "2030-06"

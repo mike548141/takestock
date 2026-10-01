@@ -1,0 +1,5 @@
+device,device_class,control,state,algorithms,key_custody,vendor,peer,site
+core-sw-01.example.test,switch,ssh-mgmt,enabled,curve25519-sha256;aes256-ctr;hmac-sha2-256-etm@openssh.com;ssh-ed25519,device,Example Networks,,head-office
+core-sw-01.example.test,switch,snmp,enabled,,device,Example Networks,,head-office
+edge-fw-01.example.test,firewall,ipsec,enabled,ike_encryption=aes-gcm-256;ike_dh=19;ike_prf=hmac-sha2-256,device,Example Networks,warehouse-fw-01.example.test,head-office
+wifi-ap-01.example.test,wireless,wifi,enabled,ccmp-128,device,Example Networks,,warehouse

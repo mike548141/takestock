@@ -36,5 +36,7 @@ def _isolated_workspace(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delenv(config.ENV_VAR, raising=False)
     monkeypatch.delenv(config.INBOX_ENV_VAR, raising=False)
     config.set_workspace(None)
+    config.set_inbox(None)
     yield
     config.set_workspace(None)
+    config.set_inbox(None)

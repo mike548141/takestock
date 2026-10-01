@@ -20,6 +20,11 @@ Two passive readings, neither of which touches the organisation's hosts:
 Search services limit how often they may be asked. When one says "wait",
 the run can park the remaining domains in a :class:`CTDeferral`, let other
 collectors run, and finish them with :func:`resume`.
+
+When no search endpoint is configured, transparency is simply not read: the
+failures list then carries a :class:`~takestock.coverage.Gap` saying so
+(:func:`not_configured_gap`) rather than a failure, because nothing went
+wrong. An endpoint that is configured and does not answer is a failure.
 """
 
 from __future__ import annotations
@@ -35,7 +40,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-from .. import ctcache, dnsevidence, roles
+from .. import coverage, ctcache, dnsevidence, roles
 from ..model import CryptoAsset, cert_expiry_flag, register_informational_prefixes
 from ..util import (
     cert_signature_token,
@@ -198,6 +203,21 @@ def _ct_fetch(url: str, bearer: str, note: Progress,
             note(f"      … no response (attempt {attempt}/{attempts}); retrying in {wait:g}s")
             sleep(wait)
     return payload, meta
+
+
+def not_configured_gap(domains: int) -> coverage.Gap:
+    """The gap for a run with no certificate-transparency endpoint configured."""
+    return coverage.gap(
+        coverage.COULD_NOT_TEST,
+        "not measured: no certificate-transparency search endpoint is configured "
+        "(`ct_search_api` in data/dns-services.yaml or the target's `dns:` block), so no "
+        f"certificate or name was read from the logs for {domains} domain(s)",
+        impact_kind=coverage.CHANGES_CONCLUSION,
+        impact=("Certificates and published names known only from the logs are missing, so "
+                "an endpoint absent from this observation may simply not have been looked "
+                "for."),
+        harvest="Configure a certificate-transparency search endpoint and run again.",
+        nature=coverage.NO_DATA)
 
 
 def failure_gap(failures: list[str]) -> str:
@@ -478,10 +498,7 @@ def collect(
 
     ct_domains = list(disc.get("domains", []) or [])
     if ct_domains and not api:
-        failures.append("ct_dns: no certificate-transparency search endpoint is configured "
-                        "(`ct_search_api` in data/dns-services.yaml or the target's `dns:` "
-                        f"block), so no certificate or name was read for {len(ct_domains)} "
-                        "domain(s)")
+        failures.append(not_configured_gap(len(ct_domains)))
         ct_domains = []
     for domain in ct_domains:
         cached = (None if refresh or observations is None

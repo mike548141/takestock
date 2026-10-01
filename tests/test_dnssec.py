@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 import pytest
 from dnsfake import RESOLVERS, dig_text, table_reader
 
+from takestock import coverage
 from takestock.collectors import dnssec
 
 NOW = datetime(2030, 6, 15, tzinfo=UTC)
@@ -100,9 +101,12 @@ def test_an_unsigned_zone_is_weak():
     assert assets[0].verdict == "weak" and "dnssec-unsigned" in assets[0].flags
 
 
-def test_no_control_zone_means_no_reading():
+def test_no_control_zone_is_a_gap_not_a_failure():
     assets, failures = _collect(_signed_zone(), control="")
-    assert assets == [] and "no validation control zone is configured" in failures[0]
+    (gap,) = failures
+    assert assets == [] and isinstance(gap, coverage.Gap)
+    assert gap.startswith("not measured: no DNSSEC validation control zone is configured")
+    assert coverage.kind_of(gap) == coverage.COULD_NOT_TEST
 
 
 def test_resolvers_that_do_not_validate_are_refused():
@@ -111,6 +115,7 @@ def test_resolvers_that_do_not_validate_are_refused():
         table[(CONTROL, "SOA", r, False)] = dig_text("NOERROR")
     assets, failures = _collect(table)
     assert assets == [] and "no resolver rejected" in failures[0]
+    assert not isinstance(failures[0], coverage.Gap)
 
 
 def test_one_validator_is_uncorroborated():

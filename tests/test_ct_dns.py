@@ -12,7 +12,7 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-from takestock import ctcache, dnsevidence
+from takestock import coverage, ctcache, dnsevidence
 from takestock.collectors import ct_dns
 
 NOW = datetime(2030, 6, 15, tzinfo=UTC)
@@ -146,12 +146,25 @@ def test_an_error_page_with_nothing_read_is_a_failure(monkeypatch):
     assert "returned error 'not_allowed'" in read.failure
 
 
-def test_no_endpoint_means_no_transparency_read(monkeypatch, tmp_path):
+def test_a_configured_endpoint_that_errors_is_a_failure_not_a_gap(monkeypatch):
+    fake, _ = serve({"": {"code": "not_allowed"}})
+    monkeypatch.setattr(ct_dns, "http_json", fake)
+    target = {"discovery": {"domains": ["example.com"]}, "dns": {"ct_search_api": API}}
+    assets, failures, _ = ct_dns.collect(target, None, NOW)
+    (failure,) = failures
+    assert assets == [] and "returned error 'not_allowed'" in failure
+    assert not isinstance(failure, coverage.Gap)
+
+
+def test_no_endpoint_is_a_gap_not_a_failure(monkeypatch, tmp_path):
     from takestock import config
     config.set_workspace(tmp_path)
     monkeypatch.setattr(ct_dns, "http_json", lambda *a, **k: pytest.fail("asked"))
     assets, failures, _ = ct_dns.collect({"discovery": {"domains": ["example.com"]}})
-    assert assets == [] and "no certificate-transparency search endpoint" in failures[0]
+    (gap,) = failures
+    assert assets == [] and isinstance(gap, coverage.Gap)
+    assert gap.startswith("not measured: no certificate-transparency search endpoint")
+    assert coverage.kind_of(gap) == coverage.COULD_NOT_TEST
 
 
 DNS = {

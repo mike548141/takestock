@@ -1,0 +1,40 @@
+{
+  "banner": {
+    "raw": "SSH-2.0-OpenSSH_9.9",
+    "software": "OpenSSH_9.9",
+    "protocol": "2.0"
+  },
+  "target": "files-01.example.test:22",
+  "kex": [
+    {
+      "algorithm": "mlkem768x25519-sha256"
+    },
+    {
+      "algorithm": "sntrup761x25519-sha512"
+    },
+    {
+      "algorithm": "curve25519-sha256"
+    }
+  ],
+  "key": [
+    {
+      "algorithm": "ssh-ed25519"
+    }
+  ],
+  "enc": [
+    {
+      "algorithm": "chacha20-poly1305@openssh.com"
+    },
+    {
+      "algorithm": "aes256-gcm@openssh.com"
+    }
+  ],
+  "mac": [
+    {
+      "algorithm": "hmac-sha2-256-etm@openssh.com"
+    },
+    {
+      "algorithm": "hmac-sha2-512-etm@openssh.com"
+    }
+  ]
+}

@@ -24,6 +24,11 @@ Each domain lands in one state:
 
 Algorithm and digest strength follow the DNSSEC algorithm implementation
 requirements (RFC 8624 and its successors).
+
+With no validation control configured, no domain is graded and the failures
+list carries a :class:`~takestock.coverage.Gap` saying so
+(:func:`not_configured_gap`), because nothing went wrong. A control that is
+configured and that no resolver rejects is a failure.
 """
 
 from __future__ import annotations
@@ -36,7 +41,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from .. import dnsevidence, roles
+from .. import coverage, dnsevidence, roles
 from ..digresponse import RR, Response, norm, parse, query
 from ..model import CryptoAsset, register_informational_prefixes
 from ..util import now_date
@@ -382,6 +387,21 @@ def assess(domain: str, reader: Reader, resolvers: tuple[str, ...],
         })
 
 
+def not_configured_gap(domains: int) -> coverage.Gap:
+    """The gap for a run with no validation control zone configured."""
+    return coverage.gap(
+        coverage.COULD_NOT_TEST,
+        "not measured: no DNSSEC validation control zone is configured "
+        "(`validation_control` in data/dns-services.yaml or the target's `dns:` block), so "
+        f"no resolver could be shown to validate and the signing of {domains} domain(s) "
+        "was not graded",
+        impact_kind=coverage.CHANGES_CONCLUSION,
+        impact=("Whether these domains are signed, and whether a forged answer for them "
+                "would be refused, is not read."),
+        harvest="Configure a validation control zone and run again.",
+        nature=coverage.NO_DATA)
+
+
 def collect(target: dict, ref_time: datetime | None = None,
             reader: Reader | None = None,
             resolvers: tuple[str, ...] | None = None,
@@ -400,10 +420,7 @@ def collect(target: dict, ref_time: datetime | None = None,
     if control_zone is None:
         control_zone = str(dnsevidence.services(target).get("validation_control") or "")
     if not control_zone:
-        return [], ["dnssec: no validation control zone is configured "
-                    "(`validation_control` in data/dns-services.yaml or the target's "
-                    "`dns:` block), so no resolver could be shown to validate and no "
-                    "domain's signing was graded"]
+        return [], [not_configured_gap(len(population))]
     now = ref_time or datetime.now(UTC)
     control = validating_resolvers(reader, resolvers, control_zone)
     if not any(c["validating"] for c in control.values()):
@@ -417,4 +434,5 @@ def collect(target: dict, ref_time: datetime | None = None,
 
 
 __all__ = ["RR", "collect", "domains", "assess", "classify", "denial", "ds_records",
-           "rsa_modulus_bits", "rsa_token", "algorithm_tokens", "validating_resolvers"]
+           "rsa_modulus_bits", "rsa_token", "algorithm_tokens", "validating_resolvers",
+           "not_configured_gap"]

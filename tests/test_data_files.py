@@ -82,6 +82,7 @@ def test_a_capability_row_exists_only_for_a_documented_branch():
 
 
 def test_the_cli_prints_its_version(capsys):
-    assert cli.main([]) == 0
+    assert cli.main(["version"]) == 0
     assert f"takestock {__version__}" in capsys.readouterr().out
+    assert cli.main([]) == 2
     assert cli.main(["observe"]) == 2

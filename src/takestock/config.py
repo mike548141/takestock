@@ -15,6 +15,12 @@ The workspace is chosen, in order, by :func:`set_workspace` (the CLI's
 ``--workspace``), the ``TAKESTOCK_HOME`` environment variable, or the current
 directory. Keeping the workspace outside the package means the tool can be
 installed once and pointed at any number of estates.
+
+A workspace's ``data/`` replaces the bundled data files only when the
+workspace was named explicitly (by ``--workspace`` or ``TAKESTOCK_HOME``).
+Falling back to the current directory never does, so a ``data/`` folder that
+happens to sit wherever the command is run cannot change how anything is
+graded.
 """
 
 from __future__ import annotations
@@ -44,14 +50,20 @@ def set_workspace(path: str | Path | None) -> None:
     _override = Path(path).expanduser().resolve() if path is not None else None
 
 
-def workspace_root() -> Path:
-    """The workspace in effect: the override, then ``TAKESTOCK_HOME``, then the cwd."""
+def explicit_workspace() -> Path | None:
+    """The workspace when one was named (the override, then ``TAKESTOCK_HOME``), else None."""
     if _override is not None:
         return _override
     env = os.environ.get(ENV_VAR)
     if env:
         return Path(env).expanduser().resolve()
-    return Path.cwd().resolve()
+    return None
+
+
+def workspace_root() -> Path:
+    """The workspace in effect: the override, then ``TAKESTOCK_HOME``, then the cwd."""
+    named = explicit_workspace()
+    return named if named is not None else Path.cwd().resolve()
 
 
 def targets_dir() -> Path:
@@ -95,8 +107,23 @@ INBOX_DIRNAME = "inbox"
 INBOX_ENV_VAR = "TAKESTOCK_INBOX"
 
 
+_inbox_override: Path | None = None
+
+
+def set_inbox(path: str | Path | None) -> None:
+    """Read supplied exports from ``path`` from now on; None returns to the default."""
+    global _inbox_override
+    _inbox_override = Path(path).expanduser().resolve() if path is not None else None
+
+
 def inbox_dir(root: Path | None = None) -> Path:
-    """Where supplied exports are read from: ``TAKESTOCK_INBOX``, else ``<workspace>/inbox``."""
+    """Where supplied exports are read from.
+
+    In order: :func:`set_inbox` (the CLI's ``--inbox``), ``TAKESTOCK_INBOX``,
+    then ``<workspace>/inbox``.
+    """
+    if _inbox_override is not None:
+        return _inbox_override
     env = os.environ.get(INBOX_ENV_VAR)
     if env:
         return Path(env).expanduser().resolve()
@@ -131,12 +158,15 @@ def display_path(path: Path | str, root: Path | None = None) -> str:
 
 
 def data_file(name: str) -> Path:
-    """The data file ``name``: the workspace's ``data/`` copy if present, else the bundled one.
+    """The data file ``name``: a named workspace's ``data/`` copy if present, else the bundled one.
 
-    When neither exists the bundled path is returned, so the caller's error
-    names where the file was expected.
+    Only a workspace named explicitly (:func:`explicit_workspace`) is
+    consulted; the current directory never is. When neither file exists the
+    bundled path is returned, so the caller's error names where the file was
+    expected.
     """
-    candidates = [workspace_root() / "data" / name, BUNDLED_DATA_DIR / name]
+    named = explicit_workspace()
+    candidates = ([named / "data" / name] if named is not None else []) + [BUNDLED_DATA_DIR / name]
     for c in candidates:
         if c.exists():
             return c

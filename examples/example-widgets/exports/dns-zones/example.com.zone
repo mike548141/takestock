@@ -1,0 +1,18 @@
+; Zone file for example.com, as exported from the DNS host.
+; Example Widgets Ltd is fictional; every name is reserved and every
+; address is from a documentation range.
+$ORIGIN example.com.
+$TTL 3600
+@               IN SOA   ns1.example.com. hostmaster.example.com. 2030013101 3600 600 604800 300
+@               IN NS    ns1.example.com.
+@               IN NS    ns2.example.net.
+@               IN MX    10 mx1.example.test.
+@               IN TXT   "v=spf1 ip4:192.0.2.25 -all"
+@               IN CAA   0 issue "ca.example.net"
+_dmarc          IN TXT   "v=DMARC1; p=reject; rua=mailto:dmarc-reports@example.com"
+ns1             IN A     192.0.2.53
+www             IN CNAME www.example.test.
+shop            IN A     192.0.2.80
+shop            IN AAAA  2001:db8:10::80
+mail            IN A     192.0.2.25
+old-campaign    IN CNAME campaign.example.net.
