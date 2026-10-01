@@ -452,12 +452,12 @@ def build_note(results: sge.Report, target: dict, *, standard: dict | None = Non
 
 def render_note(results: sge.Report, target: dict, out_path: str | Path, *,
                 standard: dict | None = None, evidence: list[EvidenceFile] | None = None,
-                observation: str = "") -> Path:
+                observation: str = "", theme: htmlpage.Theme | None = None) -> Path:
     """Write the note for ``results`` to ``out_path`` and return the path."""
     out = Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(build_note(results, target, standard=standard, evidence=evidence,
-                              observation=observation), encoding="utf-8")
+                              observation=observation, theme=theme), encoding="utf-8")
     return out
 
 
@@ -484,10 +484,11 @@ def main(argv: list[str] | None = None) -> int:
     domains = [str(d) for d in (target.get("discovery") or {}).get("email_domains") or []]
     results = sge.evaluate(_load_assets(obs), domains,
                            bulk_mail_domains=sge.bulk_mail_domains(target))
-    for problem in htmlpage.theme_from_target(target).contrast_failures():
+    theme = htmlpage.theme_from_target(target)
+    for problem in theme.contrast_failures():
         print(f"warning: branding contrast: {problem}", file=sys.stderr)
     out = render_note(results, target, args.out, evidence=evidence_files(obs),
-                      observation=obs.resolve().name)
+                      observation=obs.resolve().name, theme=theme)
     print(out)
     return 0
 

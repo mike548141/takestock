@@ -237,3 +237,24 @@ def test_the_command_reads_an_observation_and_writes_the_note(tmp_path):
     assert "Policy is p=quarantine" in dmarc
     assert "<code>assets.json</code>" in out
     assert parse(out).errors == []
+
+
+def test_unknown_palette_tokens_warn_once_and_the_note_is_still_written(tmp_path, capsys):
+    from takestock import cli
+    obs = tmp_path / "observations" / "2030-01-01T0000Z"
+    obs.mkdir(parents=True)
+    (obs / "assets.json").write_text("[]")
+    target_path = tmp_path / "widgets.yaml"
+    target_path.write_text(yaml.safe_dump({
+        "organisation": {"name": ORG},
+        "discovery": {"email_domains": ["example.com"]},
+        "branding": {"palette": {"headline": "#123456", "accent": "#7a1f4d"}},
+    }))
+    for run in (lambda: cli.main(["sge-note", str(obs), str(target_path)]),
+                lambda: sge_note.main([str(obs), str(target_path), str(obs / "sge-note.html")])):
+        (obs / "sge-note.html").unlink(missing_ok=True)
+        assert run() in (0, 1)
+        err = capsys.readouterr().err
+        warned = [line for line in err.splitlines() if "unknown colour token" in line]
+        assert len(warned) == 1 and "palette.headline" in warned[0], err
+        assert "--accent: #7a1f4d;" in (obs / "sge-note.html").read_text()

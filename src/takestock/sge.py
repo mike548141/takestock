@@ -162,6 +162,31 @@ def _version_ok(versions: list[str], forbidden: list[str]) -> tuple[bool, list[s
     return (not offered), offered
 
 
+def _absent(asset: Any) -> bool:
+    """True for a row recording a measured absence: the lookup settled and found no record."""
+    return (_get(asset, "extra") or {}).get("present") is False
+
+
+def _settled_by(asset: Any) -> str:
+    """How an absence was measured: the name asked, and each resolver's reply."""
+    lookup = (_get(asset, "extra") or {}).get("lookup") or {}
+    replies = [f"{lk.get('rcode') or 'no reply'} from {lk.get('resolver', '')}"
+               + (f" at {lk['at']}" if lk.get("at") else "")
+               for lk in lookup.get("lookups") or []]
+    name = lookup.get("name") or ""
+    if not (name and replies):
+        return "the lookup settled and returned no such record"
+    return (f"the TXT lookup for {name} settled and returned no such record "
+            f"({'; '.join(replies)})")
+
+
+def _graded_elsewhere(req: dict, subject: str, record: str, primary: str) -> Conformance:
+    return _unmeasured(
+        req, subject, INCONCLUSIVE,
+        f"no {record} record is published, so there is nothing for this requirement to "
+        f"read; the missing record is graded under {primary}")
+
+
 def _eval_spf(req: dict, assets: list[Any], domains: list[str]) -> list[Conformance]:
     rows = []
     for d in domains:
@@ -171,6 +196,15 @@ def _eval_spf(req: dict, assets: list[Any], domains: list[str]) -> list[Conforma
                                     "no SPF record was read for this domain"))
             continue
         a = found[0]
+        if _absent(a):
+            rows.append(Conformance(
+                req["id"], req["title"], req["level"], req["scope"], d, FAIL,
+                observed="no SPF record",
+                reason=("the domain publishes no v=spf1 record, so a receiver has no "
+                        "sender policy to apply and no sender is denied; the standard "
+                        "requires one ending -all. " + _settled_by(a)),
+                evidence=str(_get(a, "name") or ""), source=req["source"]))
+            continue
         record = str((_get(a, "extra") or {}).get("record") or _get(a, "notes") or "")
         flags = list(_get(a, "flags") or [])
         if "hardfail-all" in flags:
@@ -233,6 +267,15 @@ def _eval_dmarc(req: dict, assets: list[Any], domains: list[str]) -> list[Confor
                                     "no DMARC record was read for this domain"))
             continue
         a = found[0]
+        if _absent(a):
+            rows.append(Conformance(
+                req["id"], req["title"], req["level"], req["scope"], d, FAIL,
+                observed="no DMARC record",
+                reason=("the domain publishes no DMARC record, so a receiver applies no "
+                        "policy to mail failing authentication; the standard requires "
+                        "p=reject. " + _settled_by(a)),
+                evidence=str(_get(a, "name") or ""), source=req["source"]))
+            continue
         record = str(_get(a, "notes") or "")
         p = re.search(r"\bp=(\w+)", record)
         policy = p.group(1) if p else "absent"
@@ -354,6 +397,9 @@ def _eval_dkim_alignment(req: dict, assets: list[Any], domains: list[str],
                                     "no DMARC record was read for this domain"))
             continue
         a = found[0]
+        if _absent(a):
+            rows.append(_graded_elsewhere(req, d, "DMARC", "SGE-DMARC-01"))
+            continue
         record = str(_get(a, "notes") or "")
         m = re.search(r"adkim=(\w)", record)
         value = m.group(1) if m else "r"
@@ -391,8 +437,8 @@ def _eval_tls_rpt(req: dict, assets: list[Any], domains: list[str]) -> list[Conf
     for d in domains:
         found = _by(assets, "tls-rpt", d)
         if not found:
-            rows.append(_unmeasured(req, d, NOT_COLLECTED,
-                                    "no TLS-RPT lookup was recorded for this domain"))
+            rows.append(_unmeasured(req, d, INCONCLUSIVE,
+                                    "no TLS-RPT record was read for this domain"))
             continue
         a = found[0]
         extra = _get(a, "extra") or {}
@@ -426,7 +472,7 @@ def _eval_ned_dmarc(req: dict, assets: list[Any], domains: list[str]) -> list[Co
                                     "no DMARC record was read for this domain"))
             continue
         a = found[0]
-        record = str(_get(a, "notes") or "")
+        record = "" if _absent(a) else str(_get(a, "notes") or "")
         m = re.search(r"\bsp=(\w+)", record)
         sp = m.group(1) if m else ""
         if sp == "none":
@@ -487,7 +533,9 @@ def _ned_dmarc_from_sweep(req: dict, assets: list[Any], domain: str,
     if fallback_bad:
         note.insert(0, f"{without_own} of the {in_scope} enumerated sub-domain(s) that show "
                        "no sign of sending mail publish no DMARC record of their own and "
-                       "fall back to the root record, which does not reject all failing mail")
+                       + ("fall back to the root record, which does not reject all failing "
+                          "mail" if root_record else
+                          "the root domain publishes none for them to fall back to"))
     if own_bad:
         note.insert(0, f"{len(own_bad)} publish a record of their own that does not reject "
                        f"all failing mail: {', '.join(own_bad)}")
@@ -503,7 +551,7 @@ def _ned_dmarc_from_sweep(req: dict, assets: list[Any], domain: str,
                 _SWEEP_INSTRUMENT, limit] if x),
             evidence=str(_get(a, "name") or ""), source=req["source"],
             record="; ".join(filter(None, [
-                f"root record: {root_record}",
+                f"root record: {root_record or 'none published'}",
                 *(f"{n}: {records[n]}" for n in own_bad)])),
             subject_note="; ".join(note))
     return Conformance(
@@ -1005,6 +1053,8 @@ def _subdomain_limit(assets: list[Any], domains: list[str], record: str,
 
 
 def _dmarc_record(asset: Any) -> str:
+    if _absent(asset):
+        return ""
     return str((_get(asset, "extra") or {}).get("record") or _get(asset, "notes") or "")
 
 
@@ -1028,6 +1078,15 @@ def _eval_dmarc_reporting(req: dict, assets: list[Any], domains: list[str]) -> l
         a = found[0]
         record = _dmarc_record(a)
         rua = _dmarc_tags(record).get("rua", "")
+        if _absent(a):
+            rows.append(Conformance(
+                req["id"], req["title"], req["level"], req["scope"], d, FAIL,
+                observed="no DMARC record",
+                reason=("the domain publishes no DMARC record, so no receiver sends an "
+                        "aggregate report anywhere and no reporting tool can be receiving "
+                        "one. " + _settled_by(a)),
+                evidence=str(_get(a, "name") or ""), source=req["source"]))
+            continue
         if not rua:
             rows.append(Conformance(
                 req["id"], req["title"], req["level"], req["scope"], d, FAIL,
@@ -1059,6 +1118,16 @@ def _eval_spf_alignment(req: dict, assets: list[Any], domains: list[str]) -> lis
                                     "no DMARC record was read for this domain"))
             continue
         a = found[0]
+        if _absent(a):
+            rows.append(Conformance(
+                req["id"], req["title"], req["level"], req["scope"], d, FAIL,
+                observed="no DMARC record",
+                reason=("the domain publishes no DMARC record, so no alignment is "
+                        "published at all; the DMARC guide recommends strict (aspf=s) — a "
+                        "recommendation unmet, not a requirement breached. "
+                        + _settled_by(a)),
+                evidence=str(_get(a, "name") or ""), source=req["source"]))
+            continue
         record = _dmarc_record(a)
         tags = _dmarc_tags(record)
         value = tags.get("aspf", "r").lower() or "r"
@@ -1088,6 +1157,9 @@ def _eval_dmarc_unused_tags(req: dict, assets: list[Any], domains: list[str]) ->
                                     "no DMARC record was read for this domain"))
             continue
         a = found[0]
+        if _absent(a):
+            rows.append(_graded_elsewhere(req, d, "DMARC", "SGE-DMARC-01"))
+            continue
         record = _dmarc_record(a)
         tags = _dmarc_tags(record)
         present = [t for t in unwanted if t in tags]
@@ -1126,6 +1198,9 @@ def _eval_spf_mechanisms(req: dict, assets: list[Any], domains: list[str]) -> li
                                     "no SPF record was read for this domain"))
             continue
         a = found[0]
+        if _absent(a):
+            rows.append(_graded_elsewhere(req, d, "SPF", "SGE-SPF-01"))
+            continue
         record = str((_get(a, "extra") or {}).get("record") or _get(a, "notes") or "")
         terms = record.strip().strip('"').split()
         ptr = [t for t in terms if re.match(r"^[+\-~?]?ptr(:|$)", t, re.IGNORECASE)]
@@ -1457,8 +1532,10 @@ def _eval_subdomain_dmarc_alignment(req: dict, assets: list[Any],
                     f"{', '.join(inherited)}"
                     if root_record else
                     f"{without_own} of the {in_scope} enumerated sub-domain(s) publish no "
-                    "DMARC record of their own and no organisational record was read for "
-                    "them to fall back to")
+                    "DMARC record of their own and "
+                    + ("the organisational domain publishes no DMARC record for them to "
+                       "fall back to" if root and _absent(root[0]) else
+                       "no organisational record was read for them to fall back to"))
             if own_failing:
                 parts.append(
                     f"{len(own_failing)} publish a record of their own short of it: "

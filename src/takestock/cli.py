@@ -206,11 +206,12 @@ def _sge_note(args: argparse.Namespace) -> int:
     obs = args.observation
     results = sge.evaluate(assets, domains,
                            bulk_mail_domains=sge.bulk_mail_domains(target))
-    for problem in htmlpage.theme_from_target(target).contrast_failures():
+    theme = htmlpage.theme_from_target(target)
+    for problem in theme.contrast_failures():
         print(f"warning: branding contrast: {problem}", file=sys.stderr)
     out = sge_note.render_note(results, target, args.out or obs / "sge-note.html",
                                evidence=sge_note.evidence_files(obs),
-                               observation=obs.resolve().name)
+                               observation=obs.resolve().name, theme=theme)
     print(out)
     return EXIT_FINDINGS if results.breaches() else EXIT_CLEAN
 

@@ -119,6 +119,57 @@ def test_no_spf_reading_is_unmeasured():
     assert one("SGE-SPF-01", []).reason == sge.INCONCLUSIVE
 
 
+LOOKUP = {"name": D, "measured": True,
+          "lookups": [{"resolver": "192.0.2.53", "at": "2030-06-15T00:00:00Z",
+                       "rcode": "NOERROR", "error": ""}]}
+
+
+def no_spf() -> dict:
+    return {"name": f"SPF {D}", "protocol": "spf", "host": D, "flags": ["no-spf-record"],
+            "notes": "no v=spf1 record published",
+            "extra": {"present": False, "record": "", "spf_records": [],
+                      "legacy_spf2_records": [], "lookup": LOOKUP}}
+
+
+def no_dmarc() -> dict:
+    return {"name": f"DMARC {D}", "protocol": "dmarc", "host": D, "flags": ["no-dmarc-record"],
+            "notes": "no DMARC record published",
+            "extra": {"present": False, "record": "",
+                      "lookup": {**LOOKUP, "name": f"_dmarc.{D}"}}}
+
+
+def test_a_measured_absence_of_spf_is_not_met():
+    row = one("SGE-SPF-01", [no_spf()])
+    assert row.status == sge.FAIL and row.breaches_must
+    assert row.observed == "no SPF record"
+    assert "NOERROR from 192.0.2.53" in row.reason
+    assert row.evidence == f"SPF {D}" and row.record == ""
+    # The other SPF rows do not invent a record to read.
+    ptr = one("SGE-SPF-R01", [no_spf()])
+    assert ptr.status == sge.NOT_MEASURED and "SGE-SPF-01" in ptr.evidence
+    assert one("SGE-SPF-R02", [no_spf()]).status == sge.PASS
+
+
+def test_a_measured_absence_of_dmarc_is_not_met():
+    row = one("SGE-DMARC-01", [no_dmarc()])
+    assert row.status == sge.FAIL and row.observed == "no DMARC record"
+    assert "_dmarc.example.com" in row.reason
+    assert one("SGE-DMARC-04", [no_dmarc()]).status == sge.FAIL
+    assert one("SGE-DMARC-R02", [no_dmarc()]).status == sge.FAIL
+    for rid in ("SGE-DMARC-R01", "SGE-DMARC-R03"):
+        got = one(rid, [no_dmarc()])
+        assert got.status == sge.NOT_MEASURED and "SGE-DMARC-01" in got.evidence, rid
+    # With no record at the root, a sub-domain has nothing to fall back to.
+    sweep = {"name": f"DMARC on sub-domains of {D}", "protocol": "ned-dmarc", "host": D,
+             "extra": {"control_usable": True, "names_in_scope": 2, "dmarc_records": {},
+                       "read_at": "t", "resolvers": ["192.0.2.53"]}}
+    ned_row = one("SGE-NED-DMARC-01", [no_dmarc(), sweep])
+    assert ned_row.status == sge.FAIL and "no DMARC record published" not in ned_row.record
+    align = one("SGE-NED-DMARC-R01", [no_dmarc(), sweep])
+    assert align.status == sge.FAIL
+    assert "publishes no DMARC record for them to fall back to" in align.subject_note
+
+
 def test_an_spf_record_past_its_lookup_limit_says_the_qualifier_is_never_reached():
     surface = {"name": "s", "protocol": "spf-senders", "host": D,
                "flags": ["spf-lookup-limit-exceeded"],
@@ -232,7 +283,8 @@ def test_tls_reporting():
     assert one("SGE-TLSRPT-01", [rpt(True, "v=TLSRPTv1; rua=mailto:t@example.com")]).status == sge.PASS
     assert one("SGE-TLSRPT-01", [rpt(True, "v=TLSRPTv1;")]).status == sge.FAIL
     assert one("SGE-TLSRPT-01", [rpt(False, "")]).status == sge.FAIL
-    assert one("SGE-TLSRPT-01", []).reason == sge.NOT_COLLECTED
+    # No row means the lookup did not settle; ct_dns writes a row whenever it does.
+    assert one("SGE-TLSRPT-01", []).reason == sge.INCONCLUSIVE
 
 
 # ── DKIM ──────────────────────────────────────────────────────────────

@@ -269,4 +269,4 @@ def collect(target: dict, raw_dir: Path | None = None,
         asset, host_failures = measure(host, raw_dir, ref_time, role_by_host.get(host, ""))
         assets.append(asset)
         failures += host_failures
-    return assets, failures
+    return assets, failures + tls_scan.cert_not_read_failure(SOURCE, assets)

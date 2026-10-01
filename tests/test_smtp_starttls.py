@@ -173,3 +173,26 @@ def test_old_versions_the_client_would_not_offer_are_unmeasured_not_refused(monk
     assert tls_scan.VERSION_PROBE_UNAVAILABLE in a.flags
     assert "would not offer TLSv1.0, TLSv1.1" in a.notes
     assert "DEFAULT@SECLEVEL=0" in a.notes
+
+
+NO_NMAP = "__ERROR__ [Errno 2] No such file or directory: 'nmap'"
+
+
+def test_without_nmap_the_certificate_is_not_read_and_says_so(monkeypatch):
+    versions = {"-tls1": fixture("smtp-tls1.txt"), "-tls1_1": fixture("smtp-tls1_1.txt"),
+                "-tls1_2": fixture("smtp-tls1_2.txt"), "-tls1_3": fixture("smtp-tls1_3.txt")}
+    monkeypatch.setattr(tls_scan, "run", FakeRun(
+        [(has("ssl-cert"), NO_NMAP),
+         *[(has("s_client", flag), out) for flag, out in versions.items()]]))
+    second = "mail-02.example.test"
+    t = target(smtp_25=[{"host": GATEWAY}, {"host": second}])
+    assets, failures = smtp_starttls.collect(t, ref_time=WHEN)
+    for a in assets:
+        assert a.protocol_versions == ["TLSv1.2", "TLSv1.3"]
+        assert a.extra["cert_detail"] == tls_scan.CERT_NOT_READ_NO_NMAP
+        assert "certificate detail not read: nmap is not on PATH" in a.notes
+        assert "cert_not_after" not in a.extra and a.signatures == []
+    nmap_lines = [f for f in failures if "nmap" in f]
+    assert len(nmap_lines) == 1, failures
+    assert nmap_lines[0].startswith("smtp_starttls: nmap is not on PATH")
+    assert f"{GATEWAY}:25" in nmap_lines[0] and f"{second}:25" in nmap_lines[0]

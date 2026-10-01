@@ -14,9 +14,9 @@ its target profile::
       name: Example Widgets Ltd      # alt text for the logo
       logo: brand/logo.svg           # relative to the profile; embedded inline
       font: "Example Sans, sans-serif"
-      palette:                       # any token from DEFAULT_LIGHT
-        accent: "#7a1f4d"
-      palette_dark:                  # any token from DEFAULT_DARK
+      palette:                       # tokens from DEFAULT_LIGHT; others are
+        accent: "#7a1f4d"            # ignored with a warning
+      palette_dark:                  # tokens from DEFAULT_DARK
         accent: "#f0b8d8"
 
 Nothing in the block is required, and no office template is ever needed.
@@ -30,6 +30,7 @@ import base64
 import html
 import mimetypes
 import re
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -140,7 +141,13 @@ class Theme:
         return out
 
 
-def _palette(base: dict[str, str], override: Any, where: str) -> dict[str, str]:
+def _palette(base: dict[str, str], override: Any, where: str,
+             ignored: list[str]) -> dict[str, str]:
+    """``base`` with the override's known tokens applied; unknown names go to ``ignored``.
+
+    An unknown token is skipped, value unread, so a profile written for
+    another palette still renders. A known token's value must be a colour.
+    """
     out = dict(base)
     if not override:
         return out
@@ -148,8 +155,8 @@ def _palette(base: dict[str, str], override: Any, where: str) -> dict[str, str]:
         raise ValueError(f"branding.{where} must be a mapping of token to colour")
     for key, value in override.items():
         if key not in base:
-            raise ValueError(f"branding.{where}: unknown token {key!r}; "
-                             f"known: {', '.join(sorted(base))}")
+            ignored.append(f"{where}.{key}")
+            continue
         _channels(str(value))
         out[key] = str(value).lower()
     return out
@@ -178,6 +185,8 @@ def theme_from_target(target: dict) -> Theme:
     """The theme a target profile asks for: the defaults, with its ``branding:`` applied.
 
     A relative ``logo`` path is read from the directory holding the profile.
+    Palette tokens this page does not use are ignored, with one warning on
+    standard error naming them; call this once per command.
     """
     branding = target.get("branding") or {}
     if not isinstance(branding, dict):
@@ -185,14 +194,19 @@ def theme_from_target(target: dict) -> Theme:
     tpath = target.get("_path")
     base_dir = Path(tpath).parent if tpath else None
     logo = str(branding.get("logo") or "")
-    return Theme(
-        light=_palette(DEFAULT_LIGHT, branding.get("palette"), "palette"),
-        dark=_palette(DEFAULT_DARK, branding.get("palette_dark"), "palette_dark"),
+    ignored: list[str] = []
+    theme = Theme(
+        light=_palette(DEFAULT_LIGHT, branding.get("palette"), "palette", ignored),
+        dark=_palette(DEFAULT_DARK, branding.get("palette_dark"), "palette_dark", ignored),
         font=_font(branding.get("font"), SYSTEM_FONT, "font"),
         mono=_font(branding.get("mono"), SYSTEM_MONO, "mono"),
         logo_uri=_logo_uri(logo, base_dir) if logo else "",
         logo_alt=str(branding.get("name") or organisation_name(target)),
     )
+    if ignored:
+        print(f"warning: branding: ignored unknown colour token(s) {', '.join(ignored)}; "
+              f"known: {', '.join(sorted(DEFAULT_LIGHT))}", file=sys.stderr)
+    return theme
 
 
 def organisation_name(target: dict, default: str = "the organisation") -> str:

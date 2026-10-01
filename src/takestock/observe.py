@@ -158,13 +158,15 @@ def _ct_dns(run: _Run) -> tuple[list[CryptoAsset], list[str], list]:
         run.target, run.raw, run.ref_time, observations=run.observations,
         refresh=run.options.refresh_ct, progress=run.say, deferral=run.ct_deferral)
     run.ct_reused = reused
+    # Mail-record lookups that did not settle are failures, but not transparency ones.
+    run.ct_failures = [str(f) for f in failures
+                       if not isinstance(f, (coverage.Gap, ct_dns.MailLookupFailure))]
     failures, gaps = split_failures(list(failures))
-    run.ct_failures = list(failures)
     if reused:
         gaps.append(coverage.gap(coverage.COULD_NOT_TEST, ctcache.reuse_gap(reused),
                                  nature=coverage.LOW_FIDELITY))
-    if failures and not run.ct_deferral.pending:
-        gaps.append(_ct_failure_gap(failures))
+    if run.ct_failures and not run.ct_deferral.pending:
+        gaps.append(_ct_failure_gap(run.ct_failures))
     return rows, failures, gaps
 
 

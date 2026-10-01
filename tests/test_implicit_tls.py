@@ -118,3 +118,22 @@ def test_old_versions_the_client_would_not_offer_are_unmeasured_not_refused(monk
         "TLSv1.0=unknown-client-cannot-offer; TLSv1.1=unknown-client-cannot-offer")
     assert tls_scan.VERSION_PROBE_UNAVAILABLE in a.flags
     assert "would not offer TLSv1.0, TLSv1.1" in a.notes
+
+
+def test_without_nmap_the_certificate_is_not_read_and_says_so(monkeypatch):
+    monkeypatch.setattr(tls_scan, "run", FakeRun([
+        (has("ssl-cert"), "__ERROR__ [Errno 2] No such file or directory: 'nmap'"),
+        (has("s_client", "-tls1"), fixture("openssl-tls1.txt")),
+        (has("s_client", "-tls1_1"), fixture("openssl-tls1_1.txt")),
+        (has("s_client", "-tls1_2"), fixture("openssl-tls1_2.txt")),
+        (has("s_client", "-tls1_3"), fixture("openssl-tls1_3.txt")),
+    ]))
+    assets, failures = implicit_tls.collect(mail_target("465/tcp", "993/tcp"), ref_time=WHEN)
+    assert len(assets) == 2
+    for a in assets:
+        assert a.extra["cert_detail"] == tls_scan.CERT_NOT_READ_NO_NMAP
+        assert "certificate detail not read: nmap is not on PATH" in a.notes
+        assert implicit_tls.NAME_MISMATCH_FLAG not in a.flags
+    (line,) = failures
+    assert line.startswith("implicit_tls: nmap is not on PATH")
+    assert f"{MAIL}:465" in line and f"{MAIL}:993" in line

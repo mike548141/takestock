@@ -187,4 +187,4 @@ def collect(target: dict, raw_dir: Path | None = None,
     role_by_host = roles.scan_target_roles(target)
     assets = [measure(host, port, raw_dir, ref_time, role_by_host.get(host, ""))
               for host, port, _section in pairs]
-    return assets, []
+    return assets, tls_scan.cert_not_read_failure(SOURCE, assets)

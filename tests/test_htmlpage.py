@@ -110,9 +110,39 @@ def test_an_unreadable_override_is_reported():
     assert failures and all(f.startswith("light: muted #dddddd") for f in failures)
 
 
+def test_unknown_palette_tokens_are_ignored_with_one_warning(capsys):
+    theme = htmlpage.theme_from_target({"branding": {
+        "palette": {"headline": "#123456", "callout": "not a colour", "accent": "#7A1F4D"},
+        "palette_dark": {"headline": "#654321", "accent": "#f0b8d8"}}})
+    assert theme.light == {**htmlpage.DEFAULT_LIGHT, "accent": "#7a1f4d"}
+    assert theme.dark == {**htmlpage.DEFAULT_DARK, "accent": "#f0b8d8"}
+    lines = capsys.readouterr().err.splitlines()
+    assert len(lines) == 1, lines
+    assert lines[0].startswith("warning: branding: ignored unknown colour token(s) ")
+    for name in ("palette.headline", "palette.callout", "palette_dark.headline"):
+        assert name in lines[0], name
+    assert "accent" in lines[0].split("known:")[1]
+
+
+def test_known_palette_tokens_raise_no_warning(capsys):
+    htmlpage.theme_from_target({"branding": {"palette": {"accent": "#7a1f4d"}}})
+    assert capsys.readouterr().err == ""
+
+
+def test_the_note_command_warns_about_unknown_tokens_once(tmp_path, capsys):
+    from takestock import sge, sge_note
+    target = {"organisation": {"name": "Example Widgets Ltd"},
+              "branding": {"palette": {"headline": "#123456"}}}
+    theme = htmlpage.theme_from_target(target)
+    capsys.readouterr()
+    report = sge.evaluate([], ["example.com"])
+    sge_note.render_note(report, target, tmp_path / "note.html", theme=theme)
+    assert capsys.readouterr().err == ""
+
+
 @pytest.mark.parametrize("branding, message", [
-    ({"palette": {"no_such_token": "#000000"}}, "unknown token"),
     ({"palette": {"accent": "plum"}}, "#rgb or #rrggbb"),
+    ({"palette_dark": {"accent": "#12345"}}, "#rgb or #rrggbb"),
     ({"palette": ["#000000"]}, "mapping"),
     ({"font": "x; } body { display: none"}, "font-family"),
     ({"logo": "notes.txt"}, "image file"),

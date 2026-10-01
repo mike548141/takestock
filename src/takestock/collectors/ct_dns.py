@@ -15,7 +15,9 @@ Two passive readings, neither of which touches the organisation's hosts:
   it reads MX, SPF, DMARC, MTA-STS (record and policy file), TLS-RPT and the
   DKIM keys under each selector tried, and then sweeps the sub-domain names
   the transparency read found for the denying SPF, empty DKIM and DMARC
-  records a name that sends no mail should publish.
+  records a name that sends no mail should publish. A record the resolvers
+  settle as missing is written as a row saying so (a measured absence); a
+  lookup that does not settle is a failure, and claims nothing either way.
 
 Search services limit how often they may be asked. When one says "wait",
 the run can park the remaining domains in a :class:`CTDeferral`, let other
@@ -525,7 +527,9 @@ def collect(
 
     for domain in disc.get("email_domains", []) or []:
         note(f"    · email-auth DNS records for {domain} …")
-        assets.extend(_email_assets(domain, ref_time, selectors))
+        rows, unsettled = _email_assets(domain, ref_time, selectors, asked)
+        assets.extend(rows)
+        failures.extend(unsettled)
         if not parked:
             assets.extend(_ned_sweep(domain, discovered, ref_time, note, asked))
 
@@ -672,10 +676,64 @@ def _tls_rpt_record(lines: list[str]) -> tuple[str, bool, str]:
     return raw, published, (m.group(1) if m else "")
 
 
+#: Response codes that settle a lookup: the name exists (``NOERROR``) or does
+#: not (``NXDOMAIN``). Either way, a record missing from the answer is absent.
+SETTLED_RCODES = ("NOERROR", "NXDOMAIN")
+
+
+class MailLookupFailure(str):
+    """A failure line for mail-authentication records, kept apart from transparency failures."""
+
+
+@dataclass(frozen=True)
+class TxtLookup:
+    """One TXT question asked of every configured resolver, and whether it settled.
+
+    ``measured`` is True when at least one resolver replied and every reply
+    carried a settling response code. Only then can a record missing from
+    :attr:`answers` be reported as absent; otherwise nothing is claimed.
+    """
+
+    name: str
+    answers: list[str]
+    measured: bool
+    lookups: list[dict[str, str]]
+
+    def evidence(self) -> dict[str, Any]:
+        """The lookup as kept on a row: the name, whether it settled, and each reply."""
+        return {"name": self.name, "measured": self.measured, "lookups": self.lookups}
+
+    def why_unsettled(self) -> str:
+        """The replies that kept this lookup from settling, for a failure line."""
+        seen = [lk["rcode"] or "no reply" for lk in self.lookups]
+        return ", ".join(dict.fromkeys(seen)) or "not asked"
+
+
+def read_txt(name: str, resolvers: tuple[str, ...] = ("",)) -> TxtLookup:
+    """Ask every resolver for the TXT records at ``name``, keeping each response code."""
+    q = dnsevidence.corroborate_status(name, "TXT", resolvers)
+    replied = [lk for lk in q.lookups if not lk.error]
+    measured = bool(replied) and all(lk.rcode in SETTLED_RCODES for lk in replied)
+    answers = next((lk.answers for lk in replied if lk.answers), []) if measured else []
+    return TxtLookup(name=name, answers=list(answers), measured=measured, lookups=[
+        {"resolver": dnsevidence.resolver_label(lk.resolver), "at": lk.at,
+         "rcode": lk.rcode, "error": lk.error} for lk in q.lookups])
+
+
 def _email_assets(domain: str, ref_time: datetime | None = None,
-                  selectors: list[str] | None = None) -> list[CryptoAsset]:
-    """MX, SPF, DMARC, MTA-STS, TLS-RPT and DKIM rows for one email domain."""
+                  selectors: list[str] | None = None,
+                  resolvers: tuple[str, ...] = ("",)) -> tuple[list[CryptoAsset], list[str]]:
+    """MX, SPF, DMARC, MTA-STS, TLS-RPT and DKIM rows for one email domain, and any failures.
+
+    A settled lookup that returns no SPF or DMARC record still yields a row,
+    with ``extra.present`` False and the resolver replies in ``extra.lookup``:
+    the absence was measured. A lookup that did not settle (an error code or
+    no reply) yields no row for that record and one failure line naming it.
+    DKIM keys are looked for under guessed selectors, so a selector that does
+    not answer proves nothing and yields no row.
+    """
     out: list[CryptoAsset] = []
+    unsettled: list[str] = []
     collected_at = now_date(ref_time)
     common: dict[str, Any] = {"host": domain, "source": "ct_dns", "source_class": "public",
               "source_name": SOURCE_DNS, "collected_at": collected_at,
@@ -686,15 +744,19 @@ def _email_assets(domain: str, ref_time: datetime | None = None,
                            protocol="mx", notes="; ".join(mx) or "none",
                            extra={"records": mx}, **common))
 
-    txt = dig(domain, "TXT")
-    spf_records = [t for t in txt if "v=spf1" in t.lower()]
-    legacy_spf2 = [t for t in txt if re.search(r"spf2\.0", t, re.I)]
-    spf = spf_records[0] if spf_records else ""
-    if spf or legacy_spf2:
+    txt = read_txt(domain, resolvers)
+    if not txt.measured:
+        unsettled.append(f"SPF ({txt.name}: {txt.why_unsettled()})")
+    else:
+        spf_records = [t for t in txt.answers if "v=spf1" in t.lower()]
+        legacy_spf2 = [t for t in txt.answers if re.search(r"spf2\.0", t, re.I)]
+        spf = spf_records[0] if spf_records else ""
         flags = []
         if spf:
             flags.append("softfail-all" if "~all" in spf else
                          ("hardfail-all" if "-all" in spf else "neutral-all"))
+        else:
+            flags.append("no-spf-record")
         if len(spf_records) > 1:
             flags.append("duplicate-spf")
         if legacy_spf2:
@@ -706,13 +768,17 @@ def _email_assets(domain: str, ref_time: datetime | None = None,
             notes += f"; {len(legacy_spf2)} legacy SPF2.0 record(s) present"
         out.append(CryptoAsset(name=f"SPF {domain}", role=roles.email_record("spf", domain),
                                protocol="spf", flags=flags, notes=notes,
-                               extra={"record": spf, "spf_records": spf_records,
-                                      "legacy_spf2_records": legacy_spf2}, **common))
+                               extra={"present": bool(spf), "record": spf,
+                                      "spf_records": spf_records,
+                                      "legacy_spf2_records": legacy_spf2,
+                                      "lookup": txt.evidence()}, **common))
 
-    dmarc = dig(f"_dmarc.{domain}", "TXT")
-    drec = next((t for t in dmarc if "v=DMARC1" in t), "")
-    if drec:
-        flags = []
+    dmarc = read_txt(f"_dmarc.{domain}", resolvers)
+    if not dmarc.measured:
+        unsettled.append(f"DMARC ({dmarc.name}: {dmarc.why_unsettled()})")
+    else:
+        drec = next((t for t in dmarc.answers if "v=DMARC1" in t), "")
+        flags = [] if drec else ["no-dmarc-record"]
         p = re.search(r"\bp=(\w+)", drec)
         sp = re.search(r"\bsp=(\w+)", drec)
         if p and p.group(1) == "reject":
@@ -720,37 +786,48 @@ def _email_assets(domain: str, ref_time: datetime | None = None,
         if sp and sp.group(1) == "none":
             flags.append("subdomains-unprotected")
         out.append(CryptoAsset(name=f"DMARC {domain}", role=roles.email_record("dmarc", domain),
-                               protocol="dmarc", flags=flags, notes=drec.strip('"')[:200],
-                               extra={"record": drec}, **common))
+                               protocol="dmarc", flags=flags,
+                               notes=drec.strip('"')[:200] if drec else "no DMARC record published",
+                               extra={"present": bool(drec), "record": drec,
+                                      "lookup": dmarc.evidence()}, **common))
 
-    sts = dig(f"_mta-sts.{domain}", "TXT")
-    published = any("v=STSv1" in t for t in sts)
-    policy = http_get(f"https://mta-sts.{domain}/.well-known/mta-sts.txt")
-    reachable = not policy.startswith("__ERROR__")
-    mode = re.search(r"mode:\s*(\w+)", policy) if reachable else None
-    mx_lines = re.findall(r"(?im)^\s*mx:\s*(\S+)", policy) if reachable else []
-    out.append(CryptoAsset(
-        name=f"MTA-STS {domain}", role=roles.email_record("mta-sts", domain),
-        protocol="mta-sts",
-        flags=(["enforce"] if (published and mode and mode.group(1) == "enforce")
-               else [] if published else ["no-mta-sts-record"]),
-        notes=(f"mode={mode.group(1) if mode else 'unknown'}"
-               + (f"; mx={','.join(mx_lines)}" if mx_lines else "") if published
-               else "no _mta-sts TXT record published, so no sender fetches a policy"),
-        extra={"published": published, "policy_reachable": reachable,
-               "mode": mode.group(1) if mode else "",
-               "mx": mx_lines,
-               "record": " ".join(sts)}, **common))
+    sts = read_txt(f"_mta-sts.{domain}", resolvers)
+    if not sts.measured:
+        unsettled.append(f"MTA-STS ({sts.name}: {sts.why_unsettled()})")
+    else:
+        published = any("v=STSv1" in t for t in sts.answers)
+        policy = http_get(f"https://mta-sts.{domain}/.well-known/mta-sts.txt")
+        reachable = not policy.startswith("__ERROR__")
+        mode = re.search(r"mode:\s*(\w+)", policy) if reachable else None
+        mx_lines = re.findall(r"(?im)^\s*mx:\s*(\S+)", policy) if reachable else []
+        out.append(CryptoAsset(
+            name=f"MTA-STS {domain}", role=roles.email_record("mta-sts", domain),
+            protocol="mta-sts",
+            flags=(["enforce"] if (published and mode and mode.group(1) == "enforce")
+                   else [] if published else ["no-mta-sts-record"]),
+            notes=(f"mode={mode.group(1) if mode else 'unknown'}"
+                   + (f"; mx={','.join(mx_lines)}" if mx_lines else "") if published
+                   else "no _mta-sts TXT record published, so no sender fetches a policy"),
+            extra={"published": published, "policy_reachable": reachable,
+                   "mode": mode.group(1) if mode else "",
+                   "mx": mx_lines,
+                   "record": " ".join(sts.answers),
+                   "lookup": sts.evidence()}, **common))
 
-    rpt, rpt_published, rua = _tls_rpt_record(dig(f"_smtp._tls.{domain}", "TXT"))
-    out.append(CryptoAsset(
-        name=f"TLS-RPT {domain}", role=roles.email_record("tls-rpt", domain),
-        protocol="tls-rpt",
-        flags=[] if rpt_published else ["no-tls-reporting"],
-        notes=(f"reports to {rua}" if rpt_published and rua else
-               "published, no reporting address" if rpt_published else
-               "no TLS-RPT record published"),
-        extra={"record": rpt, "published": rpt_published}, **common))
+    tls_rpt = read_txt(f"_smtp._tls.{domain}", resolvers)
+    if not tls_rpt.measured:
+        unsettled.append(f"TLS-RPT ({tls_rpt.name}: {tls_rpt.why_unsettled()})")
+    else:
+        rpt, rpt_published, rua = _tls_rpt_record(tls_rpt.answers)
+        out.append(CryptoAsset(
+            name=f"TLS-RPT {domain}", role=roles.email_record("tls-rpt", domain),
+            protocol="tls-rpt",
+            flags=[] if rpt_published else ["no-tls-reporting"],
+            notes=(f"reports to {rua}" if rpt_published and rua else
+                   "published, no reporting address" if rpt_published else
+                   "no TLS-RPT record published"),
+            extra={"record": rpt, "published": rpt_published,
+                   "lookup": tls_rpt.evidence()}, **common))
 
     for sel in selectors if selectors is not None else list(dnsevidence.DEFAULT_DKIM_SELECTORS):
         base = f"{sel}._domainkey.{domain}"
@@ -771,7 +848,11 @@ def _email_assets(domain: str, ref_time: datetime | None = None,
             extra={"selector": sel, "key_bits": bits, "public_key": public_key},
             **common))
 
-    return out
+    failures: list[str] = ([MailLookupFailure(
+        f"ct_dns {domain}: DNS lookups that did not settle for {'; '.join(unsettled)}, so "
+        "those records are not measured: neither present nor absent is claimed")]
+        if unsettled else [])
+    return out, failures
 
 
 # Protocol names of the three sub-domain rows (no email: "ned").

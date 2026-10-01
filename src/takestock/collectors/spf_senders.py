@@ -27,6 +27,7 @@ from .. import coverage, inside_scope, roles, spf
 from ..coverage import Gap
 from ..model import CryptoAsset
 from ..util import now_date
+from .tls_scan import cert_not_read_failure
 
 SOURCE_NAME = "Public DNS — recursive SPF expansion"
 SOURCE_PROBE = "Active STARTTLS scan (openssl) — relay named by an SPF record"
@@ -116,6 +117,9 @@ def collect(target: dict, ref_time: datetime | None = None, scan: bool = False,
         if failures:
             unreachable.append(host)
     gaps += [unreachable_gap(h) for h in unreachable]
+    gaps += [coverage.gap(coverage.COULD_NOT_TEST, line, nature=coverage.NO_DATA,
+                          harvest="Install nmap and run again.")
+             for line in cert_not_read_failure(SOURCE_KEY, assets)]
     return assets, gaps
 
 

@@ -10,7 +10,9 @@ import json
 from datetime import UTC, datetime
 from urllib.parse import parse_qs, urlparse
 
+import dnsfake
 import pytest
+from dnsfake import dig_text
 
 from takestock import coverage, ctcache, dnsevidence
 from takestock.collectors import ct_dns
@@ -180,30 +182,98 @@ DNS = {
 }
 
 
+def resolving(table: dict, status: dict | None = None):
+    """A stand-in for ``dnsevidence.run``: full ``dig`` transcripts answered from ``table``.
+
+    ``status`` maps a name to the response code every resolver gives for it,
+    or to ``"timeout"`` for a resolver that never replies.
+    """
+    def run(cmd: list[str], timeout: int = 60, stdin_text: str | None = None) -> str:
+        rtype, name = [c for c in cmd[1:] if not c.startswith(("+", "@"))][:2]
+        given = (status or {}).get(name)
+        if given == "timeout":
+            return "__ERROR__ Command 'dig' timed out after 44 seconds"
+        records = table.get((name, rtype), [])
+        known = any(n == name for n, _t in table)
+        answer = [f"{name}. 300 IN {rtype} {r}" for r in records]
+        return dig_text(given or ("NOERROR" if known else "NXDOMAIN"), answer)
+    return run
+
+
+def email_rows(monkeypatch, table: dict, status: dict | None = None,
+               selectors: list[str] | None = None, policy: str = "__ERROR__ refused",
+               resolvers: tuple[str, ...] = ("",)):
+    monkeypatch.setattr(ct_dns, "dig", lambda n, t="A", short=True: table.get((n, t), []))
+    monkeypatch.setattr(dnsevidence, "run", resolving(table, status))
+    monkeypatch.setattr(ct_dns, "http_get", lambda url, *a, **k: policy)
+    rows, failures = ct_dns._email_assets("example.com", NOW, selectors or [], resolvers)
+    return {a.protocol: a for a in rows}, rows, failures
+
+
 def test_mail_authentication_rows(monkeypatch):
-    monkeypatch.setattr(ct_dns, "dig", lambda n, t="A", short=True: DNS.get((n, t), []))
-    monkeypatch.setattr(ct_dns, "http_get",
-                        lambda url, *a, **k: "version: STSv1\nmode: enforce\nmx: mx1.example.com\n")
-    rows = {a.protocol: a for a in ct_dns._email_assets("example.com", NOW, ["s1", "s2", "s3"])}
+    rows, every, failures = email_rows(
+        monkeypatch, DNS, selectors=["s1", "s2", "s3"],
+        policy="version: STSv1\nmode: enforce\nmx: mx1.example.com\n")
+    assert failures == []
     assert rows["mx"].extra["records"] == ["10 mx1.example.com."]
     assert set(rows["spf"].flags) == {"softfail-all", "duplicate-spf", "legacy-spf2"}
+    assert rows["spf"].extra["present"] is True
     assert set(rows["dmarc"].flags) == {"dmarc-reject", "subdomains-unprotected"}
+    assert rows["dmarc"].extra["present"] is True
     assert rows["mta-sts"].flags == ["enforce"] and rows["mta-sts"].extra["mx"] == ["mx1.example.com"]
     assert rows["tls-rpt"].notes == "reports to mailto:t@example.com"
-    dkim = [a for a in ct_dns._email_assets("example.com", NOW, ["s1", "s2"])
-            if a.protocol == "dkim"]
+    dkim = [a for a in every if a.protocol == "dkim"]
     assert [(a.extra["selector"], a.flags) for a in dkim] == [("s1", ["weak-key-1024"]), ("s2", [])]
     assert dkim[0].notes.endswith("via s1.dkim.example.net")
 
 
-def test_no_mta_sts_or_tls_rpt_record(monkeypatch):
-    monkeypatch.setattr(ct_dns, "dig", lambda n, t="A", short=True: [])
-    monkeypatch.setattr(ct_dns, "http_get", lambda url, *a, **k: "__ERROR__ refused")
-    rows = {a.protocol: a for a in ct_dns._email_assets("example.com", NOW, [])}
+def test_an_answered_lookup_with_no_record_is_a_measured_absence(monkeypatch):
+    # The domain exists and publishes other TXT records, but no SPF; _dmarc is NXDOMAIN.
+    table = {("example.com", "TXT"): ['"site-verification=abc"']}
+    rows, _, failures = email_rows(monkeypatch, table, resolvers=dnsfake.RESOLVERS)
+    assert failures == []
+    spf, dmarc = rows["spf"], rows["dmarc"]
+    assert spf.extra["present"] is False and spf.flags == ["no-spf-record"]
+    assert spf.extra["record"] == "" and spf.notes == "no v=spf1 record published"
+    assert dmarc.extra["present"] is False and dmarc.flags == ["no-dmarc-record"]
+    # The resolver evidence travels with the absence.
+    lookup = dmarc.extra["lookup"]
+    assert lookup["name"] == "_dmarc.example.com" and lookup["measured"] is True
+    assert [r["rcode"] for r in lookup["lookups"]] == ["NXDOMAIN"] * 3
+    assert [r["resolver"] for r in lookup["lookups"]] == list(dnsfake.RESOLVERS)
+    assert spf.extra["lookup"]["lookups"][0]["rcode"] == "NOERROR"
     assert rows["mta-sts"].flags == ["no-mta-sts-record"]
     assert rows["mta-sts"].extra["policy_reachable"] is False
     assert rows["tls-rpt"].flags == ["no-tls-reporting"]
-    assert "spf" not in rows and "dmarc" not in rows
+
+
+def test_a_lookup_that_failed_is_not_an_absence(monkeypatch):
+    status = {"example.com": "SERVFAIL", "_dmarc.example.com": "timeout",
+              "_mta-sts.example.com": "REFUSED", "_smtp._tls.example.com": "timeout"}
+    rows, _, failures = email_rows(monkeypatch, {}, status)
+    assert {"spf", "dmarc", "mta-sts", "tls-rpt"}.isdisjoint(rows)
+    assert len(failures) == 1
+    (line,) = failures
+    assert line.startswith("ct_dns example.com:")
+    for words in ("SPF (example.com: SERVFAIL)", "DMARC (_dmarc.example.com: no reply",
+                  "MTA-STS (_mta-sts.example.com: REFUSED)", "TLS-RPT"):
+        assert words in line, words
+
+
+def test_one_resolver_failing_while_another_answers_is_not_an_absence(monkeypatch):
+    table = {("example.com", "TXT"): ['"site-verification=abc"']}
+    answers = resolving(table)
+
+    def split(cmd, timeout=60, stdin_text=None):
+        if "@198.51.100.53" in cmd:
+            return dig_text("SERVFAIL")
+        return answers(cmd, timeout, stdin_text)
+    monkeypatch.setattr(ct_dns, "dig", lambda n, t="A", short=True: [])
+    monkeypatch.setattr(dnsevidence, "run", split)
+    monkeypatch.setattr(ct_dns, "http_get", lambda url, *a, **k: "__ERROR__ refused")
+    rows, failures = ct_dns._email_assets("example.com", NOW, [], dnsfake.RESOLVERS)
+    assert "spf" not in {a.protocol for a in rows}
+    assert failures and "SERVFAIL" in failures[0]
 
 
 def _sub(name: str, *, enabled: bool = False, spf: bool = True, dkim: bool = True,

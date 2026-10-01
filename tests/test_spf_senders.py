@@ -125,3 +125,19 @@ def test_an_incomplete_authorisation_record_also_refuses():
                                   probe=_recording_probe(seen))
     assert seen == []
     assert any("`authorisation.date` is missing" in g for g in gaps)
+
+
+def test_a_relay_whose_certificate_was_not_read_is_a_gap():
+    from takestock.collectors import tls_scan
+
+    def probe(host: str, role: str) -> tuple[CryptoAsset, list[str]]:
+        return CryptoAsset(name=f"smtp {host}", data_state="in-transit", protocol="tls",
+                           host=host, port="25",
+                           extra={"cert_detail": tls_scan.CERT_NOT_READ_NO_NMAP}), []
+
+    _, gaps = spf_senders.collect(AUTHORISED, NOW, scan=True, resolve=resolver(BASE),
+                                  probe=probe)
+    (line,) = [g for g in gaps if "nmap" in g]
+    assert line.startswith("spf_senders: nmap is not on PATH")
+    assert "relay.example.com:25" in line
+    assert coverage.kind_of(line) == coverage.COULD_NOT_TEST

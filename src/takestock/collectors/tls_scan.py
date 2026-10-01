@@ -400,12 +400,33 @@ def parse_subject_alt_names(out: str) -> list[str]:
     return sorted({n.strip().lower() for n in _SAN_TYPES.findall(block.group(1)) if n.strip()})
 
 
+#: ``extra["cert_detail"]`` on a row whose certificate was not read because nmap is absent.
+CERT_NOT_READ_NO_NMAP = "not read: nmap is not on PATH"
+
+
+def _program_missing(out: str) -> bool:
+    """True when :func:`run` reports that the program itself could not be started."""
+    return out.startswith(ERROR_PREFIX) and "No such file or directory" in out
+
+
 def attach_cert_detail(asset: CryptoAsset, host: str, port: int, raw_dir: Path | None,
                        ref_time: datetime | None) -> None:
-    """Read the certificate on ``host:port`` and record its key, names and expiry."""
+    """Read the certificate on ``host:port`` and record its key, names and expiry.
+
+    When nmap is not installed nothing is read: the row's notes say so and
+    ``extra["cert_detail"]`` is :data:`CERT_NOT_READ_NO_NMAP`, which
+    :func:`cert_not_read_failure` turns into one failure line per collector.
+    """
     family = ["-6"] if is_ipv6_literal(host) else []
     out = run(["nmap", "-Pn", "-v", *family, "-p", str(port), "--script", "ssl-cert",
                scan_address(host)], timeout=180)
+    if _program_missing(out):
+        asset.extra["cert_detail"] = CERT_NOT_READ_NO_NMAP
+        asset.notes = "; ".join(b for b in [
+            asset.notes,
+            "certificate detail not read: nmap is not on PATH, so the certificate's key, "
+            "names and expiry are unknown, not clean"] if b)
+        return
     if raw_dir:
         (raw_dir / f"nmap-cert-{host}-{port}.txt").write_text(out)
     cert = parse_ssl_cert(out)
@@ -448,6 +469,16 @@ def attach_cert_detail(asset: CryptoAsset, host: str, port: int, raw_dir: Path |
             note_bits.append(f"cert expires {not_after.date().isoformat()}")
     asset.extra.update(extra)
     asset.notes = "; ".join(b for b in note_bits if b)
+
+
+def cert_not_read_failure(source: str, assets: list[CryptoAsset]) -> list[str]:
+    """One failure line naming every row whose certificate was skipped for want of nmap."""
+    skipped = [f"{a.host}:{a.port}" for a in assets
+               if a.extra.get("cert_detail") == CERT_NOT_READ_NO_NMAP]
+    if not skipped:
+        return []
+    return [f"{source}: nmap is not on PATH, so certificate detail (key, names, expiry) "
+            f"was not read for {len(skipped)} endpoint(s): {', '.join(skipped)}"]
 
 
 def endpoints(target: dict) -> list[tuple[str, int, str]]:

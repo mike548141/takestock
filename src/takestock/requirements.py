@@ -220,7 +220,9 @@ def _match_clause(clause: Mapping[str, Any], assets: Sequence[CryptoAsset],
                      examples=[_clip(str(g)) for g in hit])
     if "absent" in clause:
         anchor, missing = clause["absent"]["anchor"], clause["absent"]["missing"]
-        have = {_norm_host(a.host) for a in assets if a.protocol == missing and a.host}
+        # A row recording a measured absence (extra.present False) is not the record.
+        have = {_norm_host(a.host) for a in assets
+                if a.protocol == missing and a.host and a.extra.get("present") is not False}
         lacking = sorted({_norm_host(a.host) for a in assets
                           if a.protocol == anchor and a.host} - have)
         if not lacking:

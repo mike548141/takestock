@@ -515,7 +515,7 @@ requirements:
       aggregate reports show the bidder's services passing.
     triggered_by:
       - protocol: dmarc
-        flags_none: [dmarc-reject]
+        flags_none: [dmarc-reject, no-dmarc-record]
         finding: the DMARC policy is not p=reject
       - protocol: dmarc
         flags_any: [subdomains-unprotected]

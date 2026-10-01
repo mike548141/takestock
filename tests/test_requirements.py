@@ -199,6 +199,17 @@ def test_absent_trigger(catalogue):
            "(example.test)" in by_id(reqs, "MAIL.6").evidence
 
 
+def test_a_row_recording_a_measured_absence_is_not_the_record(catalogue):
+    assets = [a for a in clean_mail() if a.protocol not in ("spf", "dmarc")] + [
+        mail("spf", flags=["no-spf-record"], extra={"present": False, "record": ""}),
+        mail("dmarc", flags=["no-dmarc-record"], extra={"present": False, "record": ""})]
+    reqs = derive(assets, catalogue)
+    assert "no SPF record is" in by_id(reqs, "MAIL.4").evidence
+    dmarc_evidence = by_id(reqs, "MAIL.6").evidence
+    assert "no DMARC record is" in dmarc_evidence
+    assert "not p=reject" not in dmarc_evidence
+
+
 def test_absent_trigger_ignores_case_and_trailing_dots(catalogue):
     assets = clean_mail()
     for a in assets:
