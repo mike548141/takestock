@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -164,6 +166,20 @@ def test_data_csv_comment_lines_are_skipped(tmp_path):
     with f.open(newline="") as fh:
         rows = list(config._csv_rows(fh))
     assert rows == [{"binary": "exampled", "product": "Example Daemon"}]
+
+
+def test_a_plan_file_is_an_overlay_whatever_has_been_imported(tmp_path):
+    # A fresh interpreter, so no earlier import can have registered the suffix.
+    (tmp_path / "widgets.yaml").write_text("name: x\n")
+    (tmp_path / "widgets.ipam.yaml").write_text("prefixes: []\n")
+    script = ("import sys\n"
+              "from pathlib import Path\n"
+              "from takestock import config\n"
+              f"names = [p.name for p in config.target_profiles(Path({str(tmp_path)!r}))]\n"
+              "print(names, 'takestock.ipam' in sys.modules)\n")
+    done = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True,
+                          check=True)
+    assert done.stdout.strip() == "['widgets.yaml'] False"
 
 
 def test_a_module_can_register_its_own_overlay(tmp_path, monkeypatch):

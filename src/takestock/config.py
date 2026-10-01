@@ -71,10 +71,15 @@ def targets_dir() -> Path:
     return workspace_root() / "targets"
 
 
+#: The suffix of an IP address plan file (see :mod:`takestock.ipam`).
+IPAM_PLAN_SUFFIX = ".ipam.yaml"
+
 # Files beside a target profile that extend it rather than being a profile.
-# A module that reads an overlay of its own registers the suffix with
+# The ones the package itself writes about are listed here, so the list does
+# not depend on which modules happen to have been imported. Any other module
+# that reads an overlay of its own registers the suffix with
 # register_overlay_suffix().
-OVERLAY_SUFFIXES: list[str] = [".dispositions.yaml", ".derived-ports.yaml"]
+OVERLAY_SUFFIXES: list[str] = [".dispositions.yaml", ".derived-ports.yaml", IPAM_PLAN_SUFFIX]
 
 
 def register_overlay_suffix(*suffixes: str) -> None:

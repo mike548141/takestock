@@ -159,6 +159,11 @@ def test_ssh_hosts_given_as_mappings_are_probed_by_address():
     assert ps.scan_hosts(t) == ["192.0.2.22"]
 
 
+def test_ssh_hosts_given_with_a_port_are_probed_by_host():
+    t = target(ssh_22=["192.0.2.23:2222", "[2001:db8::23]:2222", "2001:db8::24"])
+    assert ps.scan_hosts(t) == ["192.0.2.23", "2001:db8::23", "2001:db8::24"]
+
+
 # ── parsing and classifying nmap ──
 
 def test_the_captured_http_title_run_is_read():

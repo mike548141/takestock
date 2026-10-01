@@ -66,10 +66,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from . import depth, obsarchive
-from .config import data_file
+from .config import data_file, load_yaml_strict
 
 MEASURED = "measured"
 REPORTED = "reported"
@@ -105,8 +103,7 @@ class SchemaError(ValueError):
 
 @lru_cache(maxsize=4)
 def _read_schema(path: str) -> dict[str, Any]:
-    with open(path) as fh:
-        loaded = yaml.safe_load(fh)
+    loaded = load_yaml_strict(Path(path))
     if not isinstance(loaded, dict):
         raise SchemaError(f"{path} did not parse as a mapping")
     return loaded

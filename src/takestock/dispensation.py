@@ -338,6 +338,7 @@ def payload(assets: Iterable[CryptoAsset],
             rules: disposition.DispositionRules | None = None) -> dict:
     """Every asset's assessment, with counts per state and per control, for a report.
 
+    Each row names its asset (``asset``), in the order the assets were given.
     ``rules`` and ``out_of_cycle`` are as for :func:`assess`.
     """
     asof = asof or _dt.date.today()
@@ -357,7 +358,7 @@ def payload(assets: Iterable[CryptoAsset],
         counts[got.state] = counts.get(got.state, 0) + 1
         for b in got.breaches:
             controls[b.control] = controls.get(b.control, 0) + 1
-        rows.append(got.as_dict())
+        rows.append({"asset": a.name, **got.as_dict()})
     return {
         "rows": rows,
         "counts": counts,

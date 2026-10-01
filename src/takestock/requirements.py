@@ -417,7 +417,11 @@ def write_outputs(reqs: Sequence[Requirement], out_dir: str | Path,
 
 
 def main(argv: list[str] | None = None) -> int:
-    """``python -m takestock.requirements <observation_dir> <out_dir> [catalogue]``."""
+    """``python -m takestock.requirements <observation_dir> <out_dir> [catalogue]``.
+
+    Exits as ``takestock requirements`` does: 1 when at least one requirement
+    is derived, 0 when none is, 2 for wrong arguments.
+    """
     args = sys.argv[1:] if argv is None else argv
     if len(args) not in (2, 3):
         print("usage: python -m takestock.requirements <observation_dir> <out_dir> "
@@ -429,7 +433,7 @@ def main(argv: list[str] | None = None) -> int:
     paths = write_outputs(reqs, out, source=obs.name)
     print(f"{len(reqs)} requirements triggered; wrote "
           + ", ".join(str(p) for p in paths.values()))
-    return 0
+    return 1 if reqs else 0
 
 
 if __name__ == "__main__":

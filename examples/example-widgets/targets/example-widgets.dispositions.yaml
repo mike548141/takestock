@@ -13,3 +13,27 @@ decisions:
       settings are left as they are until it is switched off.
     until: the hosted build service runs every build
     review: "2030-06"
+
+# Waiting is a priority call; where the row breaches a MUST-level NZISM
+# control, the manual also asks for a dispensation, and takestock checks that
+# each record carries what the manual requires of one. This one is invented
+# too: the build server's old key exchange offers a Diffie-Hellman group
+# smaller than control 17.2.19.C.01 allows.
+dispensations:
+  - id: DSP-01
+    match:
+      host_pattern: '^build-01\.example\.test$'
+      protocol: ssh
+    controls: ["17.2.19.C.01"]
+    authority: Accreditation Authority (Example Widgets Ltd, IT manager)
+    reason: >
+      The build server's operating system ships an SSH server that cannot drop
+      the smaller Diffie-Hellman group, and the server is being retired.
+    multi_agency_effect: None; the build server serves Example Widgets Ltd only.
+    alternative_mitigations: >
+      SSH to the build server is accepted only from the administrators' network.
+    mitigation_strength: >
+      Moderate; it narrows who can reach the weak key exchange, not the
+      exchange itself.
+    residual_risk: Low, accepted until the hosted build service replaces the server.
+    review_by: "2030-06"

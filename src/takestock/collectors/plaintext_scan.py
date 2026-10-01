@@ -53,7 +53,7 @@ from ..config import load_derived_ports, load_port_encryption
 from ..inside_scope import MAX_HOSTS
 from ..model import NA_VERDICT, CryptoAsset, register_informational_prefixes
 from ..plaintext import CLEARTEXT, ENCRYPTED, OPPORTUNISTIC, PortTable, apply_posture, lookup
-from ..util import ERROR_PREFIX, is_ipv6_literal, now_date, run, scan_address
+from ..util import ERROR_PREFIX, is_ipv6_literal, now_date, run, scan_address, split_host_port
 from . import hsts
 
 SOURCE = "plaintext_scan"
@@ -395,7 +395,8 @@ def scan_hosts(target: dict) -> list[str]:
     for gw in st.get("vpn_gateways", []) or []:
         hosts.append(gw.get("ip") or gw["host"])
     hosts += roles.published_hosts(target)
-    hosts += [str((e.get("ip") or e.get("host") or "") if isinstance(e, dict) else e or "")
+    hosts += [str(e.get("ip") or e.get("host") or "") if isinstance(e, dict)
+              else split_host_port(str(e or ""))[0]
               for e in st.get("ssh_22") or []]
     seen: set[str] = set()
     unique: list[str] = []

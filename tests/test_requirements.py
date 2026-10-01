@@ -322,8 +322,8 @@ def test_load_observation_reads_gaps_and_their_kinds(tmp_path):
 def test_command_writes_markdown_workbook_and_json(tmp_path, capsys):
     obs, out = tmp_path / "obs", tmp_path / "out"
     _write_observation(obs)
-    assert requirements.main([str(obs), str(out)]) == 0
-    expected = ["TLS.1", "TLS.2", "TLS.4", "MAIL.5", "MAIL.6", "GAP.1"]
+    assert requirements.main([str(obs), str(out)]) == 1     # requirements were derived
+    expected =["TLS.1", "TLS.2", "TLS.4", "MAIL.5", "MAIL.6", "GAP.1"]
     assert f"{len(expected)} requirements triggered" in capsys.readouterr().out
 
     data = json.loads((out / "requirements.json").read_text())
@@ -343,6 +343,13 @@ def test_command_writes_markdown_workbook_and_json(tmp_path, capsys):
     rows = list(ws.iter_rows(min_row=2, values_only=True))
     assert [r[0] for r in rows] == expected
     assert all(r[-3:] == (None, None, None) for r in rows)
+
+
+def test_the_command_exits_0_when_nothing_is_derived(tmp_path):
+    obs = tmp_path / "obs"
+    obs.mkdir()
+    (obs / "assets.json").write_text("[]")
+    assert requirements.main([str(obs), str(tmp_path / "out")]) == 0
 
 
 def test_the_command_refuses_the_wrong_arguments(capsys):

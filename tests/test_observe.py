@@ -8,7 +8,7 @@ import socket
 import subprocess
 import sys
 import types
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -114,6 +114,64 @@ def test_an_offline_observation_reads_only_the_supplied_exports(workspace, monke
     props = {p["name"]: p["value"] for p in bom["metadata"]["properties"]}
     assert props["takestock:organisation"] == "Example Widgets Ltd"
     assert props["takestock:offline"] == "true"
+
+
+def _dispensations(workspace: Path, minute: int = 0) -> dict:
+    opts = _quiet()
+    opts.offline = True
+    opts.now = NOW + timedelta(minutes=minute)      # each run needs its own directory
+    result = observe.observe(config.load_target("example-widgets"), opts)
+    payload = json.loads((result.observation / "summary.json").read_text())["dispensations"]
+    assert payload == result.summary["dispensations"]
+    return payload
+
+
+def _row(payload: dict, name: str) -> dict:
+    (row,) = [r for r in payload["rows"] if r["asset"] == name]
+    return row
+
+
+def test_dispensations_are_assessed_on_the_observation_date(workspace, monkeypatch):
+    _no_network(monkeypatch)
+    payload = _dispensations(workspace)
+    assert payload["asof"] == "2030-01-31" and payload["records"] == 1
+    build = _row(payload, "SSH build-01.example.test:22")
+    assert (build["state"], build["record"]) == ("covered", "DSP-01")
+    assert [b["control"] for b in build["breaches"]] == ["17.2.19.C.01"]
+    assert payload["counts"]["covered"] == 1
+    assert _row(payload, "SSH files-01.example.test:22")["state"] == "not-applicable"
+
+
+def test_a_dispensation_past_its_review_date_is_lapsed(workspace, monkeypatch):
+    _no_network(monkeypatch)
+    overlay = workspace / "targets" / "example-widgets.dispositions.yaml"
+    overlay.write_text(overlay.read_text().replace('review_by: "2030-06"', 'review_by: "2029-12"'))
+    assert _row(_dispensations(workspace), "SSH build-01.example.test:22")["state"] == "lapsed"
+
+
+def test_a_third_party_dispensation_reads_the_profile_outside_provider_list(workspace,
+                                                                           monkeypatch):
+    _no_network(monkeypatch)
+    overlay = workspace / "targets" / "example-widgets.dispositions.yaml"
+    overlay.write_text(overlay.read_text().replace(
+        "      protocol: ssh\n    controls:", "      third_party: true\n    controls:"))
+    assert _row(_dispensations(workspace),
+                "SSH build-01.example.test:22")["state"] == "no-dispensation"
+    profile = workspace / "targets" / "example-widgets.yaml"
+    profile.write_text(profile.read_text() + "\nthird_party:\n  - name: Example Build Hosting\n"
+                       "    domains: [build-01.example.test]\n")
+    assert _row(_dispensations(workspace, minute=1),
+                "SSH build-01.example.test:22")["state"] == "covered"
+
+
+def test_an_out_of_cycle_rung_is_acting_not_waiting(workspace, monkeypatch):
+    _no_network(monkeypatch)
+    from takestock import disposition
+    urgent = next(r["track"] for r in disposition.load_ladder() if r["out_of_cycle"])
+    overlay = workspace / "targets" / "example-widgets.dispositions.yaml"
+    overlay.write_text(overlay.read_text().replace(
+        "disposition: accept-replacement-planned", f"disposition: {urgent}"))
+    assert _row(_dispensations(workspace), "SSH build-01.example.test:22")["state"] == "acting"
 
 
 def test_a_collector_that_raises_is_a_failure_not_a_crash(workspace, monkeypatch):

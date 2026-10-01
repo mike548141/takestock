@@ -8,7 +8,7 @@ import json
 import cmdbfake
 import pytest
 
-from takestock import cmdb
+from takestock import cmdb, config
 
 COLLECTOR = cmdb.Actor(kind=cmdb.COLLECTOR, name="Example scanner", artefact="scan.json")
 
@@ -28,6 +28,15 @@ def test_the_bundled_schema_holds_together():
     assert schema.problems() == []
     assert len(schema.classes) == 25
     assert schema.unassigned_roles() == []
+
+
+def test_a_schema_file_with_a_repeated_key_is_refused(tmp_path):
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / cmdb.SCHEMA_FILE).write_text(
+        "schema_version: 1\nclasses: {}\nclasses: {}\n")
+    config.set_workspace(tmp_path)
+    with pytest.raises(config.DuplicateKeyError, match="'classes' is declared twice"):
+        cmdb.raw_schema()
 
 
 def test_a_broken_schema_is_refused():

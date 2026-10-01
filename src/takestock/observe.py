@@ -6,7 +6,8 @@ An observation is a directory ``observations/<UTC stamp>/`` in the workspace
 * ``raw/``: every transcript and reply the collectors kept;
 * ``assets.json``: every row, graded and placed;
 * ``summary.json``: counts, readings across the estate, coverage gaps, any
-  collector failures and the findings;
+  collector failures, the findings, and each row's dispensation state (see
+  :mod:`takestock.dispensation`), assessed on the observation's date;
 * ``bom.cdx.json``: the rows as a CycloneDX 1.6 cryptographic bill of
   materials. It is written last, so its presence marks a finished run.
 
@@ -46,6 +47,7 @@ from . import (
     config,
     coverage,
     ctcache,
+    dispensation,
     dnsevidence,
     inside_scope,
     normalise,
@@ -494,7 +496,8 @@ def observe(target: dict, options: Options | None = None) -> Result:
     if not options.offline and any(collectors.REGISTRY[n].kind == "passive" for n in run.ran):
         run.gaps += _resolver_gaps(target)
 
-    policy = Policy(config.load_baseline())
+    baseline = config.load_baseline()
+    policy = Policy(baseline)
     rules = load_dispositions_for_target(target)
     assets, passes = normalise.finalise(run.assets, policy, config.load_dictionary(),
                                         dispositions=rules,
@@ -504,6 +507,11 @@ def observe(target: dict, options: Options | None = None) -> Result:
     marked = sge.apply_conformance(assets, email_domains,
                                    bulk_mail_domains=sge.bulk_mail_domains(target))
     found = normalise.findings(assets, rules.out_of_cycle)
+    # The rules carry the ladder's out-of-cycle rungs and the profile's
+    # outside-provider list, which a record's `third_party` match reads.
+    dispensations = dispensation.payload(assets, baseline,
+                                         dispensation.records_for_target(target),
+                                         asof=options.now.date(), rules=rules)
 
     summary = normalise.summarise(assets, run.gaps, rules)
     complete = not run.failures and not coverage.required_gaps(run.gaps)
@@ -519,6 +527,7 @@ def observe(target: dict, options: Options | None = None) -> Result:
         "collector_failures": run.failures,
         "findings": found,
         "standards_marked": marked,
+        "dispensations": dispensations,
         "normalise": passes,
         "ct_cache": ctcache.summarise(
             run.ct_reused, list((target.get("discovery") or {}).get("domains") or []),

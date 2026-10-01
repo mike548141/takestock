@@ -63,9 +63,9 @@ from . import config, htmlpage, util, zonefile
 
 SCHEMA_VERSION = 1
 
-#: The plan file's suffix; it sits beside a target profile and is not one.
-PLAN_SUFFIX = ".ipam.yaml"
-config.register_overlay_suffix(PLAN_SUFFIX)
+#: The plan file's suffix; it sits beside a target profile and is not one
+#: (:mod:`takestock.config` lists it as an overlay).
+PLAN_SUFFIX = config.IPAM_PLAN_SUFFIX
 
 #: Source kinds that are dated documents rather than files to read.
 DOCUMENT_KINDS = frozenset({"document", "record"})

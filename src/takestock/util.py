@@ -46,6 +46,22 @@ def scan_address(host: str) -> str:
     return h[1:-1] if h.startswith("[") and h.endswith("]") else h
 
 
+def split_host_port(value: str) -> tuple[str, str]:
+    """(host, port) from ``host:port``, ``[v6]:port``, ``[v6]`` or a bare host or address.
+
+    The port is "" when none is given. An unbracketed IPv6 address is taken
+    whole, since its colons cannot be told apart from a port separator.
+    """
+    v = value.strip()
+    if v.startswith("[") and "]" in v:
+        host, _, rest = v[1:].partition("]")
+        return host, rest.removeprefix(":")
+    if v.count(":") == 1:
+        host, _, port = v.partition(":")
+        return host, port
+    return v, ""
+
+
 def dig(name: str, rtype: str = "A", short: bool = True) -> list[str]:
     """Resolve ``name`` with ``dig`` and return the non-empty answer lines."""
     args = ["dig", "+short", rtype, name] if short else ["dig", rtype, name]

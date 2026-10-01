@@ -11,6 +11,7 @@ from probe_helpers import AUTH, FakeRun, fixture, has, never_run, target
 from takestock import coverage
 from takestock.collectors import ssh_audit
 from takestock.collectors.ssh_audit import InsideHost
+from takestock.util import split_host_port
 
 WHEN = datetime(2030, 1, 31, tzinfo=UTC)
 
@@ -82,9 +83,10 @@ def test_missing_keys_and_odd_entries_are_tolerated():
     ("[2001:db8::22]:2222", ("2001:db8::22", "2222")),
     ("2001:db8::22", ("2001:db8::22", "")),
     ("bastion.example.test", ("bastion.example.test", "")),
+    ("[2001:db8::22]", ("2001:db8::22", "")),
 ])
 def test_an_export_target_is_split_into_host_and_port(value, split):
-    assert ssh_audit.split_target(value) == split
+    assert split_host_port(value) == split
 
 
 # ── outside probe ──
@@ -98,6 +100,50 @@ def test_with_ssh_audit_each_listener_is_audited(monkeypatch):
     assert (a.source_class, a.source_name) == ("public", ssh_audit.SOURCE_ACTIVE)
     assert fake.calls == [["/opt/ssh-audit", "-jj", "-p", "22", "203.0.113.22"]]
     assert a.role.startswith("Remote administration access")
+
+
+@pytest.mark.parametrize(("entry", "probed", "port", "name", "ip"), [
+    ("203.0.113.22", "203.0.113.22", "22", "SSH 203.0.113.22:22", ""),
+    ("203.0.113.22:2222", "203.0.113.22", "2222", "SSH 203.0.113.22:2222", ""),
+    ("bastion.example.test:2222", "bastion.example.test", "2222",
+     "SSH bastion.example.test:2222", ""),
+    ("[2001:db8::22]:2222", "2001:db8::22", "2222", "SSH 2001:db8::22:2222", ""),
+    ("2001:db8::22", "2001:db8::22", "22", "SSH 2001:db8::22:22", ""),
+    ({"ip": "203.0.113.22", "port": 2222}, "203.0.113.22", "2222", "SSH 203.0.113.22:2222", ""),
+    ({"host": "bastion.example.test"}, "bastion.example.test", "22",
+     "SSH bastion.example.test:22", ""),
+    ({"host": "bastion.example.test", "ip": "203.0.113.22"}, "203.0.113.22", "22",
+     "SSH bastion.example.test:22", "203.0.113.22"),
+])
+def test_each_entry_form_is_probed_and_named_like_the_other_probes(monkeypatch, entry, probed,
+                                                                   port, name, ip):
+    monkeypatch.setenv(ssh_audit.BINARY_ENV, "/opt/ssh-audit")
+    fake = FakeRun([(has("/opt/ssh-audit"), json.dumps(STRONG))])
+    monkeypatch.setattr(ssh_audit, "run", fake)
+    [a], _ = ssh_audit.collect(target(ssh_22=[entry]), ref_time=WHEN)
+    assert fake.calls == [["/opt/ssh-audit", "-jj", "-p", port, probed]]
+    assert (a.name, a.port, a.ip) == (name, port, ip)
+    assert a.host == name.removeprefix("SSH ").rsplit(":", 1)[0]
+
+
+def test_a_named_host_keeps_its_name_without_an_instrument(monkeypatch):
+    monkeypatch.delenv(ssh_audit.BINARY_ENV, raising=False)
+    monkeypatch.setattr(ssh_audit.shutil, "which", lambda name: None)
+    monkeypatch.setattr(ssh_audit, "run", never_run)
+    [a], _ = ssh_audit.collect(
+        target(ssh_22=[{"host": "bastion.example.test", "ip": "203.0.113.22"}]))
+    assert (a.name, a.host, a.ip) == ("SSH bastion.example.test:22", "bastion.example.test",
+                                      "203.0.113.22")
+
+
+def test_a_named_host_keeps_its_name_through_nmap(monkeypatch, no_binary):
+    fake = FakeRun([(has("ssh2-enum-algos"), fixture("nmap-ssh2-enum-algos.txt"))])
+    monkeypatch.setattr(ssh_audit, "run", fake)
+    [a], _ = ssh_audit.collect(
+        target(ssh_22=[{"host": "bastion.example.test", "ip": "127.0.0.1", "port": 2222}]))
+    assert fake.calls[0][-1] == "127.0.0.1"
+    assert (a.name, a.host, a.ip) == ("SSH bastion.example.test:2222", "bastion.example.test",
+                                      "127.0.0.1")
 
 
 def test_unparseable_output_is_an_unknown_placeholder(monkeypatch):

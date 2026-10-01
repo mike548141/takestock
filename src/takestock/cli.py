@@ -2,9 +2,10 @@
 
 Each subcommand is a thin layer over a module that can also be used from
 Python: ``observe`` over :mod:`takestock.observe`, ``cmdb`` over
-:mod:`takestock.cmdb`, ``requirements`` over :mod:`takestock.requirements`,
-``sge-note`` over :mod:`takestock.sge` and :mod:`takestock.sge_note`, and
-``ipam`` over :mod:`takestock.ipam` where that module is installed.
+:mod:`takestock.cmdb`, ``requirements`` over :mod:`takestock.requirements`, ``sge`` over
+:mod:`takestock.sge`, ``sge-note`` over :mod:`takestock.sge` and
+:mod:`takestock.sge_note`, and ``ipam`` over :mod:`takestock.ipam` where that
+module is installed.
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ EXIT_CODES = f"""\
 exit codes:
   {EXIT_CLEAN}  clean: the command did its work and found nothing adverse
   {EXIT_FINDINGS}  findings present: observe found a weak verdict or work for an
-     out-of-cycle rung; sge-note found an unmet MUST requirement;
+     out-of-cycle rung; sge or sge-note found an unmet MUST requirement;
      requirements derived at least one requirement
   {EXIT_ERROR}  error: bad arguments, an unreadable input, a refused scan, or an
      observation that could not judge because a collector failed (the
@@ -93,6 +94,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--exports", metavar="DIR",
                    help="directory the plan's source paths are relative to "
                         "(default: the workspace inbox)")
+    p.add_argument("--lookup-asn", action="store_true",
+                   help="first look up the plan's public addresses with the internet "
+                        "registries (sends them over the network)")
+
+    p = sub.add_parser("sge", parents=[common],
+                       help="print the Secure Government Email conformance report",
+                       description="Read one observation against the Secure Government "
+                                   "Email framework for the profile's email domains, and "
+                                   "print the conformance report as plain text.")
+    p.add_argument("observation", type=Path, help="an observation directory")
+    p.add_argument("target", help="the target profile the observation was taken for")
 
     p = sub.add_parser("sge-note", parents=[common],
                        help="write the Secure Government Email conformance note",
@@ -153,21 +165,45 @@ def _ipam(args: argparse.Namespace) -> int:
         print("takestock: the ipam module is not installed in this build", file=sys.stderr)
         return EXIT_ERROR
     argv = [args.plan, args.out] + (["--exports", args.exports] if args.exports else [])
+    if args.lookup_asn:
+        argv.append("--lookup-asn")
     return int(ipam.main(argv))
 
 
-def _sge_note(args: argparse.Namespace) -> int:
-    from . import htmlpage, sge, sge_note
+def _sge_inputs(args: argparse.Namespace) -> tuple[dict, list[str], list] | None:
+    """(target, email domains, assets) for the sge commands; None when there are no domains."""
     target = config.load_target(args.target)
     domains = [str(d) for d in (target.get("discovery") or {}).get("email_domains") or []]
     if not domains:
         print("takestock: the target profile names no `discovery.email_domains`, so there "
               "is nothing to read against the framework", file=sys.stderr)
-        return EXIT_ERROR
-    obs = args.observation
-    assets = json.loads((obs / "assets.json").read_text(encoding="utf-8"))
+        return None
+    path = args.observation / "assets.json"
+    assets = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(assets, list):
-        raise ValueError(f"{obs / 'assets.json'}: expected a list of asset rows")
+        raise ValueError(f"{path}: expected a list of asset rows")
+    return target, domains, assets
+
+
+def _sge(args: argparse.Namespace) -> int:
+    from . import sge
+    inputs = _sge_inputs(args)
+    if inputs is None:
+        return EXIT_ERROR
+    target, domains, assets = inputs
+    report = sge.evaluate(assets, domains, bulk_mail_domains=sge.bulk_mail_domains(target))
+    # The same text ``python -m takestock.sge`` prints.
+    print(sge._format(report, domains))
+    return EXIT_FINDINGS if report.breaches() else EXIT_CLEAN
+
+
+def _sge_note(args: argparse.Namespace) -> int:
+    from . import htmlpage, sge, sge_note
+    inputs = _sge_inputs(args)
+    if inputs is None:
+        return EXIT_ERROR
+    target, domains, assets = inputs
+    obs = args.observation
     results = sge.evaluate(assets, domains,
                            bulk_mail_domains=sge.bulk_mail_domains(target))
     for problem in htmlpage.theme_from_target(target).contrast_failures():
@@ -195,6 +231,7 @@ _COMMANDS = {
     "observe": _observe,
     "cmdb": _cmdb,
     "ipam": _ipam,
+    "sge": _sge,
     "sge-note": _sge_note,
     "requirements": _requirements,
 }

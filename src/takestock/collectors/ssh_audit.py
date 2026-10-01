@@ -34,7 +34,15 @@ from .. import coverage, inside_scope, roles
 from ..config import display_path, inbox_path
 from ..inside_scope import MAX_HOSTS
 from ..model import NA_VERDICT, CryptoAsset
-from ..util import ERROR_PREFIX, file_mtime_date, is_ipv6_literal, now_date, run, scan_address
+from ..util import (
+    ERROR_PREFIX,
+    file_mtime_date,
+    is_ipv6_literal,
+    now_date,
+    run,
+    scan_address,
+    split_host_port,
+)
 
 SOURCE = "ssh_audit"
 SOURCE_ACTIVE = "Active SSH scan (ssh-audit) — internet-facing endpoint"
@@ -113,10 +121,37 @@ def _placeholder(host: str, port: str, note: str, source_class: str, source_name
                        collected_at=collected_at, notes=note)
 
 
-def _normalise_target(entry) -> tuple[str, str]:
+@dataclass(frozen=True)
+class Listener:
+    """One internet-facing listener: the address to probe, its port, and the name to report."""
+
+    probe: str
+    port: str
+    name: str
+
+
+def _normalise_target(entry: object) -> Listener:
+    """A ``scan_targets.ssh_22`` entry as a :class:`Listener`.
+
+    An entry is a host or address, ``host:port`` (``[v6]:port`` for IPv6), or
+    a mapping with ``host``, ``ip`` and ``port``. Given both ``host`` and
+    ``ip``, the address is probed and the host name is reported, with the
+    address beside it, as the other probes do. The port defaults to 22.
+    """
     if isinstance(entry, dict):
-        return str(entry.get("ip") or entry.get("host")), str(entry.get("port", 22))
-    return str(entry), "22"
+        name = str(entry.get("host") or "").strip()
+        addr = str(entry.get("ip") or "").strip()
+        return Listener(addr or name, str(entry.get("port") or 22), name or addr)
+    host, port = split_host_port(str(entry))
+    return Listener(host, port or "22", host)
+
+
+def _report_as(asset: CryptoAsset, listener: Listener) -> CryptoAsset:
+    """Name a row after the listener's reported name, keeping the probed address beside it."""
+    if listener.name != listener.probe:
+        asset.name = f"SSH {listener.name}:{listener.port}"
+        asset.host, asset.ip = listener.name, listener.probe
+    return asset
 
 
 def _probe(binary: str, host: str, port: str, raw_dir: Path | None,
@@ -148,37 +183,27 @@ def collect(target: dict, raw_dir: Path | None = None,
         return [], [refused]
     binary = _binary()
     if binary:
-        return [_probe(binary, host, port, raw_dir, ref_time) for host, port in entries], []
+        return [_report_as(_probe(binary, e.probe, e.port, raw_dir, ref_time), e)
+                for e in entries], []
     if not shutil.which("nmap"):
-        return [_placeholder(host, port, "Not measured: neither ssh-audit (set "
-                             f"{BINARY_ENV}) nor nmap is available, so no probe was sent.",
-                             "unknown", SOURCE_NOT_PERFORMED, now_date(ref_time))
-                for host, port in entries], []
+        return [_report_as(_placeholder(e.probe, e.port, "Not measured: neither ssh-audit (set "
+                                        f"{BINARY_ENV}) nor nmap is available, so no probe "
+                                        "was sent.", "unknown", SOURCE_NOT_PERFORMED,
+                                        now_date(ref_time)), e)
+                for e in entries], []
     assets: list[CryptoAsset] = []
     failures: list[str] = []
-    for host, port in entries:
-        out = run(_nmap_command(host, port), timeout=NMAP_RUN_TIMEOUT)
+    for e in entries:
+        out = run(_nmap_command(e.probe, e.port), timeout=NMAP_RUN_TIMEOUT)
         if raw_dir:
-            (raw_dir / f"nmap-ssh2-{host}-{port}.txt").write_text(out)
-        asset, failure = asset_from_nmap(InsideHost(host, port, ""), out, ref_time,
+            (raw_dir / f"nmap-ssh2-{e.probe}-{e.port}.txt").write_text(out)
+        asset, failure = asset_from_nmap(InsideHost(e.probe, e.port, ""), out, ref_time,
                                          inside=False)
         if asset is not None:
-            assets.append(asset)
+            assets.append(_report_as(asset, e))
         if failure:
             failures.append(failure)
     return assets, failures
-
-
-def split_target(value: str) -> tuple[str, str]:
-    """(host, port) from ``host:port``, ``[v6]:port``, or a bare host (port "")."""
-    v = value.strip()
-    if v.startswith("[") and "]" in v:
-        host, _, rest = v[1:].partition("]")
-        return host, rest.removeprefix(":")
-    if v.count(":") == 1:
-        host, _, port = v.partition(":")
-        return host, port
-    return v, ""
 
 
 def collect_inbox(target: dict, root: Path | None = None) -> tuple[list[CryptoAsset], list[str]]:
@@ -234,7 +259,7 @@ def collect_inbox(target: dict, root: Path | None = None) -> tuple[list[CryptoAs
                 harvest="Re-export that one file.",
                 nature=coverage.NO_DATA))
             continue
-        host, port = split_target(str(struct.get("target") or ""))
+        host, port = split_host_port(str(struct.get("target") or ""))
         asset = _asset_from_struct(struct, host or path.stem, port or "22")
         mtime = file_mtime_date(path)
         asset.source_class = "private"

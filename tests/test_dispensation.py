@@ -126,6 +126,7 @@ def test_payload_counts_states_and_controls():
     assert out["counts"][ds.NO_DISPENSATION] == 1
     assert out["counts"][ds.NOT_APPLICABLE] == 1
     assert out["by_control"] == {"1.1.C.01": 2}
+    assert [r["asset"] for r in out["rows"]] == ["svc", "svc", "svc"]
     assert out["asof"] == "2050-01-01"
     assert out["review_control"]["level"] == "should"
     assert {r["field"] for r in out["required"]} >= {"authority", "review_by", "parties_consulted"}
