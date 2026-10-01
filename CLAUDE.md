@@ -20,11 +20,33 @@ comments, docstrings, tests, fixtures, data files, documentation, and **the
 records too**: commit messages, session logs, changelog, board or issue notes,
 decision records, and the Claude memory kept for this project.
 
-- **Judge by meaning, not by keywords.** A sentence that never names anyone can
-  still point at one organisation. Its sector, what it does for whom, its size
-  or counts, its city or sites, its suppliers, its programme, its dates, or a
-  measured figure a stranger could match against public DNS or certificate logs
-  can each do it. Removing the name is not enough; remove the description.
+- **Read everything you write here for meaning: that is the check.** Keyword
+  lists cannot do this job. The list of ways to describe an organisation never
+  ends, and a long list of banned words blocks ordinary prose. So before
+  anything is written to this repository (code, comment, test, fixture, doc,
+  commit message, session log, roadmap or decision record), read it as a
+  stranger would and ask whether it hints at a particular organisation
+  through any of these:
+  - its **name**, initials, brand, or the name of one of its systems;
+  - its **assets**: domain names, IP addresses, hostnames, site codes, tenant
+    or account IDs, certificates, naming conventions;
+  - its **services**: what it does and for whom; its **customers** and the
+    people it serves; its **sector**;
+  - its **size, places and timeline**: counts, sizes, cities, buildings, data
+    centres, dates of its programmes;
+  - its **suppliers and partners**, its programmes and contracts, and its
+    **people**;
+  - a **measured figure** a stranger could match against public DNS or
+    certificate logs.
+
+  Removing the name is not enough; remove the description.
+- **The use-case trap.** Work here is often prompted by a real situation:
+  *"we need to handle X because…"*. That situation must never be written into
+  this repository, and the records are where it slips in. Write the
+  capability, never the circumstance. In a decision record, session log,
+  roadmap item, issue or commit message, say what takestock now does and the
+  generic problem it solves, illustrated with a synthetic example. The
+  situation that prompted it stays with whoever brought it.
 - **Examples and fixtures are synthetic.** Use reserved names (`example.test`,
   `example.com`), documentation addresses (`192.0.2.0/24`, `198.51.100.0/24`,
   `203.0.113.0/24`, `2001:db8::/32`) and synthetic GUIDs
@@ -52,8 +74,10 @@ point `git config takestock.denylist` at a local file of terms. The file stays
 outside the repository, and the guard then matches those terms case-folded,
 accent-stripped and across line breaks.
 
-The guard is the floor. It cannot read meaning, so read your own diff for
-meaning before every commit.
+The guard is only the floor. It catches exact identifiers (addresses, hostnames,
+IDs, and any denylist terms), which are finite and precise, and nothing else.
+**It is not the check.** The check is reading your whole staged diff and
+commit message for meaning before every commit, against the list above.
 
 ## Dev loop
 
