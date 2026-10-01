@@ -5,7 +5,12 @@
 # target profile (`<target-stem>.dispositions.yaml`), whose rules and recorded
 # decisions are checked before these.
 #
-# Two sections:
+# Three sections:
+#   ladder:   the time-ordered rungs a rule or decision may place work on,
+#             most urgent first. An overlay may declare its own ladder, which
+#             replaces this one; it must still contain every rung a loaded rule
+#             proposes. `out_of_cycle: true` marks a rung whose work does not
+#             wait for a planning cycle.
 #   rules:    ordered, first match wins. A match produces
 #             `disposition_basis: proposed`.
 #   decisions: decisions a person made, keyed by a match block, overriding
@@ -35,7 +40,7 @@
 # endpoint, as declared in the target profile). Every rule below is scoped;
 # none matches everything.
 #
-# The remediation ladder has four time-ordered rungs:
+# The default ladder has four time-ordered rungs:
 #   critical  fix immediately, out of cycle. The bar is exploitability, not
 #             algorithm strength: the finding must plausibly let someone
 #             readily obtain data they are not authorised to see, or get onto
@@ -45,12 +50,18 @@
 #   wave-2    the next priority, or work that depends on a prior wave.
 #   wave-3    the next priority after that, or dependent work.
 # Beside the rungs sit tracks that say why something is not being acted on in
-# the ordinary way: accept-no-alternative, accept-sase, defer-cloud,
-# retire-planned, pqc-migrate and no-action.
+# the ordinary way: accept-no-alternative, accept-replacement-planned,
+# defer-migration, retire-planned, pqc-migrate and no-action.
 #
 # No rule here proposes wave-2 or wave-3: placing work in a later wave is a
 # programme commitment, and that is an organisation's decision. The dates of
 # each wave are likewise the organisation's, set in its overlay.
+
+ladder:
+  - {track: critical, label: Critical, out_of_cycle: true}
+  - {track: wave-1, label: Wave 1}
+  - {track: wave-2, label: Wave 2}
+  - {track: wave-3, label: Wave 3}
 
 rules:
 
@@ -82,9 +93,9 @@ rules:
 
       An asset belongs here only when configuration, replacement AND fronting
       all fail. A weak endpoint that cannot be fixed in place can often be
-      fixed in the path: a secure edge terminates a strong connection and
-      forwards over a route nothing else can reach, with the endpoint
-      segmented so that edge is its only way in. Fronting removes the exposure
+      fixed in the path: a proxy in front of it terminates a strong
+      connection and forwards over a route nothing else can reach, with the
+      endpoint segmented so that proxy is its only way in. Fronting removes the exposure
       rather than the weakness, so where it applies the deliverable is the
       segmentation, not the proxy: a fronted endpoint still reachable by its
       old path has gained nothing.
@@ -303,8 +314,9 @@ rules:
   # ── the precedence rail ──
   #
   # A weak floor on something internet-facing is scheduled remediation
-  # whatever is coming to replace it. It is checked before every softening
-  # track below (accept-sase, defer-cloud), so none of them can absorb it.
+  # whatever is planned to replace it. It is checked before every softening
+  # track below (accept-replacement-planned, defer-migration), so none of them
+  # can absorb it.
   - id: internet-facing-weak
     match:
       verdict: weak
@@ -321,8 +333,8 @@ rules:
       or a similar floor). That is a downgrade exposure, not an open door: an
       attacker needs a privileged network position and serious compute to use
       it, which is why it is scheduled rather than critical. Schedule it in
-      Wave 1, and do NOT let a migration or edge replacement absorb it: the
-      exposure exists now, and a future control cannot protect traffic
+      Wave 1, and do NOT let a planned migration or replacement absorb it:
+      the exposure exists now, and a future control cannot protect traffic
       captured today.
 
   # DKIM keys are published in DNS, so a weak one is visible to an attacker
@@ -384,8 +396,8 @@ rules:
 
   # Whatever weak cryptography the rules above have not claimed: not known to
   # be internet-facing (false, or unknown for collectors that cannot tell).
-  # A secure access edge protects user-to-application traffic only, so it does
-  # not make a weak internal service safe either.
+  # A planned replacement of one control does not make a weak internal service
+  # safe in the meantime either.
   - id: weak-not-internet-facing
     match:
       verdict: weak
@@ -402,36 +414,37 @@ rules:
       lower than something an outsider can reach directly, so it belongs in
       Wave 1 rather than being treated as an emergency.
 
-  # Dormant until a person lists an asset under the target profile's
-  # `lifecycle.sase_replaces` patterns: whether a coming secure access service
-  # edge (SASE) replaces a control is a judgement only a person can make. It
-  # requires a non-weak verdict, so it can never contradict the rail above.
-  - id: accept-sase-tolerable-control
+  # Dormant until a person marks an asset `replaced_by` a planned
+  # replacement: whether a planned change replaces a control is a judgement
+  # only a person can make. It requires a non-weak verdict, so it can never
+  # contradict the rail above.
+  - id: accept-replacement-tolerable-control
     match:
-      extra_true: sase_replaces
+      extra_true: replaced_by
       verdict: [acceptable, strong, pqc]
-    disposition: accept-sase
+    disposition: accept-replacement-planned
     effort: S
     # Per asset: each control can stop being tolerable on its own before the
-    # cutover. Not a work track.
+    # replacement arrives. Not a work track.
     effort_scope: per-asset
+    until: the planned replacement is in service and this control is withdrawn
     reason: >
-      This control is being replaced by an incoming secure access service
-      edge, and its current cryptographic posture is acceptable in the
-      meantime, so no separate remediation is scheduled: effort spent here
-      before cutover would be thrown away. (This never matches anything with
-      a weak verdict; the internet-facing weak rail above is checked first,
-      and the critical rules before that.)
+      A planned replacement will remove this control, and its current
+      cryptographic posture is acceptable until then, so no separate
+      remediation is scheduled: effort spent here before the replacement
+      would be thrown away. If the replacement slips, this acceptance should
+      be reviewed. (This never matches anything with a weak verdict; the
+      internet-facing weak rail above is checked first, and the critical
+      rules before that.)
 
-  # Dormant until a person lists an asset under the target profile's
-  # `lifecycle.retiring_by_migration` patterns. Even then it fires only when
-  # the current exposure is tolerable; a weak internet-facing asset still
-  # meets the rail above.
-  - id: defer-cloud-retiring-infrastructure
+  # Dormant until a person marks an asset `retiring_by` a migration or
+  # retirement. Even then it fires only when the current exposure is
+  # tolerable; a weak internet-facing asset still meets the rail above.
+  - id: defer-migration-retiring-infrastructure
     match:
-      extra_true: retiring_by_migration
+      extra_true: retiring_by
       verdict: [acceptable, strong, pqc]
-    disposition: defer-cloud
+    disposition: defer-migration
     effort: XL
     # Per rule: the size is the migration, not the asset, and one migration
     # retires the whole set. Known limit: two concurrent retirement programmes
@@ -439,11 +452,10 @@ rules:
     # organisation running two separates them with a decision per programme.
     effort_scope: per-rule
     reason: >
-      This asset belongs to infrastructure that the organisation's cloud
-      migration programme retires, and its current exposure is tolerable in
-      the meantime, so fixing its cryptography on the platform being
-      replaced would be throwaway work. The migration itself is the
-      remediation.
+      This asset is on a system being migrated off or retired, and its
+      current exposure is tolerable in the meantime, so fixing its
+      cryptography on the platform being left behind would be throwaway
+      work. The migration or retirement itself is the remediation.
 
   # ── acceptable today, and still on its way out ──
   #

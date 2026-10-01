@@ -11,10 +11,11 @@ from takestock import __version__, cli, config
 
 VALID_EFFORTS = {"S", "M", "L", "XL"}
 VALID_SCOPES = {"per-asset", "per-rule"}
+BUNDLED_DISPOSITIONS = config.BUNDLED_DATA_DIR / "dispositions.yaml"
 
 
 def test_every_disposition_rule_declares_its_effort_scope():
-    doc = config.load_yaml_strict(config.dispositions_path())
+    doc = config.load_yaml_strict(BUNDLED_DISPOSITIONS)
     ids = [r["id"] for r in doc["rules"]]
     assert len(ids) == len(set(ids))
     for r in doc["rules"]:
@@ -23,13 +24,14 @@ def test_every_disposition_rule_declares_its_effort_scope():
         assert r["effort_scope"] in VALID_SCOPES, r["id"]
         assert " ".join(r["reason"].split()), r["id"]
     assert doc["decisions"] == []
+    assert [r["track"] for r in doc["ladder"]] == ["critical", "wave-1", "wave-2", "wave-3"]
 
 
 def test_the_ordering_the_dispositions_rely_on():
-    ids = [r["id"] for r in config.load_yaml_strict(config.dispositions_path())["rules"]]
+    ids = [r["id"] for r in config.load_yaml_strict(BUNDLED_DISPOSITIONS)["rules"]]
     assert ids.index("accept-no-alternative-cleartext") < ids.index("cleartext-service")
     assert ids.index("accept-no-alternative-provider-hsts") + 1 == ids.index("no-usable-hsts-policy")
-    assert ids.index("internet-facing-weak") < ids.index("accept-sase-tolerable-control")
+    assert ids.index("internet-facing-weak") < ids.index("accept-replacement-tolerable-control")
     assert ids.index("pqc-migrate-key-establishment") < ids.index("pqc-migrate-signature-only")
 
 
