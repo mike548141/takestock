@@ -643,7 +643,8 @@ requirements:
     settled_by: >-
       A DNS reading of the TXT record at _dmarc.<domain>.
     # The five tags the evaluator reads. The guide's reasons: forensic reports
-    # carry message content; pct, rf and ri are deprecated in DMARCbis.
+    # carry message content; pct, rf and ri were removed from DMARC by RFC 9989
+    # (Appendix C.5.2; historic in its tag registry, §9.3).
     tags: [ruf, fo, pct, rf, ri]
 
   - id: SGE-DMARC-R04

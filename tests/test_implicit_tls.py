@@ -102,3 +102,19 @@ def test_every_listed_port_has_a_service_name():
 def test_the_plan_is_shared_with_the_cleartext_check():
     plan = plaintext_scan.build_plan(mail_target(), derived={})
     assert implicit_tls.planned(mail_target(), plan) == implicit_tls.planned(mail_target())
+
+
+def test_old_versions_the_client_would_not_offer_are_unmeasured_not_refused(monkeypatch):
+    legacy = fixture("openssl3-tls1-not-offered.txt")
+    monkeypatch.setattr(tls_scan, "run", FakeRun([
+        (has("ssl-cert"), fixture("nmap-ssl-cert.txt")),
+        (has("s_client", "-tls1"), legacy),
+        (has("s_client", "-tls1_1"), legacy),
+        (has("s_client", "-tls1_2"), fixture("openssl-tls1_2.txt")),
+        (has("s_client", "-tls1_3"), fixture("openssl-tls1_3.txt")),
+    ]))
+    a = implicit_tls.measure(MAIL, 993, ref_time=WHEN)
+    assert a.extra["version_probe"].startswith(
+        "TLSv1.0=unknown-client-cannot-offer; TLSv1.1=unknown-client-cannot-offer")
+    assert tls_scan.VERSION_PROBE_UNAVAILABLE in a.flags
+    assert "would not offer TLSv1.0, TLSv1.1" in a.notes

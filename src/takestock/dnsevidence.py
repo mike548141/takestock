@@ -28,7 +28,7 @@ import subprocess
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from . import config
+from . import config, tls_session
 from .util import ERROR_PREFIX, USER_AGENT, run
 
 #: The data file naming the public services DNS collectors use by default.
@@ -245,7 +245,12 @@ def _starttls(host: str, version: str) -> dict:
     if proto and ciph and ciph.group(1) not in ("0000", "(NONE)"):
         return {"version": version, "at": at, "state": "accepted",
                 "protocol": proto.group(1), "cipher": ciph.group(1)}
-    alert = re.search(r"(alert [a-z ]+|handshake failure|no protocols available|"
+    if tls_session.CLIENT_CANNOT_OFFER.search(out):
+        return {"version": version, "at": at, "state": "could-not-ask",
+                "detail": ("the probing openssl would not offer this version at its "
+                           "security level, so the server was never asked; "
+                           + tls_session.LEGACY_PROTOCOLS_HOW)}
+    alert = re.search(r"(alert [a-z ]+|handshake failure|"
                       r"unsupported protocol|wrong version number)", out, re.I)
     if alert:
         return {"version": version, "at": at, "state": "refused",

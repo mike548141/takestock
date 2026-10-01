@@ -370,7 +370,7 @@ def _eval_dkim_alignment(req: dict, assets: list[Any], domains: list[str],
             continue
         detail = (
             "relaxed DKIM alignment is published"
-            + ("" if m else ", by omitting the tag, which RFC 7489 reads as relaxed")
+            + ("" if m else ", by omitting the tag, which RFC 9989 §4.7 reads as relaxed")
             + ", and the standard recommends strict ONLY where a domain is not "
               "involved with bulk mail sending — which of the organisation's domains "
               "are is not established, so whether this recommendation applies here is "
@@ -1068,7 +1068,7 @@ def _eval_spf_alignment(req: dict, assets: list[Any], domains: list[str]) -> lis
             status = FAIL
             reason = ("relaxed SPF alignment is published"
                       + ("" if "aspf" in tags else
-                         ", by omitting the tag, which RFC 7489 reads as relaxed")
+                         ", by omitting the tag, which RFC 9989 §4.7 reads as relaxed")
                       + "; the DMARC guide recommends strict (aspf=s) — a recommendation "
                         "unmet, not a requirement breached")
         rows.append(Conformance(req["id"], req["title"], req["level"], req["scope"],
@@ -1102,7 +1102,8 @@ def _eval_dmarc_unused_tags(req: dict, assets: list[Any], domains: list[str]) ->
                            "because forensic reports can carry message headers, subjects "
                            "and bodies to a third party")
             if any(t in present for t in ("pct", "rf", "ri")):
-                why.append("pct, rf and ri are deprecated in DMARCbis")
+                why.append("pct, rf and ri were removed from DMARC by RFC 9989 (Appendix "
+                           "C.5.2), whose tag registry marks them historic (§9.3)")
             reason = (f"the record publishes {', '.join(present)}, which the DMARC guide "
                       "says should not be used; " + "; ".join(why)
                       + " — a recommendation unmet, not a requirement breached")

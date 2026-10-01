@@ -86,3 +86,33 @@ def test_the_cli_prints_its_version(capsys):
     assert f"takestock {__version__}" in capsys.readouterr().out
     assert cli.main([]) == 2
     assert cli.main(["observe"]) == 2
+
+
+def test_the_dispositions_header_lists_every_match_key():
+    from takestock import disposition
+    header = []
+    for line in BUNDLED_DISPOSITIONS.read_text().splitlines():
+        if not line.startswith("#"):
+            break
+        header.append(line.lstrip("# "))
+    text = " ".join(header)
+    listed = text[text.index("Match keys:"):].split(".", 1)[0]
+    named = set(re.findall(r"\b[a-z]+(?:_[a-z]+)*\b", listed)) & disposition.MATCH_KEYS
+    assert named == disposition.MATCH_KEYS
+
+
+def test_the_secure_government_email_data_cites_the_current_dmarc_standard():
+    text = (config.BUNDLED_DATA_DIR / "secure-government-email.yaml").read_text()
+    assert "DMARCbis" not in text
+    assert "RFC 9989" in text
+
+
+def test_captured_http_fixtures_carry_no_real_capture_time():
+    from pathlib import Path
+    probes = Path(__file__).parent / "fixtures" / "probes"
+    for path in sorted(probes.glob("curl-*.txt")):
+        lines = path.read_text().splitlines()
+        dates = [ln for ln in lines if ln.lower().startswith("date:")]
+        assert all(d == "Date: Tue, 15 Jan 2030 00:00:00 GMT" for d in dates), path.name
+        if dates:
+            assert "Date header" in lines[0], path.name

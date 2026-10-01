@@ -7,7 +7,11 @@ sending surface: named hosts, address ranges, the policies traversed, and
 where the record stands against RFC 7208's two lookup limits.
 
 With ``scan=True`` it also probes each named relay's STARTTLS on port 25,
-using a probe function the caller supplies. Such a probe measures what the
+using a probe function the caller supplies, but only when the target profile
+carries a complete ``authorisation:`` stanza (:mod:`takestock.inside_scope`).
+This collector checks that itself rather than trusting its caller: without
+the stanza it contacts nothing and records the refusal as a gap. Such a probe
+measures what the
 relay accepts when it *receives*, never what it negotiates when it
 *delivers*; the rows and gaps say so, because the two are easily confused.
 Relays already declared as the organisation's inbound gateways
@@ -19,7 +23,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import UTC, datetime
 
-from .. import coverage, roles, spf
+from .. import coverage, inside_scope, roles, spf
 from ..coverage import Gap
 from ..model import CryptoAsset
 from ..util import now_date
@@ -94,6 +98,10 @@ def collect(target: dict, ref_time: datetime | None = None, scan: bool = False,
         return assets + list(carried[0]), gaps + list(carried[1])
     if not scan:
         return assets, gaps
+    refused = inside_scope.scan_refusal(SOURCE_KEY, target)
+    if refused:
+        gaps.append(refused_gap(refused, len(relays)))
+        return assets, gaps
     if probe is None:
         gaps.append(no_probe_gap(len(relays)))
         return assets, gaps
@@ -122,6 +130,20 @@ def no_probe_gap(relays: int) -> Gap:
                 "but none was tested, so there is no evidence here about how they "
                 "protect mail in transit."),
         harvest="Run again with a STARTTLS probe available.",
+        nature=coverage.NO_DATA)
+
+
+def refused_gap(refusal: str, relays: int) -> Gap:
+    """The gap recorded when the profile does not authorise probing the relays."""
+    return coverage.gap(
+        coverage.COULD_NOT_TEST,
+        f"{refusal}. The {relays} SPF-named relay(s) were not probed",
+        impact_kind=coverage.CHANGES_CONCLUSION,
+        impact=("The servers allowed to send email for the organisation are listed "
+                "but none was tested, so there is no evidence here about how they "
+                "protect mail in transit."),
+        harvest=("Add a complete `authorisation:` stanza (scope, authorised_by, date) "
+                 "to the target profile and run again."),
         nature=coverage.NO_DATA)
 
 

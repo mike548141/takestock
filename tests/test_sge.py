@@ -164,7 +164,8 @@ def test_strict_dkim_alignment_passes_and_relaxed_stays_unsettled():
     assert one("SGE-DMARC-R01", [dmarc("v=DMARC1; p=reject; adkim=s")]).status == sge.PASS
     row = one("SGE-DMARC-R01", [dmarc("v=DMARC1; p=reject")])
     assert row.status == sge.NOT_MEASURED and row.observed == "adkim=r"
-    assert "RFC 7489 reads as relaxed" in row.evidence and row.subject_note == ""
+    assert "RFC 9989 §4.7 reads as relaxed" in row.evidence and row.subject_note == ""
+    assert "7489" not in row.evidence
 
 
 def test_a_bulk_mail_provider_in_the_sender_policy_is_an_indicator():
@@ -179,9 +180,12 @@ def test_a_bulk_mail_provider_in_the_sender_policy_is_an_indicator():
 
 def test_spf_alignment_and_unwanted_tags():
     assert one("SGE-DMARC-R02", [dmarc("v=DMARC1; p=reject; aspf=s")]).status == sge.PASS
-    assert one("SGE-DMARC-R02", [dmarc("v=DMARC1; p=reject")]).status == sge.FAIL
+    relaxed = one("SGE-DMARC-R02", [dmarc("v=DMARC1; p=reject")])
+    assert relaxed.status == sge.FAIL and "RFC 9989 §4.7 reads as relaxed" in relaxed.reason
     row = one("SGE-DMARC-R03", [dmarc("v=DMARC1; p=reject; ruf=mailto:f@example.com; pct=100")])
-    assert row.status == sge.FAIL and "ruf=" in row.observed and "deprecated" in row.reason
+    assert row.status == sge.FAIL and "ruf=" in row.observed
+    assert "removed from DMARC by RFC 9989 (Appendix C.5.2)" in row.reason
+    assert "DMARCbis" not in row.reason
     assert one("SGE-DMARC-R03", [dmarc("v=DMARC1; p=reject")]).status == sge.PASS
 
 

@@ -142,9 +142,9 @@ limits of ten DNS-consuming terms and two lookups that return nothing.
 
 When run with probing switched on and a probe supplied by the program that
 calls it, it also checks STARTTLS on each relay the SPF record names (hosts
-already listed under `scan_targets.smtp_25` are not probed twice). The
-collector does not check the authorisation record itself; the calling
-program must.
+already listed under `scan_targets.smtp_25` are not probed twice). It
+checks the authorisation record itself before probing: without a complete
+one it contacts nothing and records the refusal as a gap.
 
 **Cannot see.** Which of the authorised senders actually send. A relay probe
 measures what the relay accepts when it **receives**, never what it
@@ -256,10 +256,13 @@ redacted.
 **Cannot see.** The chosen group says only what the server picked from what
 this client offered: if the local TLS library offers no post-quantum group,
 the row cannot say whether the server would have chosen one. A version the
-pinned handshake could not ask about is flagged as unknown, not absent.
-Without `nmap`, every endpoint gets an `unknown` row whose note reads like
-an endpoint that did not answer; check that `nmap` is installed before
-reading such rows.
+pinned handshake could not ask about is flagged as unknown, not absent; one
+the local `openssl` would not offer is recorded as
+`unknown-client-cannot-offer`, never as refused (see
+[SETUP-SCANNERS.md](SETUP-SCANNERS.md)). Without `nmap` the scan does not
+run and the run records one failure saying so. An `nmap` run that fails for
+one endpoint gives it an `unknown` row saying the scan did not complete,
+never one that reads like a silent port.
 
 ### `ike_scan`
 

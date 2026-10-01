@@ -1,0 +1,28 @@
+# Composed by hand from OpenSSL 3's s_client output format (no OpenSSL 3 command-line tool was available to capture from): at its default security level the client will not offer TLS 1.0, so it sends a protocol_version alert (7 bytes) and no ClientHello; the error-line prefix is replaced with 1000; session start times are replaced with 1900000000.
+CONNECTED(00000003)
+1000:error:0A0000BF:SSL routines:tls_setup_handshake:no protocols available:.../ssl/statem/statem_lib.c:104:
+---
+no peer certificate available
+---
+No client certificate CA names sent
+---
+SSL handshake has read 0 bytes and written 7 bytes
+Verification: OK
+---
+New, (NONE), Cipher is (NONE)
+Secure Renegotiation IS NOT supported
+No ALPN negotiated
+SSL-Session:
+    Protocol  : TLSv1
+    Cipher    : 0000
+    Session-ID:
+    Session-ID-ctx:
+    Master-Key:
+    PSK identity: None
+    PSK identity hint: None
+    SRP username: None
+    Start Time: 1900000000
+    Timeout   : 7200 (sec)
+    Verify return code: 0 (ok)
+    Extended master secret: no
+---

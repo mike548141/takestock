@@ -292,9 +292,11 @@ dispensations:
 The record itself is the retained record `1.1.69.C.01` asks for. Annual
 review (`1.1.68.C.01`) is a SHOULD.
 
-A dispensation's `match` block uses the same keys as a disposition's, but it
-is checked without the target profile's outside-provider list, so
-`third_party: true` never holds there.
+A dispensation's `match` block uses the same keys as a disposition's. For
+`third_party` to hold, the program assessing dispensations must pass the
+rules loaded for the target (`rules=` on `dispensation.assess` and
+`dispensation.payload`), which carry its outside-provider list; without them
+every host counts as the organisation's own.
 
 ### The states
 

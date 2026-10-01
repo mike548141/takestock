@@ -6,12 +6,19 @@ must stay distinct:
 
 * ``offered``: a session was agreed at the version asked for;
 * ``refused``: the server answered and declined that version;
-* ``could-not-ask``: the probe never reached a server that could answer, so
-  nothing is known about the version either way.
+* ``could-not-ask``: the probe never put the question to a server that could
+  answer, so nothing is known about the version either way.
 
 Collapsing the third into the second would report an unreachable host as one
 that refuses old protocols, which reads as a clean result when nothing was
 measured.
+
+One case of ``could-not-ask`` is easy to mistake for a refusal: the probing
+client itself would not offer the version. OpenSSL 3 disables TLS 1.0 and 1.1
+at its default security level, so ``s_client -tls1`` stops before sending a
+ClientHello and prints ``no protocols available``. The server was never
+asked. Such a session is marked ``client_cannot_offer`` and
+:func:`unknown_note` says how to give the probe a client that can offer it.
 
 ``openssl`` echoes the version it was asked for in its ``Protocol :`` line
 even when the handshake failed, so that line alone is never taken as an
@@ -42,9 +49,20 @@ _CONNECTED = "CONNECTED("
 
 # Wordings OpenSSL and LibreSSL use when the far end declines the version.
 _FAR_END_DECLINED = re.compile(
-    r"alert protocol version|wrong version number|no protocols available|"
+    r"alert protocol version|wrong version number|"
     r"unsupported protocol|alert handshake failure|"
     r"sslv3 alert|tlsv1 alert|version too low", re.I)
+
+# Wordings for a client that would not offer the version (or any suite for it)
+# and so never asked the server. Both are raised locally, before a ClientHello.
+CLIENT_CANNOT_OFFER = re.compile(r"no protocols available|no ciphers available", re.I)
+
+#: How to let OpenSSL 3 offer TLS 1.0 and 1.1, for a note beside an unmeasured version.
+LEGACY_PROTOCOLS_HOW = (
+    "to measure such a version, run the probe with an openssl that will offer it: point "
+    "OPENSSL_CONF at a configuration whose system_default section sets "
+    "`MinProtocol = TLSv1` and `CipherString = DEFAULT@SECLEVEL=0`, or check one host "
+    "by hand with `openssl s_client -tls1 -cipher DEFAULT@SECLEVEL=0`")
 
 # The summary line when no cipher was agreed: "Cipher is (NONE)" or "Cipher : 0000".
 _NO_CIPHER_NEGOTIATED = re.compile(r"Cipher\s*(?:is)?\s*:?\s*(?:\(NONE\)|0000\b)", re.I)
@@ -64,13 +82,16 @@ class TlsSession:
     """The answer to one pinned-version handshake.
 
     ``reported_version`` and ``cipher`` are what the transcript's session
-    block says; ``reached_host`` is True once a TCP connection was made.
+    block says; ``reached_host`` is True once a TCP connection was made;
+    ``client_cannot_offer`` is True when the probing client would not offer
+    the version, so the state is ``could-not-ask``.
     """
 
     state: SessionState
     reported_version: str = ""
     cipher: str = ""
     reached_host: bool = False
+    client_cannot_offer: bool = False
 
 
 def read_session(out: str, expected: str = "") -> TlsSession:
@@ -83,6 +104,8 @@ def read_session(out: str, expected: str = "") -> TlsSession:
         return TlsSession(COULD_NOT_ASK)
     reached = _CONNECTED in out
     reported = _reported_version(out)
+    if CLIENT_CANNOT_OFFER.search(out) and not negotiated_cipher(out):
+        return TlsSession(COULD_NOT_ASK, reported, "", reached, client_cannot_offer=True)
     if _FAR_END_DECLINED.search(out):
         return TlsSession(REFUSED, reported, "", reached)
     if _NO_CIPHER_NEGOTIATED.search(out):
@@ -113,8 +136,36 @@ def _reported_version(out: str) -> str:
 
 
 def describe(probed: Mapping[str, TlsSession]) -> str:
-    """One line for an asset: ``TLSv1.0=refused; TLSv1.2=offered; ...``."""
-    return "; ".join(f"{version}={_ARTEFACT_WORD[s.state]}" for version, s in probed.items())
+    """One line for an asset: ``TLSv1.0=refused; TLSv1.2=offered; ...``.
+
+    A version the client would not offer is written ``unknown-client-cannot-offer``.
+    """
+    return "; ".join(f"{version}={_word(s)}" for version, s in probed.items())
+
+
+def _word(s: TlsSession) -> str:
+    word = _ARTEFACT_WORD[s.state]
+    return f"{word}-client-cannot-offer" if s.client_cannot_offer else word
+
+
+def unknown_note(probed: Mapping[str, TlsSession]) -> str:
+    """A note for the versions that are unknown, or "" when every version was answered.
+
+    A version the client would not offer is described separately, with how to
+    measure it, because it is easily read as a server refusal.
+    """
+    unknown = versions_in_state(probed, COULD_NOT_ASK)
+    client = [v for v in unknown if probed[v].client_cannot_offer]
+    other = [v for v in unknown if not probed[v].client_cannot_offer]
+    bits = []
+    if other:
+        bits.append(f"version probe could not run for {', '.join(other)} — those versions "
+                    "are unknown, not absent")
+    if client:
+        bits.append(f"the probing openssl would not offer {', '.join(client)} at its "
+                    "security level, so whether the server accepts them is NOT MEASURED "
+                    f"— unknown, not refused; {LEGACY_PROTOCOLS_HOW}")
+    return "; ".join(bits)
 
 
 def versions_in_state(probed: Mapping[str, TlsSession], state: SessionState) -> list[str]:

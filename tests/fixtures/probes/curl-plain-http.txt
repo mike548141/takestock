@@ -1,7 +1,7 @@
-# Captured with curl from a loopback stub HTTP server.
+# Captured with curl from a loopback stub HTTP server; the HTTP Date header is replaced with a fixed synthetic one.
 HTTP/1.0 200 OK
 Server: BaseHTTP/0.6 Python/3.14.6
-Date: Thu, 01 Oct 2026 16:11:19 GMT
+Date: Tue, 15 Jan 2030 00:00:00 GMT
 Content-Type: text/html
 Content-Length: 80
 

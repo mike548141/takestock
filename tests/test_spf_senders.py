@@ -12,6 +12,9 @@ from takestock.spf import ANSWERED, VOID, Answer
 NOW = datetime(2030, 6, 15, tzinfo=UTC)
 TARGET = {"discovery": {"email_domains": ["example.com", "example.com", " "]},
           "scan_targets": {"smtp_25": [{"host": "gw.example.com"}, "gw2.example.com"]}}
+AUTHORISED = {**TARGET, "authorisation": {"scope": "Published mail hosts of Example Widgets Ltd",
+                                          "authorised_by": "Security manager",
+                                          "date": "2030-01-31"}}
 
 
 def resolver(table):
@@ -63,7 +66,7 @@ def test_relays_are_probed_with_the_supplied_probe():
         return CryptoAsset(name=f"smtp {host}", data_state="in-transit", protocol="tls",
                            host=host, notes="offers TLS 1.3"), (["no answer"] if host else [])
 
-    assets, gaps = spf_senders.collect(TARGET, NOW, scan=True, resolve=resolver(BASE),
+    assets, gaps = spf_senders.collect(AUTHORISED, NOW, scan=True, resolve=resolver(BASE),
                                        probe=probe)
     assert [h for h, _ in seen] == ["relay.example.com"]  # the declared gateway is skipped
     assert "permitted to send by example.com" in seen[0][1]
@@ -75,7 +78,7 @@ def test_relays_are_probed_with_the_supplied_probe():
 
 
 def test_scanning_without_a_probe_says_so():
-    _, gaps = spf_senders.collect(TARGET, NOW, scan=True, resolve=resolver(BASE))
+    _, gaps = spf_senders.collect(AUTHORISED, NOW, scan=True, resolve=resolver(BASE))
     assert any("no STARTTLS probe was available" in g for g in gaps)
     assert not any("ran without --scan" in g for g in gaps)
 
@@ -94,3 +97,31 @@ def test_unpublished_and_unmeasured_voids_are_described():
     a = spf_senders.collect(TARGET, NOW, resolve=lambda n, t: [])[0][0]
     assert a.notes.startswith("no SPF record published")
     assert a.extra["void_lookups_measured"] is False
+
+
+def _recording_probe(seen: list[str]):
+    def probe(host: str, role: str) -> tuple[CryptoAsset, list[str]]:
+        seen.append(host)
+        return CryptoAsset(name=host, data_state="in-transit"), []
+    return probe
+
+
+def test_relays_are_never_probed_without_an_authorisation_record():
+    seen: list[str] = []
+    assets, gaps = spf_senders.collect(TARGET, NOW, scan=True, resolve=resolver(BASE),
+                                       probe=_recording_probe(seen))
+    assert seen == []
+    assert len(assets) == 1                     # the DNS reading only
+    refusal = [g for g in gaps if "REFUSED, nothing contacted" in g]
+    assert len(refusal) == 1
+    assert "no `authorisation:` stanza" in refusal[0]
+    assert coverage.kind_of(refusal[0]) == coverage.COULD_NOT_TEST
+
+
+def test_an_incomplete_authorisation_record_also_refuses():
+    seen: list[str] = []
+    partial = {**TARGET, "authorisation": {"scope": "Mail hosts", "authorised_by": "Security manager"}}
+    _, gaps = spf_senders.collect(partial, NOW, scan=True, resolve=resolver(BASE),
+                                  probe=_recording_probe(seen))
+    assert seen == []
+    assert any("`authorisation.date` is missing" in g for g in gaps)

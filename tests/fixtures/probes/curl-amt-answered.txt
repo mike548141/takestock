@@ -1,4 +1,4 @@
-# Captured with curl from a loopback stub HTTP server; the stub sends the Server header nmap's service database matches for Intel AMT.
+# Captured with curl from a loopback stub HTTP server; the stub sends the Server header nmap's service database matches for Intel AMT; the HTTP Date header is a fixed synthetic one.
 HTTP/1.0 303 See Other
 Server: Intel(R) Active Management Technology 12.0.0 
 Date: Tue, 15 Jan 2030 00:00:00 GMT

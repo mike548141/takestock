@@ -75,3 +75,36 @@ def test_versions_in_state_is_sorted():
               "TLSv1.0": TlsSession(REFUSED)}
     assert tls_session.versions_in_state(probed, OFFERED) == ["TLSv1.2", "TLSv1.3"]
     assert tls_session.versions_in_state(probed, COULD_NOT_ASK) == []
+
+
+# ── the client could not offer the version ──
+
+NOT_OFFERED = "openssl3-tls1-not-offered.txt"
+
+
+def test_a_version_the_client_would_not_offer_is_not_a_refusal():
+    s = tls_session.read_session(fixture(NOT_OFFERED), "TLSv1.0")
+    assert s.state == COULD_NOT_ASK
+    assert s.client_cannot_offer and s.reached_host
+
+
+def test_a_server_refusal_is_still_a_refusal():
+    s = tls_session.read_session(fixture("openssl-tls1.txt"), "TLSv1.0")
+    assert (s.state, s.client_cannot_offer) == (REFUSED, False)
+
+
+def test_describe_and_the_note_say_the_client_could_not_offer_it():
+    probed = {"TLSv1.0": tls_session.read_session(fixture(NOT_OFFERED), "TLSv1.0"),
+              "TLSv1.2": TlsSession(OFFERED, cipher="x")}
+    assert tls_session.describe(probed) == (
+        "TLSv1.0=unknown-client-cannot-offer; TLSv1.2=offered")
+    note = tls_session.unknown_note(probed)
+    assert "would not offer TLSv1.0" in note and "NOT MEASURED" in note
+    assert "DEFAULT@SECLEVEL=0" in note and "OPENSSL_CONF" in note
+    assert "TLSv1.2" not in note
+
+
+def test_the_note_keeps_an_ordinary_unknown_separate():
+    probed = {"TLSv1.3": TlsSession(COULD_NOT_ASK)}
+    note = tls_session.unknown_note(probed)
+    assert note == "version probe could not run for TLSv1.3 — those versions are unknown, not absent"

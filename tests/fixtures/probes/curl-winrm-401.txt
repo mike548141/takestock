@@ -1,4 +1,4 @@
-# Captured with curl from a loopback stub HTTP server.
+# Captured with curl from a loopback stub HTTP server; the HTTP Date header is a fixed synthetic one.
 HTTP/1.0 401 Unauthorized
 Server: Microsoft-HTTPAPI/2.0 
 Date: Tue, 15 Jan 2030 00:00:00 GMT

@@ -22,7 +22,7 @@ Without the record, every active collector contacts nothing.
 |---|---|---|
 | `dig` | `ct_dns`, `spf_senders`, `dnssec`, `dane`, `caa`, `dns_zones`, `hsts` (HTTPS records) | DNS readings fail; `dnssec`, `dane` and `caa` read nothing and say so |
 | `curl` | `ct_dns` (search service, MTA-STS policy), `hsts`, `plaintext_scan` (cleartext confirmation), internet-registry lookups for the IP plan | `hsts` does not run and says the run holds no HSTS evidence |
-| `nmap` | `tls_scan`, `plaintext_scan`, `smb_scan`, `rdp_scan`; fallback for `ssh_audit` | `plaintext_scan`, `smb_scan` and `rdp_scan` report that they did not run. `tls_scan` writes an `unknown` row per endpoint whose note reads like an endpoint that did not answer, so check `nmap` is installed before trusting those rows |
+| `nmap` | `tls_scan`, `plaintext_scan`, `smb_scan`, `rdp_scan`; fallback for `ssh_audit` | `tls_scan`, `plaintext_scan`, `smb_scan` and `rdp_scan` report that they did not run |
 | `openssl` | `tls_scan` (version pins), `smtp_starttls`, `implicit_tls` | Versions that could not be asked about are flagged unknown, not absent |
 | `ssh-audit` | `ssh_audit`, `ssh_audit_inside` (preferred) | The probe falls back to `nmap`, which reads the algorithm lists but not the banner, key sizes or known vulnerabilities |
 | `ike-scan` | `ike_scan` | Each gateway gets an `unknown` row and a coverage gap |
@@ -95,13 +95,32 @@ OpenSSL 3.0 and later no longer offer SSL 3, TLS 1.0 or TLS 1.1 at their
 default security level ("This results in SSL 3, TLS 1.0, TLS 1.1 and DTLS 1.0
 no longer working at the default security level of 1 and instead requires
 security level 0", OpenSSL 3.0 migration guide). takestock does not lower
-the security level. A local refusal can then look like the server declining
-the version, which would make an old version read as refused when it was
-never asked about. For the version pins, use an `openssl` that still offers
-TLS 1.0 and 1.1, and read a "refused" TLS 1.0 or 1.1 from `smtp_starttls` or
-`implicit_tls` with that in mind. (`tls_scan` also enumerates versions with
-`nmap`, which does not rely on the local `openssl`, and keeps any version
-`nmap` saw.)
+the security level itself. When the local `openssl` will not offer a version
+it prints `no protocols available` and sends the server no ClientHello, so
+the server was never asked. takestock recognises this and records the
+version as `unknown-client-cannot-offer`: not measured, and never read as
+refused. The row's note says how to measure it.
+
+To measure TLS 1.0 and 1.1 with OpenSSL 3, run takestock with `OPENSSL_CONF`
+pointing at a configuration that lowers the security level for the run:
+
+```ini
+openssl_conf = openssl_init
+
+[openssl_init]
+ssl_conf = ssl_sect
+
+[ssl_sect]
+system_default = system_default_sect
+
+[system_default_sect]
+MinProtocol = TLSv1
+CipherString = DEFAULT@SECLEVEL=0
+```
+
+To check one host by hand: `openssl s_client -connect host:443 -tls1 -cipher
+DEFAULT@SECLEVEL=0`. (`tls_scan` also enumerates versions with `nmap`, which
+does not rely on the local `openssl`, and keeps any version `nmap` saw.)
 
 The single default handshake `tls_scan` makes to read the server's chosen
 key-exchange group uses Python's own TLS library, so whether the client

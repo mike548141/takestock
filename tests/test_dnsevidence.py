@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import shutil
+import subprocess
 
 import pytest
+from probe_helpers import fixture
 
 from takestock import config, dnsevidence
 from takestock.dnsevidence import Corroborated, Lookup
@@ -145,3 +147,21 @@ def test_dkim_key_size_is_read_by_openssl():
            "JXo+RFAzpl2OT8XJ4wDCdexAZMxuxTTgpacc/m9/JaIsedfV57vI3wIDAQAB")
     assert dnsevidence._rsa_bits(key) == 1024
     assert dnsevidence._rsa_bits("!!!") == 0
+
+
+def _openssl_says(monkeypatch, out: str) -> None:
+    def fake(cmd, **_kw):
+        return subprocess.CompletedProcess(cmd, 1, stdout=out, stderr="")
+    monkeypatch.setattr(dnsevidence.subprocess, "run", fake)
+
+
+def test_a_version_the_client_would_not_offer_is_not_recorded_as_refused(monkeypatch):
+    _openssl_says(monkeypatch, fixture("openssl3-tls1-not-offered.txt"))
+    got = dnsevidence._starttls("mail-01.example.test", "tls1")
+    assert got["state"] == "could-not-ask"
+    assert "DEFAULT@SECLEVEL=0" in got["detail"]
+
+
+def test_a_server_refusal_is_still_recorded_as_refused(monkeypatch):
+    _openssl_says(monkeypatch, fixture("smtp-tls1.txt"))
+    assert dnsevidence._starttls("mail-01.example.test", "tls1")["state"] == "refused"

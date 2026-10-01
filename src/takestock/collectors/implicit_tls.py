@@ -117,8 +117,7 @@ def measure(host: str, port: int, raw_dir: Path | None = None,
         _attach_certificate(asset, host, port, raw_dir, ref_time)
         notes.append(PREFERENCE_ONLY)
         if unknown:
-            notes.append(f"version probe could not run for {', '.join(unknown)} — those "
-                         "versions are unknown, not absent")
+            notes.append(tls_session.unknown_note(probed))
     elif reached:
         flags.add(f"{NO_HANDSHAKE_FLAG}{name.lower()}")
         asset.verdict = "unknown"
@@ -128,6 +127,8 @@ def measure(host: str, port: int, raw_dir: Path | None = None,
             "at TLS 1.0-1.3. That is either a service that is not TLS on a port whose "
             "encryption everything else assumes, or a TLS version this probe cannot pin; "
             "neither is claimed over the other, and both are worth a look")
+        if unknown:
+            notes.append(tls_session.unknown_note(probed))
     elif refused_connection:
         asset.verdict = NA_VERDICT
         notes.append(f"nothing is listening — {host} refused the connection on port {port}. "

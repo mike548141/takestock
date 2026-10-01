@@ -173,8 +173,7 @@ def measure(host: str, raw_dir: Path | None, ref_time: datetime | None,
 
     notes = [PREFERENCE_ONLY] if offered else []
     if unknown:
-        notes.append(f"version probe could not run for {', '.join(unknown)} — those "
-                     "versions are unknown, not absent")
+        notes.append(tls_session.unknown_note(probed))
 
     asset = CryptoAsset(
         name=f"SMTP STARTTLS {host}:{SMTP_PORT}", role=role,

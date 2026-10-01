@@ -160,3 +160,16 @@ def test_the_row_is_an_active_public_measurement(monkeypatch):
     [a], _ = smtp_starttls.collect(gateway_target(), ref_time=WHEN)
     assert (a.source, a.source_class, a.collected_at) == ("smtp_starttls", "public", "2026-10-15")
     assert "Example Hosting" in a.role
+
+
+def test_old_versions_the_client_would_not_offer_are_unmeasured_not_refused(monkeypatch):
+    legacy = fixture("openssl3-tls1-not-offered.txt")
+    monkeypatch.setattr(tls_scan, "run", mail_answers(**{"-tls1": legacy, "-tls1_1": legacy}))
+    [a], failures = smtp_starttls.collect(gateway_target(), ref_time=WHEN)
+    assert failures == []
+    assert a.extra["version_probe"] == (
+        "TLSv1.0=unknown-client-cannot-offer; TLSv1.1=unknown-client-cannot-offer; "
+        "TLSv1.2=offered; TLSv1.3=offered")
+    assert tls_scan.VERSION_PROBE_UNAVAILABLE in a.flags
+    assert "would not offer TLSv1.0, TLSv1.1" in a.notes
+    assert "DEFAULT@SECLEVEL=0" in a.notes

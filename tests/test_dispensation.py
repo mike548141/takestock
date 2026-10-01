@@ -140,3 +140,41 @@ def test_records_are_read_from_the_dispositions_overlay(tmp_path):
     assert [r["id"] for r in ds.records_for_target({"_path": str(profile)})] == ["disp-01"]
     assert ds.records_for_target({"_path": str(tmp_path / "other.yaml")}) == []
     assert ds.records_for_target(None) == []
+
+
+# A record that applies only to endpoints an outside provider runs.
+OUTSIDE = {**COMPLETE, "id": "disp-outside", "match": {"third_party": True}}
+
+
+def outside_rules():
+    from takestock import disposition
+    profile = {"third_party": [{"name": "Example Hosting", "domains": ["hosting.example.com"]}],
+               "scan_targets": {"saas_443": [{"host": "app.example.net"}]}}
+    rules = disposition.DispositionRules()
+    rules.third_party_hosts, rules.third_party_domains = disposition.operated_elsewhere(profile)
+    return rules
+
+
+def test_a_third_party_record_matches_with_the_outside_provider_list():
+    from takestock import citations
+    resolved, rules = citations.resolve(BASELINE), outside_rules()
+    for host in ("web-01.hosting.example.com", "app.example.net"):
+        got = ds.assess(asset(host=host), resolved, [OUTSIDE], ASOF, rules=rules)
+        assert (got.state, got.record_id) == (ds.COVERED, "disp-outside"), host
+    own = ds.assess(asset(host="web-01.example.test"), resolved, [OUTSIDE], ASOF, rules=rules)
+    assert own.state == ds.NO_DISPENSATION
+
+
+def test_payload_passes_the_outside_provider_list_through():
+    rows = [asset(host="web-01.hosting.example.com"), asset(host="web-01.example.test")]
+    out = ds.payload(rows, BASELINE, [OUTSIDE], ASOF, rules=outside_rules())
+    assert out["counts"][ds.COVERED] == 1
+    assert out["counts"][ds.NO_DISPENSATION] == 1
+
+
+def test_the_act_now_rungs_can_come_from_the_rules():
+    from takestock import citations, disposition
+    rules = disposition.DispositionRules(ladder=[{"track": "urgent", "out_of_cycle": True}])
+    got = ds.assess(asset(disposition="urgent"), citations.resolve(BASELINE), [], ASOF,
+                    rules=rules)
+    assert got.state == ds.ACTING

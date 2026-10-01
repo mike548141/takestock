@@ -11,7 +11,10 @@ Dispensation records live in the organisation's dispositions overlay
 (``targets/<stem>.dispositions.yaml``) under ``dispensations:``. Each has an
 ``id``, a ``match:`` block (the same keys as a disposition rule), the
 ``controls`` it covers, and the fields below, each required by the NZISM
-control named beside it:
+control named beside it. A ``third_party`` match key needs the target's
+outside-provider list, which arrives with the loaded rules (``rules=``,
+from :func:`takestock.disposition.load_dispositions_for_target`); without
+them every host counts as the organisation's own.
 
 ==========================  ===========  ======================================
 Field                       Control      Requires
@@ -249,27 +252,31 @@ def assess(a: CryptoAsset,
            resolved: Mapping[str, list[dict]],
            records: Iterable[Mapping] = (),
            asof: _dt.date | None = None,
-           out_of_cycle: Iterable[str] | None = None) -> Assessment:
+           out_of_cycle: Iterable[str] | None = None,
+           rules: disposition.DispositionRules | None = None) -> Assessment:
     """The dispensation state of one asset on ``asof`` (default today).
 
-    ``a`` should already carry its disposition. ``out_of_cycle`` names the
-    ladder's act-now rungs (``DispositionRules.out_of_cycle``); by default,
-    those of the tool's own ladder. The first record whose match block fits
-    the asset and whose ``controls`` cover every breach is used.
+    ``a`` should already carry its disposition. ``rules`` are the disposition
+    rules loaded for the target; they carry its outside-provider list, which
+    a ``third_party`` match key reads. ``out_of_cycle`` names the ladder's
+    act-now rungs; by default, those of ``rules``, or else of the tool's own
+    ladder. The first record whose match block fits the asset and whose
+    ``controls`` cover every breach is used.
     """
     asof = asof or _dt.date.today()
     breaches, questions = breaches_and_questions(a, resolved)
     if not breaches:
         return Assessment(state=NOT_APPLICABLE, questions=questions)
     if out_of_cycle is None:
-        out_of_cycle = _tool_out_of_cycle()
+        out_of_cycle = rules.out_of_cycle if rules is not None else _tool_out_of_cycle()
     if a.disposition in set(out_of_cycle):
         return Assessment(state=ACTING, breaches=breaches, questions=questions)
     if a.disposition_basis == disposition.BASIS_NONE or not a.disposition:
         return Assessment(state=UNDECIDED, breaches=breaches, questions=questions)
 
     record = next((r for r in records
-                   if disposition.matches(r.get("match", {}), a) and _covers(r, breaches)), None)
+                   if disposition.matches(r.get("match", {}), a, rules) and _covers(r, breaches)),
+                  None)
     if record is None:
         return Assessment(state=NO_DISPENSATION, breaches=breaches, questions=questions)
 
@@ -327,17 +334,26 @@ def payload(assets: Iterable[CryptoAsset],
             baseline: Mapping,
             records: Iterable[Mapping] = (),
             asof: _dt.date | None = None,
-            out_of_cycle: Iterable[str] | None = None) -> dict:
-    """Every asset's assessment, with counts per state and per control, for a report."""
+            out_of_cycle: Iterable[str] | None = None,
+            rules: disposition.DispositionRules | None = None) -> dict:
+    """Every asset's assessment, with counts per state and per control, for a report.
+
+    ``rules`` and ``out_of_cycle`` are as for :func:`assess`.
+    """
     asof = asof or _dt.date.today()
-    out_of_cycle = frozenset(out_of_cycle) if out_of_cycle is not None else _tool_out_of_cycle()
+    if out_of_cycle is not None:
+        out_of_cycle = frozenset(out_of_cycle)
+    elif rules is not None:
+        out_of_cycle = rules.out_of_cycle
+    else:
+        out_of_cycle = _tool_out_of_cycle()
     resolved = citations_data.resolve(dict(baseline))
     records = list(records)
     rows: list[dict] = []
     counts: dict[str, int] = {s: 0 for s in STATE_LABEL}
     controls: dict[str, int] = {}
     for a in assets:
-        got = assess(a, resolved, records, asof, out_of_cycle)
+        got = assess(a, resolved, records, asof, out_of_cycle, rules)
         counts[got.state] = counts.get(got.state, 0) + 1
         for b in got.breaches:
             controls[b.control] = controls.get(b.control, 0) + 1

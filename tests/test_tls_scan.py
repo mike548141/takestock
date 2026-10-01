@@ -31,6 +31,11 @@ def scan_answers(**overrides: str) -> FakeRun:
     ])
 
 
+@pytest.fixture(autouse=True)
+def nmap_installed(monkeypatch):
+    monkeypatch.setattr(tls_scan.shutil, "which", lambda name: f"/usr/bin/{name}")
+
+
 @pytest.fixture()
 def no_negotiation(monkeypatch):
     monkeypatch.setattr(tls_scan, "negotiate", lambda *_a: None)
@@ -256,3 +261,32 @@ def test_without_authorisation_nothing_is_contacted(monkeypatch):
 def test_a_target_with_no_endpoints_does_nothing(monkeypatch):
     monkeypatch.setattr(tls_scan, "run", never_run)
     assert tls_scan.collect(target(authorised=False)) == ([], [])
+
+
+def test_a_version_the_client_would_not_offer_is_noted_with_how_to_measure_it():
+    probed = {"TLSv1.0": TlsSession(COULD_NOT_ASK, client_cannot_offer=True),
+              "TLSv1.2": TlsSession(OFFERED)}
+    versions, note, flags = tls_scan.merge_versions(["TLSv1.2"], probed)
+    assert versions == ["TLSv1.2"]
+    assert flags == {tls_scan.VERSION_PROBE_UNAVAILABLE}
+    assert "would not offer TLSv1.0" in note and "DEFAULT@SECLEVEL=0" in note
+
+
+def test_without_nmap_the_run_says_so_instead_of_reporting_silent_endpoints(monkeypatch):
+    monkeypatch.setattr(tls_scan.shutil, "which", lambda name: None)
+    monkeypatch.setattr(tls_scan, "run", never_run)
+    assets, failures = tls_scan.collect(target(tls_443=[HOST, "web-02.example.test"]))
+    assert assets == []
+    assert len(failures) == 1
+    assert "nmap is not on PATH" in failures[0] and "2 authorised endpoint(s)" in failures[0]
+    assert tls_scan.NO_TLS_RESPONSE not in failures[0]
+
+
+def test_an_nmap_run_that_failed_is_unmeasured_not_a_silent_port(monkeypatch):
+    monkeypatch.setattr(tls_scan, "run", FakeRun([
+        (has("ssl-enum-ciphers"), "__ERROR__ Command timed out after 180 seconds")]))
+    [a], failures = tls_scan.collect(target(tls_443=[HOST]))
+    assert a.verdict == "unknown"
+    assert tls_scan.NO_TLS_RESPONSE not in a.notes
+    assert "UNMEASURED" in a.notes and "timed out" in a.notes
+    assert len(failures) == 1 and HOST in failures[0]

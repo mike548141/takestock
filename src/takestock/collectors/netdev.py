@@ -36,8 +36,8 @@ expected device class. With an export, each expected class that has no row
 is its own gap, and a scope row states what the export covers without
 claiming a share of the estate.
 
-Guard declaration: this **makes the failure cheap**. A missing or unreadable
-export never stops the run; it becomes a gap that names the file.
+A missing or unreadable export never stops the run: it becomes a gap that
+names the file, so the failure costs one re-run with the file supplied.
 """
 
 from __future__ import annotations

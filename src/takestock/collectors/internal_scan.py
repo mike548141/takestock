@@ -43,8 +43,8 @@ It never authenticates or sends a credential. What it sends is what an
 ordinary client sends first: a TLS handshake, ``CAPABILITY``/``CAPA``/``EHLO``
 and one HTTP request.
 
-Guard declaration: every refusal **forbids the act**. A probe that has left
-the machine cannot be recalled.
+Each check refuses rather than warning, because a probe that has left the
+machine cannot be recalled.
 """
 
 from __future__ import annotations
@@ -667,8 +667,7 @@ def measure_starttls(probe: Probe, raw_dir: Path | None,
             "handshake completed at TLS 1.0-1.3; a refused upgrade and a refusal of every "
             "pinned version look the same to openssl, so neither is claimed."))
     if unknown and not (parsed and version_note):
-        notes.append(f"version probe could not run for {', '.join(unknown)} — those versions "
-                     "are unknown, not absent")
+        notes.append(tls_session.unknown_note(probed))
     if not caps.read:
         notes.append(f"the capability list could not be read ({caps.raw or 'no script output'}), "
                      "so whether a password is invited before encryption is not measured")

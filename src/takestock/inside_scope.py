@@ -25,9 +25,9 @@ and each host must be named one at a time. Subnets, ranges, wildcards and
 lists are refused by construction, a list longer than its ceiling is refused
 rather than cut short, and a host named twice is refused.
 
-Guard declaration: every gate here **forbids the act**. A probe that has
-already left the machine cannot be recalled, so there is no cheap recovery
-to offer instead. The stanza is a record, not a cryptographic control:
+Every check here refuses rather than warning, because a probe that has
+already left the machine cannot be recalled, so there is nothing to put
+right afterwards. The stanza is a record, not a cryptographic control:
 anyone who can edit the profile can write one. It exists so that an
 embedding program cannot point the probes at hosts nobody authorised, and so
 that every run states who authorised it.

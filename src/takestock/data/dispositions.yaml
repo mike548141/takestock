@@ -35,10 +35,11 @@
 # open-ended, which is a weaker claim.
 #
 # Match keys: verdict, data_state, protocol, source, internet_facing,
-# flags_any, flags_all, flags_none, flags_prefix_any, host_pattern, extra_true,
-# primitive_any, third_party (whether an outside provider operates the
-# endpoint, as declared in the target profile). Every rule below is scoped;
-# none matches everything.
+# flags_any, flags_all, flags_none, flags_prefix_any, flags_prefix_none,
+# host_pattern, extra_true, extra_any (a mapping of extra field to allowed
+# value or values), primitive_any, third_party (whether an outside provider
+# operates the endpoint, as declared in the target profile). Every rule below
+# is scoped; none matches everything.
 #
 # The default ladder has four time-ordered rungs:
 #   critical  fix immediately, out of cycle. The bar is exploitability, not

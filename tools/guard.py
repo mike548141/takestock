@@ -44,8 +44,9 @@ with a leading ``=`` is matched case-sensitively, for codes that are also
 ordinary words. When the setting is absent the guard says so and runs the
 generic checks.
 
-Guard declaration: this guard **forbids the act**. A leaked identifier cannot
-be recalled once published, so there is no cheap recovery to buy instead.
+This check refuses the commit rather than warning, because a leaked
+identifier cannot be recalled once published, so there is nothing to put
+right afterwards.
 
 Usage::
 

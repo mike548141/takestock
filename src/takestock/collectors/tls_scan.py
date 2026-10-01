@@ -16,12 +16,18 @@ published web and mail hosts, and third-party services listed under
 
 Raw transcripts are written beside the observation when a directory is
 given, with session secrets redacted (:func:`redact_transcript`).
+
+Without nmap the scan does not run at all, and the run records one failure
+saying so; an endpoint is never reported as silent because a tool was
+missing. An nmap run that fails for one endpoint (a timeout, say) gives that
+endpoint an unmeasured row and a failure line, never "no TLS response".
 """
 
 from __future__ import annotations
 
 import json
 import re
+import shutil
 from collections.abc import Callable, Mapping
 from datetime import datetime
 from pathlib import Path
@@ -30,6 +36,7 @@ from .. import inside_scope, roles, tls_negotiate, tls_session
 from ..model import CryptoAsset, cert_expiry_flag, register_informational_prefixes
 from ..tls_session import COULD_NOT_ASK, OFFERED, REFUSED, TlsSession
 from ..util import (
+    ERROR_PREFIX,
     cert_signature_token,
     days_remaining,
     is_ipv6_literal,
@@ -251,8 +258,7 @@ def merge_versions(nmap_versions: list[str],
     flags: set[str] = set()
     if unknown:
         flags.add(VERSION_PROBE_UNAVAILABLE)
-        bits.append(f"version probe could not run for {', '.join(unknown)} — those "
-                    f"versions are unknown, not absent")
+        bits.append(tls_session.unknown_note(probed))
     return sorted(versions), "; ".join(bits), flags
 
 
@@ -272,6 +278,17 @@ def no_tls_notes(out: str, port: int) -> str:
     return NO_TLS_RESPONSE
 
 
+#: How the note for an endpoint whose nmap run did not complete begins.
+SCAN_FAILED = "the nmap scan did not complete"
+
+
+def scan_failed_note(out: str) -> str:
+    """The note for an endpoint whose nmap run did not complete."""
+    reason = out.removeprefix(ERROR_PREFIX).strip() or "no reason given"
+    return (f"{SCAN_FAILED} ({reason}), so this endpoint is UNMEASURED: this is not "
+            "evidence of a closed, filtered or silent port")
+
+
 def _scan_host(host: str, port: int = 443, raw_dir: Path | None = None,
                ref_time: datetime | None = None, role: str = "",
                ident: str = "") -> CryptoAsset:
@@ -288,7 +305,9 @@ def _scan_host(host: str, port: int = 443, raw_dir: Path | None = None,
                            port=str(port), source=SOURCE, internet_facing=True,
                            source_class="public", source_name=SOURCE_NAME,
                            collected_at=now_date(ref_time),
-                           verdict="unknown", notes=no_tls_notes(out, port))
+                           verdict="unknown",
+                           notes=(scan_failed_note(out) if out.startswith(ERROR_PREFIX)
+                                  else no_tls_notes(out, port)))
 
     parsed = parse_enum_ciphers(out)
     probed = probe_versions(host, port, ident, raw_dir)
@@ -455,7 +474,13 @@ def collect(target: dict, raw_dir: Path | None = None,
     refused = inside_scope.scan_refusal(SOURCE, target)
     if refused:
         return [], [refused]
+    if not shutil.which("nmap"):
+        return [], [f"{SOURCE}: nmap is not on PATH, so the TLS scan did not run against any "
+                    f"of the {len(hosts)} authorised endpoint(s). This run holds NO evidence "
+                    "about TLS on them; their absence from the results is not a finding."]
     role_by_host = roles.scan_target_roles(target)
     assets = [_scan_host(host, port, raw_dir, ref_time, role_by_host.get(host, ""), ident)
               for host, port, ident in hosts]
-    return assets, []
+    failures = [f"{SOURCE} {a.host}:{a.port}: {a.notes}" for a in assets
+                if a.notes.startswith(SCAN_FAILED)]
+    return assets, failures

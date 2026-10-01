@@ -32,7 +32,7 @@ the ``http-title`` script. Where that reads a page on an HTTP port, one
 explicit ``curl http://`` request confirms it, because nmap retries over TLS
 by itself and a title alone does not prove cleartext.
 
-Guard declaration: the plan checks **forbid the act**. A probe that has left
+The plan checks refuse rather than warning, because a probe that has left
 the machine cannot be recalled.
 """
 
