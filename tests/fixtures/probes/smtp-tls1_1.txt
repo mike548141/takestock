@@ -1,0 +1,25 @@
+# Captured with LibreSSL s_client from a loopback stub server (synthetic example.test certificate); a build path is shortened; the library's error-line prefix is replaced with 1000; session start times are replaced with 1900000000.
+1000:error:1404B42E:SSL routines:ST_CONNECT:tlsv1 alert protocol version:.../ssl/tls13_lib.c:129:SSL alert number 70
+CONNECTED(00000003)
+---
+no peer certificate available
+---
+No client certificate CA names sent
+---
+SSL handshake has read 128 bytes and written 155 bytes
+---
+New, (NONE), Cipher is (NONE)
+Secure Renegotiation IS NOT supported
+Compression: NONE
+Expansion: NONE
+No ALPN negotiated
+SSL-Session:
+    Protocol  : TLSv1.1
+    Cipher    : 0000
+    Session-ID: 
+    Session-ID-ctx: 
+    Master-Key: 
+    Start Time: 1900000000
+    Timeout   : 7200 (sec)
+    Verify return code: 0 (ok)
+---

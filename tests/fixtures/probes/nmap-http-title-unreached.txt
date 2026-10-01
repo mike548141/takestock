@@ -1,0 +1,10 @@
+# Captured with nmap 7.91 against an unrouted documentation address; the banner line is removed.
+Host discovery disabled (-Pn). All addresses will be marked 'up' and scan times will be slower.
+Nmap scan report for 192.0.2.10
+Host is up (0.37s latency).
+
+PORT     STATE    SERVICE
+8000/tcp filtered http-alt
+8080/tcp filtered http-proxy
+
+Nmap done: 1 IP address (1 host up) scanned in 1.58 seconds

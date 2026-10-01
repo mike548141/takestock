@@ -1,0 +1,58 @@
+# Captured with LibreSSL s_client from a loopback stub server (synthetic example.test certificate); a build path is shortened; session start times are replaced with 1900000000.
+depth=0 CN = web-01.example.test
+verify error:num=18:self signed certificate
+verify return:1
+depth=0 CN = web-01.example.test
+verify return:1
+CONNECTED(00000003)
+write W BLOCK
+---
+Certificate chain
+ 0 s:/CN=web-01.example.test
+   i:/CN=web-01.example.test
+---
+Server certificate
+-----BEGIN CERTIFICATE-----
+MIIC8zCCAdugAwIBAgIJANcFZ4F7UcqEMA0GCSqGSIb3DQEBCwUAMB4xHDAaBgNV
+BAMME3dlYi0wMS5leGFtcGxlLnRlc3QwHhcNMjYxMDAxMTYxMDE3WhcNMjYxMjMw
+MTYxMDE3WjAeMRwwGgYDVQQDDBN3ZWItMDEuZXhhbXBsZS50ZXN0MIIBIjANBgkq
+hkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzDuegh+PNwDL2OZgscGrtCzvo1PHSrkJ
+I8KhRwn3TyoX8u8SAHOGWWmoAMaO12FFwLuiAHgKonaPMn1hBxtmZcR96V52VXPd
+uGi5RVifmmE6RK9DXH7rQvb0X3szB9PufUUvDeKUrqrUdcJVTVxytB3KDl33XTZE
+5xPkToDfeiKuXDJaQFCFz6Y0wrIRE/1UHw4Hx6lfIYUUXcpsBuS1PpnltEs0yqE2
+7QKvwOjhazUTxgDyCuf4qVMdxbhGJdrvhrraUk8brZTnBk0E3cMOF2y+avtwGnKg
+lFyC1wDFPOVXx+6UGwNIJA1HpecsY7L3er8S2o5AeBh2wbDyYpzGtwIDAQABozQw
+MjAwBgNVHREEKTAnghN3ZWItMDEuZXhhbXBsZS50ZXN0ghB3d3cuZXhhbXBsZS50
+ZXN0MA0GCSqGSIb3DQEBCwUAA4IBAQAuLAU/rE2yfDZx+/FNELfvv5DO4gmHy2UP
+eJebV4atZiWqiHeuc4K7BWb/XxLuXc+HsnuHiXDqklE2QCiyhjX52j3r8DPiMaEp
+lEHO7Z1SIgwtt5rI/HqBQrPHyeJBHZovjDPdvrhGw5fddadyHsc2FT78DRZkmJUm
+J9eIjZ/juDJU5+PB4M1mTi3ozPNeZ9vBp49OZ4DTQ+EEGlDmNII9/9dt59fry2Dj
+y4TQrEJRLjh15RvWLKC5jU3rt5qwLUjkZ4bOkzx7ahwX2aMjISAN4ffwPLJALGvA
+pPEA7W/UCBUQjzJ6iOTB9EOuCNVbWyjOMNechnMx1zGHmIAq1JFi
+-----END CERTIFICATE-----
+subject=/CN=web-01.example.test
+issuer=/CN=web-01.example.test
+---
+No client certificate CA names sent
+Server Temp Key: ECDH, X25519, 253 bits
+---
+SSL handshake has read 1458 bytes and written 302 bytes
+---
+New, TLSv1/SSLv3, Cipher is AEAD-AES256-GCM-SHA384
+Server public key is 2048 bit
+Secure Renegotiation IS NOT supported
+Compression: NONE
+Expansion: NONE
+No ALPN negotiated
+SSL-Session:
+    Protocol  : TLSv1.3
+    Cipher    : AEAD-AES256-GCM-SHA384
+    Session-ID: 
+    Session-ID-ctx: 
+    Master-Key: 
+    Start Time: 1900000000
+    Timeout   : 7200 (sec)
+    Verify return code: 18 (self signed certificate)
+---
+250 8BITMIME
+poll error

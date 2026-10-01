@@ -1,0 +1,71 @@
+# Captured with LibreSSL s_client from a loopback stub server (synthetic example.test certificate); a build path is shortened; session start times are replaced with 1900000000.
+depth=0 CN = web-01.example.test
+verify error:num=18:self signed certificate
+verify return:1
+depth=0 CN = web-01.example.test
+verify return:1
+CONNECTED(00000003)
+write W BLOCK
+---
+Certificate chain
+ 0 s:/CN=web-01.example.test
+   i:/CN=web-01.example.test
+---
+Server certificate
+-----BEGIN CERTIFICATE-----
+MIIC8zCCAdugAwIBAgIJANcFZ4F7UcqEMA0GCSqGSIb3DQEBCwUAMB4xHDAaBgNV
+BAMME3dlYi0wMS5leGFtcGxlLnRlc3QwHhcNMjYxMDAxMTYxMDE3WhcNMjYxMjMw
+MTYxMDE3WjAeMRwwGgYDVQQDDBN3ZWItMDEuZXhhbXBsZS50ZXN0MIIBIjANBgkq
+hkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzDuegh+PNwDL2OZgscGrtCzvo1PHSrkJ
+I8KhRwn3TyoX8u8SAHOGWWmoAMaO12FFwLuiAHgKonaPMn1hBxtmZcR96V52VXPd
+uGi5RVifmmE6RK9DXH7rQvb0X3szB9PufUUvDeKUrqrUdcJVTVxytB3KDl33XTZE
+5xPkToDfeiKuXDJaQFCFz6Y0wrIRE/1UHw4Hx6lfIYUUXcpsBuS1PpnltEs0yqE2
+7QKvwOjhazUTxgDyCuf4qVMdxbhGJdrvhrraUk8brZTnBk0E3cMOF2y+avtwGnKg
+lFyC1wDFPOVXx+6UGwNIJA1HpecsY7L3er8S2o5AeBh2wbDyYpzGtwIDAQABozQw
+MjAwBgNVHREEKTAnghN3ZWItMDEuZXhhbXBsZS50ZXN0ghB3d3cuZXhhbXBsZS50
+ZXN0MA0GCSqGSIb3DQEBCwUAA4IBAQAuLAU/rE2yfDZx+/FNELfvv5DO4gmHy2UP
+eJebV4atZiWqiHeuc4K7BWb/XxLuXc+HsnuHiXDqklE2QCiyhjX52j3r8DPiMaEp
+lEHO7Z1SIgwtt5rI/HqBQrPHyeJBHZovjDPdvrhGw5fddadyHsc2FT78DRZkmJUm
+J9eIjZ/juDJU5+PB4M1mTi3ozPNeZ9vBp49OZ4DTQ+EEGlDmNII9/9dt59fry2Dj
+y4TQrEJRLjh15RvWLKC5jU3rt5qwLUjkZ4bOkzx7ahwX2aMjISAN4ffwPLJALGvA
+pPEA7W/UCBUQjzJ6iOTB9EOuCNVbWyjOMNechnMx1zGHmIAq1JFi
+-----END CERTIFICATE-----
+subject=/CN=web-01.example.test
+issuer=/CN=web-01.example.test
+---
+No client certificate CA names sent
+Server Temp Key: ECDH, X25519, 253 bits
+---
+SSL handshake has read 1501 bytes and written 322 bytes
+---
+New, TLSv1/SSLv3, Cipher is ECDHE-RSA-AES256-GCM-SHA384
+Server public key is 2048 bit
+Secure Renegotiation IS supported
+Compression: NONE
+Expansion: NONE
+No ALPN negotiated
+SSL-Session:
+    Protocol  : TLSv1.2
+    Cipher    : ECDHE-RSA-AES256-GCM-SHA384
+    Session-ID: D0EE1490E1AA80DB7F43C47DA3E97547734E151986705C4AE6C01DC3470C3461
+    Session-ID-ctx: 
+    Master-Key: 117DA886977E59D99BC5CE35CACDEE4DE8AFB86ADA911B0BF67E155CAC84759A24EDD79D7E26B1399739A7CD44A457C5
+    TLS session ticket lifetime hint: 7200 (seconds)
+    TLS session ticket:
+    0000 - 7b fd 9c c8 cd bc c1 46-fa b5 9c cb 54 43 f5 b8   {......F....TC..
+    0010 - 42 42 dc 55 2e 14 e9 e5-16 ba 08 b1 3c 05 7e a2   BB.U........<.~.
+    0020 - 7e 11 ed 6c 70 2c a9 b5-5c 67 6e fc a0 aa 2e 9c   ~..lp,..\gn.....
+    0030 - 4e c7 78 77 27 89 c0 52-49 7a dd 49 bb 81 82 7b   N.xw'..RIz.I...{
+    0040 - a1 37 71 9a 13 f4 80 37-fc d5 94 1e a4 b0 fe c2   .7q....7........
+    0050 - 42 90 38 c8 88 cd e8 6e-28 5c 93 67 1c bb 85 44   B.8....n(\.g...D
+    0060 - ac e6 54 36 a6 bd e1 61-9a 2f f8 7f 26 e4 be 0b   ..T6...a./..&...
+    0070 - 9e 14 72 97 15 d9 44 78-85 75 7a ce f4 54 f7 79   ..r...Dx.uz..T.y
+    0080 - a6 38 76 2b aa fa 1f 3f-13 0b f6 9e fc fb 20 43   .8v+...?...... C
+    0090 - ed c0 c7 e3 cb 96 b6 03-fd 4d 6e 97 0d 4f 71 c9   .........Mn..Oq.
+
+    Start Time: 1900000000
+    Timeout   : 7200 (sec)
+    Verify return code: 18 (self signed certificate)
+---
+250 8BITMIME
+poll error

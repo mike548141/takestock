@@ -1,0 +1,3 @@
+# Captured with LibreSSL s_client from a loopback stub server (synthetic example.test certificate); a build path is shortened.
+connect: Connection refused
+connect:errno=61

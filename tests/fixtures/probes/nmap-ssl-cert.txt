@@ -1,0 +1,43 @@
+# Captured with nmap 7.91 from a loopback stub server (synthetic example.test certificate); the banner line is removed; the Initiating/Completed timing lines are removed.
+Host discovery disabled (-Pn). All addresses will be marked 'up' and scan times will be slower.
+NSE: Loaded 1 scripts for scanning.
+NSE: Script Pre-scanning.
+Scanning localhost (127.0.0.1) [1 port]
+Discovered open port 44330/tcp on 127.0.0.1
+NSE: Script scanning 127.0.0.1.
+Nmap scan report for localhost (127.0.0.1)
+Host is up (0.00014s latency).
+
+PORT      STATE SERVICE
+44330/tcp open  unknown
+| ssl-cert: Subject: commonName=web-01.example.test
+| Subject Alternative Name: DNS:web-01.example.test, DNS:www.example.test
+| Issuer: commonName=web-01.example.test
+| Public Key type: rsa
+| Public Key bits: 2048
+| Signature Algorithm: sha256WithRSAEncryption
+| Not valid before: 2026-10-01T16:10:17
+| Not valid after:  2026-12-30T16:10:17
+| MD5:   a391 5f21 9149 bc8f 5337 6773 e907 ca58
+| SHA-1: 9eef 2c6d 5596 95d5 0bb8 5fff 5d23 d5c7 b068 9075
+| -----BEGIN CERTIFICATE-----
+| MIIC8zCCAdugAwIBAgIJANcFZ4F7UcqEMA0GCSqGSIb3DQEBCwUAMB4xHDAaBgNV
+| BAMME3dlYi0wMS5leGFtcGxlLnRlc3QwHhcNMjYxMDAxMTYxMDE3WhcNMjYxMjMw
+| MTYxMDE3WjAeMRwwGgYDVQQDDBN3ZWItMDEuZXhhbXBsZS50ZXN0MIIBIjANBgkq
+| hkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzDuegh+PNwDL2OZgscGrtCzvo1PHSrkJ
+| I8KhRwn3TyoX8u8SAHOGWWmoAMaO12FFwLuiAHgKonaPMn1hBxtmZcR96V52VXPd
+| uGi5RVifmmE6RK9DXH7rQvb0X3szB9PufUUvDeKUrqrUdcJVTVxytB3KDl33XTZE
+| 5xPkToDfeiKuXDJaQFCFz6Y0wrIRE/1UHw4Hx6lfIYUUXcpsBuS1PpnltEs0yqE2
+| 7QKvwOjhazUTxgDyCuf4qVMdxbhGJdrvhrraUk8brZTnBk0E3cMOF2y+avtwGnKg
+| lFyC1wDFPOVXx+6UGwNIJA1HpecsY7L3er8S2o5AeBh2wbDyYpzGtwIDAQABozQw
+| MjAwBgNVHREEKTAnghN3ZWItMDEuZXhhbXBsZS50ZXN0ghB3d3cuZXhhbXBsZS50
+| ZXN0MA0GCSqGSIb3DQEBCwUAA4IBAQAuLAU/rE2yfDZx+/FNELfvv5DO4gmHy2UP
+| eJebV4atZiWqiHeuc4K7BWb/XxLuXc+HsnuHiXDqklE2QCiyhjX52j3r8DPiMaEp
+| lEHO7Z1SIgwtt5rI/HqBQrPHyeJBHZovjDPdvrhGw5fddadyHsc2FT78DRZkmJUm
+| J9eIjZ/juDJU5+PB4M1mTi3ozPNeZ9vBp49OZ4DTQ+EEGlDmNII9/9dt59fry2Dj
+| y4TQrEJRLjh15RvWLKC5jU3rt5qwLUjkZ4bOkzx7ahwX2aMjISAN4ffwPLJALGvA
+| pPEA7W/UCBUQjzJ6iOTB9EOuCNVbWyjOMNechnMx1zGHmIAq1JFi
+|_-----END CERTIFICATE-----
+
+NSE: Script Post-scanning.
+Nmap done: 1 IP address (1 host up) scanned in 0.35 seconds
