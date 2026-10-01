@@ -5,6 +5,9 @@ __pycache__/
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
+*.egg-info/
+build/
+dist/
 # Local evidence and outputs never enter the repository.
 inbox/
 observations/

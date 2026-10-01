@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "takestock"
+version = "0.1.0"
+description = "Take stock of an IT estate: a cryptographic bill of materials, a configuration register and an IP plan."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "Mike Clements" }]
+dependencies = [
+    "pyyaml>=6",
+    "openpyxl>=3.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff",
+    "mypy",
+    "pytest",
+    "types-PyYAML",
+]
+
+[project.scripts]
+takestock = "takestock.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+takestock = ["data/*"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+# Pinned so a new ruff release cannot change what the gate means.
+select = ["E", "F", "W", "I", "B", "UP", "BLE"]
+
+[tool.mypy]
+python_version = "3.11"
+mypy_path = "src"
+packages = ["takestock"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,1613 @@
+# takestock algorithm baseline: the policy that grades observed cryptography.
+#
+# Every table maps a token a collector reports (a TLS version, a cipher, an
+# SSH algorithm name, an IKE group number) to one of four verdicts:
+#
+#   weak        reject: below policy now
+#   acceptable  approved but legacy; plan to retire it
+#   strong      meets current guidance
+#   pqc         a post-quantum algorithm (NIST FIPS 203, 204 or 205, or a
+#               combined construction that includes one)
+#
+# A token with no row grades nothing: the asset is flagged
+# `ungraded:<table>:<token>` so the omission is visible rather than silent.
+#
+# The documents behind the grades are listed in `authorities:` near the end of
+# this file. `compliance_levels:` records what each cited control obliges, and
+# `citations:` says which document and control backs each table and each row
+# that needed its own reasoning. The tiers rest mainly on NIST guidance for
+# security strength, with the New Zealand Information Security Manual (NZISM)
+# Chapter 17 cited beside them, and NSA CNSA 2.0 for the post-quantum choices.
+#
+# One rule runs through every table: one primitive, one verdict. A curve or
+# group grades the same tier in every protocol table it appears in (key
+# exchange, SSH, IKE), set by its classical security strength in NIST SP
+# 800-57 Part 1 Rev 5 Table 2. A row grades lower than its primitive only for
+# a reason in the protocol's own construction, stated beside it.
+
+# Other bodies' post-quantum transition years, recorded as the calibration the
+# grades were set against. They are not obligations on the organisation being
+# assessed, and no grade is computed from them.
+deadlines:
+  signing_and_networking: 2030       # CNSA 2.0 advisory: software signing and networking equipment
+  general_infrastructure: 2033       # CNSA 2.0 advisory: web, cloud, operating systems
+  disallow_quantum_vulnerable: 2035  # NIST IR 8547 ipd: RSA, ECDSA, ECDH and FFDH disallowed
+
+tls_versions:
+  SSLv2: weak
+  SSLv3: weak
+  TLSv1.0: weak
+  TLSv1.1: weak
+  TLSv1.2: acceptable
+  TLSv1.3: strong
+
+# Key-agreement groups and curves, plus the key-exchange classes an IANA
+# cipher-suite name carries.
+key_exchange:
+  rsa: weak                      # static RSA key transport: no forward secrecy
+  dh_1024: weak
+  dh_1536: weak
+  ffdhe2048: acceptable          # RFC 7919 named group, 2048-bit (112-bit strength)
+  dh_2048: acceptable
+  ffdhe3072: strong
+  dh_3072: strong
+  dh_4096: strong
+  ecdh_p192: weak
+  ecdh_p224: weak
+  ecdh_p256: acceptable          # 128-bit strength; NIST IR 8547 ipd disallows it after
+                                 # 2035 but does not deprecate it in 2030
+  ecdh_p384: strong
+  x25519: strong                 # same 128-bit strength as P-256, graded a tier higher
+                                 # on construction: X25519 is designed to be safe to
+                                 # implement in constant time without point validation
+                                 # (RFC 7748 sections 1 and 5)
+  x25519mlkem768: pqc
+  secp256r1mlkem768: pqc
+  mlkem1024: pqc
+  x25519kyber768: weak           # pre-standard Kyber draft, superseded by ML-KEM
+  ecdh_p521: strong
+  x448: strong
+  dh_512: weak                   # export-grade (Logjam)
+  dh_768: weak
+  # Classes from a suite name, used only when no group was observed:
+  #   anon         unauthenticated, trivially intercepted (SP 800-52 Rev 2 §3.3.1)
+  #   dh_static, ecdh_static  no forward secrecy, like static RSA
+  #   dhe, ecdhe   ephemeral, group unknown: graded at the tier of the commonest
+  #                groups. An observed group's own row grades instead, so a weak
+  #                group never inherits a better grade from its suite name.
+  anon: weak
+  dh_static: weak
+  ecdh_static: weak
+  dhe: acceptable
+  ecdhe: acceptable
+
+signatures:
+  rsa_1024: weak
+  rsa_2048: acceptable           # 112-bit strength: deprecated after 2030 in NIST IR 8547 ipd
+  rsa_3072: acceptable
+  ecdsa_p256: acceptable
+  ecdsa_p384: strong
+  ed25519: strong
+  ed448: strong
+  mldsa: pqc
+  slhdsa: pqc
+  lms: pqc
+  xmss: pqc
+  rsa_4096: strong
+  ecdsa_p521: strong
+
+symmetric:
+  rc4: weak
+  des: weak
+  3des: weak                     # 64-bit block (Sweet32)
+  "null": weak                   # quoted: a bare null would load as YAML's null, not the word
+  aes_cbc: acceptable            # any CBC-mode TLS suite; on a network CBC carries padding-oracle
+                                 # and similar risks that AEAD modes avoid
+  aes256_cbc: strong             # sized at-rest token: no network attacker observes
+                                 # ciphertext-dependent timing, so the key size carries the grade
+  aes192_cbc: acceptable
+  aes256_xts: strong             # XTS-AES for block storage (NIST SP 800-38E)
+  aes128_gcm: strong
+  aes256_gcm: strong             # strong, not pqc: AES is quantum-resistant by key length, which
+                                 # is a different claim from being a post-quantum algorithm
+  chacha20_poly1305: strong
+  # CCM is AEAD like GCM; the _8 forms carry a 64-bit tag (RFC 6655).
+  # Camellia, ARIA and SEED have no known practical break but are not on the
+  # NIST or NZISM approved lists, so they are acceptable and due to move to AES.
+  # IDEA, RC2, Blowfish and GOST 28147-89 are 64-bit block ciphers (Sweet32).
+  # Twofish and Serpent are unapproved AES finalists with no known break.
+  aes128_ccm: strong
+  aes256_ccm: strong
+  aes128_ccm_8: acceptable
+  aes256_ccm_8: acceptable
+  camellia_cbc: acceptable
+  camellia128_gcm: acceptable
+  camellia256_gcm: acceptable
+  aria_cbc: acceptable
+  aria128_gcm: acceptable
+  aria256_gcm: acceptable
+  seed_cbc: acceptable
+  idea: weak
+  rc2: weak
+  blowfish: weak
+  gost: weak
+  twofish: acceptable
+  serpent: acceptable
+
+# Classical security strength, in bits, of the symmetric primitives an
+# authority has rated. Grades nothing: it feeds the informational
+# `quantum-symmetric-margin:<bits>` reading. A primitive no authority rates
+# (ChaCha20, Camellia, ARIA, SEED, Twofish, Serpent, RC4) has no row, so it
+# reports no margin rather than a misleading one.
+symmetric_strength:
+  aes128: 128
+  aes192: 192
+  aes256: 256
+  3des: 112                      # three-key TDEA (SP 800-57 Pt 1 Rev 5 Table 2)
+  3des-cbc: 112                  # the same, as SSH names it
+  des: 56
+  des-cbc: 56
+
+hashes:
+  md4: weak
+  md5: weak
+  sha1: weak
+  sha224: acceptable
+  sha256: strong
+  sha384: strong                 # strong, not pqc: the same reasoning as aes256_gcm
+  sha512: strong
+  sha3_256: strong
+  sha3_384: strong
+  sha3_512: strong
+
+ssh_hostkey:
+  ssh-dss: weak
+  ssh-rsa: weak                  # RSA with a SHA-1 signature
+  rsa-sha2-256: acceptable
+  rsa-sha2-512: acceptable
+  ecdsa-sha2-nistp256: acceptable
+  ecdsa-sha2-nistp384: strong
+  ssh-ed25519: strong
+  sk-ssh-ed25519@openssh.com: strong
+
+ssh_kex:
+  diffie-hellman-group1-sha1: weak
+  diffie-hellman-group14-sha1: weak            # SHA-1 in key derivation
+  diffie-hellman-group14-sha256: acceptable    # 2048-bit DH, as key_exchange.dh_2048
+  diffie-hellman-group16-sha512: strong
+  ecdh-sha2-nistp256: acceptable
+  ecdh-sha2-nistp384: strong
+  ecdh-sha2-nistp521: strong
+  curve25519-sha256: strong                    # as key_exchange.x25519
+  curve25519-sha256@libssh.org: strong
+  sntrup761x25519-sha512@openssh.com: pqc
+  sntrup761x25519-sha512: pqc                  # the same algorithm under its IANA name
+  mlkem768x25519-sha256: pqc
+  # Group exchange does not report its modulus, so it is graded on the
+  # smallest the exchange permits (2048 bits) and on its hash.
+  diffie-hellman-group-exchange-sha1: weak
+  diffie-hellman-group-exchange-sha256: acceptable
+  diffie-hellman-group15-sha512: strong
+  diffie-hellman-group17-sha512: strong
+  diffie-hellman-group18-sha512: strong
+
+# Plain SSH MACs are encrypt-and-MAC (RFC 4253 §6.4): the receiver decrypts
+# before it authenticates. The -etm forms MAC the ciphertext instead, so a
+# SHA-2 or UMAC-128 MAC grades acceptable plain and strong as -etm. A
+# truncated (-96) or -etm form of an MD5 or SHA-1 MAC is no stronger than
+# its hash.
+ssh_mac:
+  hmac-md5: weak
+  hmac-sha1: weak
+  umac-64@openssh.com: weak
+  hmac-sha2-256: acceptable
+  hmac-sha2-256-etm@openssh.com: strong
+  hmac-sha2-512-etm@openssh.com: strong
+  hmac-sha1-96: weak
+  hmac-sha1-etm@openssh.com: weak
+  hmac-sha1-96-etm@openssh.com: weak
+  hmac-md5-96: weak
+  hmac-md5-etm@openssh.com: weak
+  hmac-md5-96-etm@openssh.com: weak
+  umac-64-etm@openssh.com: weak
+  umac-128@openssh.com: acceptable
+  umac-128-etm@openssh.com: strong
+  hmac-sha2-512: acceptable
+
+ike_encryption:
+  des: weak
+  3des: weak
+  aes-cbc: acceptable
+  aes-gcm-128: strong
+  aes-gcm-256: strong
+  chacha20-poly1305: strong
+  aes-cbc-128: acceptable        # IKEv1 transform 7 is AES-CBC (RFC 3602); CBC on the wire
+  aes-cbc-192: acceptable
+  aes-cbc-256: acceptable
+  idea: weak                     # 64-bit block ciphers, unapproved
+  blowfish: weak
+  rc5: weak
+  cast: weak
+
+ike_dh:                          # by IKE group number
+  "1": weak         # 768-bit
+  "2": weak         # 1024-bit
+  "5": weak         # 1536-bit
+  "14": acceptable  # 2048-bit
+  "15": strong      # 3072-bit
+  "16": strong      # 4096-bit
+  "19": acceptable  # P-256, as key_exchange.ecdh_p256
+  "20": strong      # P-384
+  "21": strong      # P-521
+  "31": strong      # X25519, as key_exchange.x25519
+  "32": strong      # X448
+
+ike_prf:
+  hmac-md5: weak
+  hmac-sha1: weak
+  hmac-sha2-256: strong
+  hmac-sha2-384: strong
+  hmac-sha2-512: strong
+
+# SSH ciphers by their OpenSSH names. Tiers follow the `symmetric` table: AEAD
+# and CTR strong; CBC acceptable (CBC-mode plaintext recovery, CVE-2008-5161);
+# RC4 (arcfour), 3DES, Blowfish and CAST-128 weak.
+ssh_cipher:
+  chacha20-poly1305@openssh.com: strong
+  aes128-gcm@openssh.com: strong
+  aes256-gcm@openssh.com: strong
+  aes128-ctr: strong
+  aes192-ctr: strong
+  aes256-ctr: strong
+  aes128-cbc: acceptable
+  aes192-cbc: acceptable
+  aes256-cbc: acceptable
+  rijndael-cbc@lysator.liu.se: acceptable   # an alias for aes256-cbc
+  3des-cbc: weak
+  arcfour: weak
+  arcfour128: weak
+  arcfour256: weak
+  blowfish-cbc: weak
+  cast128-cbc: weak
+
+# SMB dialects a server accepts. Graded like TLS versions: the weakest
+# accepted dialect governs. The tiers rest on Microsoft's own guidance; NZISM
+# has no SMB control. SMB signing is a configuration state, graded by the SMB
+# collector rather than here.
+smb_dialects:
+  SMB1: weak            # MD5 signing; Microsoft advises against any use
+  SMB2.0.2: acceptable  # HMAC-SHA-256 signing; no encryption
+  SMB2.1: acceptable
+  SMB3.0: acceptable    # AES-CMAC signing; encryption available
+  SMB3.0.2: acceptable
+  SMB3.1.1: strong      # pre-authentication integrity; the tier is a judgement by
+                        # analogy with TLS 1.3, not stated by a standard
+
+# ── The documents this baseline rests on ──────────────────────────────────
+#
+# Each entry records what a reader needs to find and check the document:
+#   title      the document's name
+#   publisher  the body that issues it
+#   version    the edition graded against
+#   date       the date that edition carries
+#   status     final | initial-public-draft | unverified
+#   index      a link to the document, or to the nearest stable page for it
+#   note       what a reader needs to know before quoting it
+#
+# A field that has not been verified is left out rather than guessed. Cite a
+# control by its identifier, the document's version and its date, and link
+# to the chapter or landing page: a stable citation with an approximate link
+# outlasts a precise link that moves.
+authorities:
+  nzism:
+    title: New Zealand Information Security Manual, Chapter 17 (Cryptography)
+    publisher: NCSC NZ, part of GCSB
+    version: '3.9'
+    date: '2025-05-09'
+    status: final
+    index: https://nzism.gcsb.govt.nz/ism-document#Chapter-15745
+    note: >-
+      Chapter 17 sets New Zealand's approved algorithms and their minimum sizes. It approves no
+      post-quantum algorithm and sets no post-quantum migration date. The publisher also offers
+      the manual as an XML and CSV export, which is the most reliable way to read a control's
+      exact text and compliance level. Some hosts serving the manual return an empty page to
+      non-browser clients; read it in a browser.
+  nist-ir-8547-ipd:
+    title: NIST IR 8547 — Transition to Post-Quantum Cryptography Standards
+    publisher: NIST
+    version: initial public draft
+    date: '2024-11-12'
+    status: initial-public-draft
+    index: https://csrc.nist.gov/pubs/ir/8547/ipd
+    note: >-
+      An initial public draft, not a final standard: cite it as "ipd". Its transition tables are
+      keyed on security strength rather than on named curves or key sizes, so mapping a
+      primitive onto them needs SP 800-57 Part 1 Rev 5 Table 2 as well. Tables 2 to 5 read
+      "Deprecated after 2030 / Disallowed after 2035" for the 112-bit rows of RSA, ECDSA and
+      finite-field and elliptic-curve DH, and "Disallowed after 2035" alone at 128 bits and
+      above. It describes NIST's expected approach for US federal systems.
+  nist-sp-800-52r2:
+    title: NIST SP 800-52 Rev 2 (TLS configuration)
+    publisher: NIST
+    version: Rev 2
+    date: '2019-08-29'
+    status: final
+    index: https://csrc.nist.gov/pubs/sp/800/52/r2/final
+    note: >-
+      Guidelines for selecting and configuring TLS. A revision has been announced; until one is
+      published this edition stands.
+  nist-sp-800-56ar3:
+    title: NIST SP 800-56A Rev 3 (pairwise key establishment — DH and ECDH)
+    publisher: NIST
+    version: Rev 3
+    date: '2018-04-16'
+    status: final
+    index: https://csrc.nist.gov/pubs/sp/800/56/a/r3/final
+    note: >-
+      Pair-wise key establishment using discrete-logarithm cryptography (DH, ECDH). NIST has
+      announced an update.
+  nist-sp-800-131ar2:
+    title: NIST SP 800-131A Rev 2 (which algorithms and key lengths are approved)
+    publisher: NIST
+    version: Rev 2
+    date: '2019-03-21'
+    status: final
+    index: https://csrc.nist.gov/pubs/sp/800/131/a/r2/final
+    note: >-
+      Cited for its §2 list of approved algorithms and key lengths. Rev 3 exists only as a draft
+      and is not cited.
+  nist-sp-800-57p1r5:
+    title: NIST SP 800-57 Part 1 Rev 5 (key management; Table 2 maps key sizes to strengths)
+    publisher: NIST
+    version: Rev 5
+    date: '2020-05-04'
+    status: final
+    index: https://csrc.nist.gov/pubs/sp/800/57/pt1/r5/final
+    note: >-
+      Table 2 turns a key size into a security strength: 112 bits is FFC L=2048, IFC k=2048 and
+      ECC f=224 to 255; 128 bits is FFC L=3072, IFC k=3072 and ECC f=256 to 383.
+  nist-sp-800-186:
+    title: NIST SP 800-186 (elliptic curve parameters), published with FIPS 186-5
+    publisher: NIST
+    version: SP 800-186 with FIPS 186-5
+    date: '2023-02-03'
+    status: final
+    index: https://csrc.nist.gov/pubs/sp/800/186/final
+    note: >-
+      Published together with FIPS 186-5. Defines the P-256, P-384, P-521, Ed25519 and Ed448
+      curves this baseline grades.
+  fips-203:
+    title: FIPS 203 — ML-KEM (key encapsulation)
+    publisher: NIST
+    date: '2024-08-13'
+    status: final
+    index: https://csrc.nist.gov/pubs/fips/203/final
+    note: Final standard for ML-KEM.
+  fips-204:
+    title: FIPS 204 — ML-DSA (signatures)
+    publisher: NIST
+    date: '2024-08-13'
+    status: final
+    index: https://csrc.nist.gov/pubs/fips/204/final
+    note: Final standard for ML-DSA.
+  fips-205:
+    title: FIPS 205 — SLH-DSA (hash-based signatures)
+    publisher: NIST
+    date: '2024-08-13'
+    status: final
+    index: https://csrc.nist.gov/pubs/fips/205/final
+    note: Final standard for SLH-DSA.
+  fips-197:
+    title: FIPS 197 — the Advanced Encryption Standard (AES)
+    publisher: NIST
+    version: FIPS 197-upd1
+    date: 2001-11-26, updated 2023-05-09
+    status: final
+    index: https://csrc.nist.gov/pubs/fips/197/final
+    note: The 2023 update is editorial and makes no technical change to the algorithm.
+  fips-180-4:
+    title: FIPS 180-4 — the SHA-2 hash family
+    publisher: NIST
+    version: FIPS 180-4
+    date: '2015-08-04'
+    status: final
+    index: https://csrc.nist.gov/pubs/fips/180-4/upd1/final
+    note: Final. NIST has announced a revision; none is published.
+  fips-202:
+    title: FIPS 202 — the SHA-3 hash family
+    publisher: NIST
+    date: '2015-08-04'
+    status: final
+    index: https://csrc.nist.gov/pubs/fips/202/final
+    note: Final. NIST has announced an update.
+  nist-sp-800-38a:
+    title: NIST SP 800-38A — block cipher modes of operation (CBC, CTR)
+    publisher: NIST
+    date: '2001-12-01'
+    status: final
+    index: https://csrc.nist.gov/pubs/sp/800/38/a/final
+    note: >-
+      Defines the ECB, CBC, CFB, OFB and CTR confidentiality modes. It defines modes; it is not
+      an approval list.
+  nist-sp-800-38c:
+    title: NIST SP 800-38C — the CCM authenticated-encryption mode
+    publisher: NIST
+    version: SP 800-38C, updated 2007-07-20
+    date: 2004-05, updated 2007-07-20
+    status: final
+    index: https://csrc.nist.gov/pubs/sp/800/38/c/upd1/final
+    note: Appendix B is what the shortened-tag CCM rows rest on.
+  nist-sp-800-38d:
+    title: NIST SP 800-38D — the GCM authenticated-encryption mode
+    publisher: NIST
+    date: '2007-11-28'
+    status: final
+    index: https://csrc.nist.gov/pubs/sp/800/38/d/final
+    note: Final. NIST has announced a revision.
+  nist-sp-800-38e:
+    title: NIST SP 800-38E — the XTS-AES mode for block-oriented storage
+    publisher: NIST
+    date: '2010-01-18'
+    status: final
+    index: https://csrc.nist.gov/pubs/sp/800/38/e/final
+    note: >-
+      Approves XTS-AES by reference to IEEE Std 1619-2007, with one additional requirement. The
+      mode's own specification is the IEEE standard.
+  nist-sp-800-107r1:
+    title: NIST SP 800-107 Rev 1 (using approved hash algorithms; §5.3.4 on truncated HMAC)
+    publisher: NIST
+    version: Rev 1
+    date: '2012-08-24'
+    status: final
+    index: https://csrc.nist.gov/pubs/sp/800/107/r1/final
+    note: >-
+      §5.3.4 covers truncated HMAC output, which the truncated-tag MAC rows rest on. NIST has
+      announced that it will withdraw this publication once replacement implementation guidance
+      is published; until then it is final.
+  nist-sp-800-208:
+    title: NIST SP 800-208 — stateful hash-based signatures (LMS, XMSS)
+    publisher: NIST
+    date: '2020-10-29'
+    status: final
+    index: https://csrc.nist.gov/pubs/sp/800/208/final
+    note: >-
+      Specifies LMS and XMSS (and their multi-tree variants), the schemes CNSA 2.0 names for
+      firmware and software signing.
+  nist-sp-800-111:
+    title: NIST SP 800-111 — guide to storage encryption for end user devices
+    publisher: NIST
+    date: '2007-11-15'
+    status: final
+    index: https://csrc.nist.gov/pubs/sp/800/111/final
+    note: >-
+      Guidance on storage encryption for end-user devices. It cites no graded row: its algorithm
+      text names neither a key size nor a mode. It describes the recovery and key-custody
+      controls a drive-encryption assessment measures.
+  nist-sp-800-175b-r1:
+    title: NIST SP 800-175B Rev 1 (using cryptographic standards — mechanisms and key management)
+    publisher: NIST
+    version: Rev 1
+    date: '2020-03-31'
+    status: final
+    index: https://csrc.nist.gov/pubs/sp/800/175/b/r1/final
+    note: >-
+      A consolidating guideline. It cites no graded row, because each of its normative
+      statements defers to a primary document this registry already carries.
+  cnsa-2-advisory:
+    title: >-
+      NSA Cybersecurity Advisory — Announcing the Commercial National Security Algorithm Suite
+      2.0
+    publisher: NSA
+    version: Ver. 1.0 (PP-22-1338)
+    date: 2022-09
+    status: final
+    index: >-
+      https://www.nsa.gov/Press-Room/Press-Releases-Statements/Press-Release-View/Article/3148990/nsa-releases-future-quantum-resistant-qr-algorithm-requirements-for-national-sec/
+    note: >-
+      The source of the per-category transition years (page 6, "Other requirements for NSS").
+      Three limits travel with every year quoted from it: it applies to US National Security
+      Systems; NSA "anticipates" the timetable rather than requiring it; and NSA's later FAQ
+      describes a different enforcement track. In the advisory's own footnote, "exclusively use"
+      means CNSA 2.0 algorithms must be selectable by that date, not that nothing else may be on
+      the wire. For algorithm identities cite the FAQ or the FIPS documents, because this 2022
+      text predates FIPS 203 and 204.
+  cnsa-2:
+    title: >-
+      NSA CNSA 2.0 and Quantum Computing FAQ — Commercial National Security Algorithm Suite 2.0
+    publisher: NSA
+    version: Ver. 2.1 (U/OO/194427-22 | PP-24-4014)
+    date: 2024-12
+    status: final
+    index: >-
+      https://www.nsa.gov/Press-Room/Digital-Media-Center/Document-Gallery/igphoto/2003071836/
+    note: >-
+      The algorithm suite: AES-256, ML-KEM-1024, ML-DSA-87, SHA-384 and SHA-512, with LMS and
+      XMSS for firmware and software signing. It carries no per-category timetable. CNSA 2.0
+      applies to US National Security Systems; it is cited here as the source of which
+      algorithms earn a pqc verdict.
+  microsoft-smb-versions:
+    title: Detect, enable, and disable SMBv1, SMBv2, and SMBv3 in Windows
+    publisher: Microsoft (Microsoft Learn, Windows Server documentation)
+    date: '2025-02-28'
+    status: final
+    index: >-
+      https://learn.microsoft.com/en-us/windows-server/storage/file-server/troubleshoot/detect-enable-and-disable-smbv1-v2-v3
+    note: >-
+      Vendor guidance, not a standard. It states that SMBv1 has significant security
+      vulnerabilities and should not be used.
+  microsoft-smb-signing:
+    title: Overview of Server Message Block signing in Windows
+    publisher: Microsoft (Microsoft Learn, Windows Server documentation)
+    date: '2024-10-25'
+    status: final
+    index: >-
+      https://learn.microsoft.com/en-us/windows-server/storage/file-server/smb-signing-overview
+    note: >-
+      Vendor guidance, not a standard. SMB1 signing uses MD5, SMB 2.02 HMAC-SHA-256 and SMB 3.0
+      AES-CMAC.
+  cve-2008-5161:
+    title: CVE-2008-5161 — plaintext recovery against CBC-mode ciphers in SSH
+    publisher: CVE list; originally reported by CPNI
+    date: '2008-11-19'
+    status: final
+    index: https://nvd.nist.gov/vuln/detail/CVE-2008-5161
+    note: >-
+      Rated LOW (CVSS v3.1 3.7): a partial plaintext recovery against CBC-mode SSH with a low
+      success probability, not a session break. The grade on SSH CBC ciphers rests on the
+      approved-algorithm lists as much as on this record.
+
+# ── What each cited control obliges ───────────────────────────────────────
+#
+# A control identifier alone does not say whether the standard commands
+# something or recommends it. `level` is the standard's own compliance word:
+# must, should, must-not or should-not. `text` is the control's own wording,
+# copied from the publisher's structured export with whitespace collapsed,
+# so a reviewer can check it by searching that export for the identifier.
+#
+# A control absent from this block has no recorded level, and code must treat
+# it as unknown rather than as `should`. `condition` is set only where the
+# control's own text makes the obligation depend on a fact this tool cannot
+# measure; such a control is reported as a question, never as a breach.
+#
+# The five controls under section 1.1 grade no algorithm. They set out what a
+# documented dispensation from a MUST control has to contain.
+compliance_levels:
+  nzism:
+    17.2.19.C.01:
+      level: must
+      classifications: All Classifications
+      text: >-
+        Agencies using DH, for the approved use of agreeing on encryption session keys, MUST use
+        a modulus of at least 3072 bits.
+    17.2.22.C.01:
+      level: must
+      classifications: All Classifications
+      text: >-
+        Agencies using ECDH, for the approved use of agreeing on encryption session keys, MUST
+        implement the curve P-384 (prime moduli).
+    17.2.23.C.01:
+      level: must
+      classifications: All Classifications
+      text: >-
+        Agencies using ECDSA, for the approved use of digital signatures, MUST implement the
+        curve P-384 (prime moduli).
+    17.2.24.C.01:
+      level: must
+      classifications: All Classifications
+      text: >-
+        Agencies using RSA, for the approved use of digital signatures and passing encryption
+        session keys or similar keys, MUST use a modulus of at least 3072 bits.
+    17.2.25.C.01:
+      level: must
+      classifications: All Classifications
+      text: >-
+        Agencies using RSA keys within internet X.509 Public Key Infrastructure certificates
+        MUST use a modulus of at least 2048 bits.
+    17.2.26.C.01:
+      level: must
+      classifications: All Classifications
+      condition: >-
+        Permitted for a legacy system, and not for a new one. This tool measures a live listener
+        and cannot tell which this is, so whether the control is breached is a question for the
+        system owner rather than a finding.
+      text: >-
+        Agencies MUST use the SHA-2 family for new systems. Use of SHA-1 is permitted ONLY for
+        legacy systems.
+    1.1.64.C.01:
+      level: must
+      classifications: All Classifications
+      text: >-
+        System owners seeking a dispensation for non-compliance with any baseline controls in
+        the NZISM MUST be granted a dispensation by their Accreditation Authority. Where High
+        Assurance Cryptographic Systems (HACS) are implemented, the Accreditation Authority will
+        be the Director-General GCSB or a formal delegate.
+    1.1.65.C.01:
+      level: must
+      classifications: All Classifications
+      text: >-
+        System owners seeking a dispensation for non-compliance with baseline controls MUST
+        complete an agency risk assessment which documents: the reason(s) for not being able to
+        comply with this manual; the effect on any of their own, multi-agency or
+        All-of-Government system; the alternative mitigation measure(s) to be implemented; The
+        strength and applicability of the alternative mitigations; an assessment of the residual
+        security risk(s); and a date by which to review the decision.
+    1.1.67.C.01:
+      level: must
+      classifications: All Classifications
+      text: >-
+        If a system processes, stores or communicates data and information with multiple
+        agencies or forms part of an All-of-Government system, interested parties MUST be
+        formally consulted before non-compliance with any baseline controls.
+    1.1.68.C.01:
+      level: should
+      classifications: All Classifications
+      text: >-
+        Agencies SHOULD review decisions to be non-compliant with any controls at least
+        annually.
+    1.1.69.C.01:
+      level: must
+      classifications: All Classifications
+      text: >-
+        Agencies MUST retain a copy and maintain a record of the supporting risk assessment and
+        decisions to be non-compliant with any baseline controls from the NZISM.
+
+# ── The authority behind each grade ───────────────────────────────────────
+#
+# One entry per table, plus per-token entries for rows that need their own
+# reasoning. Each entry has:
+#   cites    which document backs the whole table (see `authorities:`)
+#   tokens   the same, for individual rows; a row listed here uses only its own
+#   summary  the table's reasoning in prose
+#
+# A cite is {authority, control, note}. `authority` must name an entry in
+# `authorities:`. `control` is present only where a specific control or
+# section is known; otherwise the document is cited alone.
+#
+# `breaches: true` says the row FAILS the named control, as opposed to merely
+# being graded under it. Every such cite must carry a `commentary:` saying,
+# for the reader, how settled that reading is: unambiguous arithmetic, an
+# open reading of the control's wording, or a condition only the system owner
+# can answer. The commentary keeps any qualification in the same sentence as
+# the claim. Whether a standard binds an organisation in law depends on the
+# organisation; the commentary never assumes it does.
+citations:
+  tls_versions:
+    cites:
+      - authority: nist-sp-800-52r2
+      - authority: nzism
+        control: ch.17 §17.2
+        note: approved protocols
+    tokens:
+      TLSv1.2:
+        - authority: nist-sp-800-52r2
+          note: >-
+            A revision has been out for public comment that asks whether to keep recommending TLS 1.2
+            support. Not a reason to change this row while Rev 2 stands.
+    summary: >-
+      NIST SP 800-52 Rev 2 for TLS configuration, with NZISM Chapter 17's approved protocols.
+  key_exchange:
+    cites:
+      - authority: nist-sp-800-56ar3
+      - authority: nist-ir-8547-ipd
+        control: Tables 3–5
+        note: deprecation dates, keyed on security strength rather than curve name
+      - authority: nzism
+        control: ch.17 §17.2
+        note: approves ECDH, DH and RSA classically; approves no PQC algorithm
+      - authority: fips-203
+        note: the pqc rows
+      - authority: cnsa-2
+        note: ML-KEM-1024 specifically preferred
+    tokens:
+      anon:
+        - authority: nist-sp-800-52r2
+          control: §3.3.1
+          note: forbids anonymous cipher suites
+      dh_static:
+        - authority: nist-sp-800-52r2
+          control: §3.3.1
+          note: prefers ephemeral key exchange
+      ecdh_static:
+        - authority: nist-sp-800-52r2
+          control: §3.3.1
+          note: prefers ephemeral key exchange
+      dhe:
+        - authority: nist-sp-800-52r2
+          control: §3.3.1
+          note: >-
+            The class row, used only when the collector recorded no group. When a group was observed its
+            own row grades instead.
+      ecdhe:
+        - authority: nist-sp-800-52r2
+          control: §3.3.1
+          note: >-
+            The class row, used only when the collector recorded no group. When a group was observed its
+            own row grades instead.
+      dh_512:
+        - authority: nist-sp-800-131ar2
+          control: §2
+          note: export-grade finite-field group; under 2048 bits is disallowed (Logjam)
+        - authority: nzism
+          control: 17.2.19.C.01
+          breaches: true
+          note: below the 3072-bit DH modulus this control requires
+          commentary: >-
+            Unambiguous. The control requires a Diffie-Hellman modulus of at least 3072 bits and this
+            group is 512. The only other control in the manual that mentions DH (17.8.15.C.01) asks for
+            the largest modulus available, so no reading of the manual sets a lower floor.
+      dh_768:
+        - authority: nist-sp-800-131ar2
+          control: §2
+          note: export-grade finite-field group; under 2048 bits is disallowed (Logjam)
+        - authority: nzism
+          control: 17.2.19.C.01
+          breaches: true
+          note: below the 3072-bit DH modulus this control requires
+          commentary: >-
+            Unambiguous. The control requires a Diffie-Hellman modulus of at least 3072 bits and this
+            group is 768. The only other control in the manual that mentions DH (17.8.15.C.01) asks for
+            the largest modulus available, so no reading of the manual sets a lower floor.
+      dh_1024:
+        - authority: nist-sp-800-131ar2
+          control: §2
+          note: under 2048 bits is disallowed
+        - authority: nzism
+          control: 17.2.19.C.01
+          breaches: true
+          note: below the 3072-bit DH modulus this control requires
+          commentary: >-
+            Unambiguous. The control requires a Diffie-Hellman modulus of at least 3072 bits and this
+            group is 1024. The only other control in the manual that mentions DH (17.8.15.C.01) asks for
+            the largest modulus available, so no reading of the manual sets a lower floor.
+      dh_1536:
+        - authority: nist-sp-800-131ar2
+          control: §2
+          note: under 2048 bits is disallowed
+        - authority: nzism
+          control: 17.2.19.C.01
+          breaches: true
+          note: below the 3072-bit DH modulus this control requires
+          commentary: >-
+            Unambiguous. The control requires a Diffie-Hellman modulus of at least 3072 bits and this
+            group is 1536. The only other control in the manual that mentions DH (17.8.15.C.01) asks for
+            the largest modulus available, so no reading of the manual sets a lower floor.
+      dh_2048:
+        - authority: nist-sp-800-57p1r5
+          control: Table 2
+          note: FFC L=2048 is the 112-bit class
+        - authority: nist-ir-8547-ipd
+          control: Tables 3–5
+          note: deprecated after 2030, disallowed after 2035
+        - authority: nzism
+          control: 17.2.19.C.01
+          breaches: true
+          note: below the 3072-bit DH modulus this control requires
+          commentary: >-
+            Unambiguous on the manual's arithmetic: the control requires a Diffie-Hellman modulus of at
+            least 3072 bits and this group is 2048, and no other control in the manual sets a lower floor.
+            This baseline grades 2048-bit DH acceptable on NIST's strength guidance, so an asset can be
+            acceptable by that measure and still short of this control.
+      ffdhe2048:
+        - authority: nist-sp-800-57p1r5
+          control: Table 2
+          note: FFC L=2048 is the 112-bit class
+        - authority: nist-ir-8547-ipd
+          control: Tables 3–5
+          note: deprecated after 2030, disallowed after 2035
+        - authority: nzism
+          control: 17.2.19.C.01
+          breaches: true
+          note: below the 3072-bit DH modulus this control requires
+          commentary: >-
+            Unambiguous on the manual's arithmetic: the control requires a Diffie-Hellman modulus of at
+            least 3072 bits and this named group is 2048, and no other control in the manual sets a lower
+            floor. This baseline grades 2048-bit DH acceptable on NIST's strength guidance, so an asset
+            can be acceptable by that measure and still short of this control.
+      ecdh_p192:
+        - authority: nzism
+          control: 17.2.22.C.01
+          breaches: true
+          note: a smaller curve than the P-384 this control names
+          commentary: >-
+            Arguable, and marked on the stricter reading. The control says agencies using ECDH MUST
+            implement the curve P-384, and this connection agreed its keys on P-192. Whether *implement*
+            obliges a system to support P-384 or to use it is open, and a probe sees the curve that was
+            used, not every curve the system could offer.
+      ecdh_p224:
+        - authority: nzism
+          control: 17.2.22.C.01
+          breaches: true
+          note: a smaller curve than the P-384 this control names
+          commentary: >-
+            Arguable, and marked on the stricter reading. The control says agencies using ECDH MUST
+            implement the curve P-384, and this connection agreed its keys on P-224. Whether *implement*
+            obliges a system to support P-384 or to use it is open, and a probe sees the curve that was
+            used, not every curve the system could offer.
+      ecdh_p256:
+        - authority: nist-sp-800-57p1r5
+          control: Table 2
+          note: ECC f=256–383 is the 128-bit class, not the 112-bit one
+        - authority: nist-ir-8547-ipd
+          control: Tables 3–5
+          note: >-
+            Disallowed after 2035, but NOT deprecated in 2030 — that deprecation reaches the 112-bit class
+            only.
+        - authority: nzism
+          control: ch.17 §17.2
+          note: approves ECDH as an algorithm; the curve is 17.2.22.C.01's
+        - authority: nzism
+          control: 17.2.22.C.01
+          breaches: true
+          note: P-256 is not the P-384 this control names
+          commentary: >-
+            Arguable. The control says agencies using ECDH MUST implement the curve P-384, and whether
+            *implement* means a system has to support that curve or has to use it for the measured
+            connection is open. Where the groups a listener offered include P-384 beside P-256, the looser
+            reading is met; where P-384 does not appear, a curve that is absent cannot be told apart from
+            one that is configured and not chosen. Marked on the stricter reading so the question stays
+            visible; the manual does not settle which reading is right.
+      ecdh_p521:
+        - authority: nist-sp-800-186
+          note: 256-bit security
+      x448:
+        - authority: nist-sp-800-186
+          note: 224-bit security
+      mlkem1024:
+        - authority: fips-203
+        - authority: cnsa-2
+          note: ML-KEM-1024 is CNSA 2.0's specific choice
+      x25519kyber768:
+        - authority: fips-203
+          note: >-
+            A pre-final Kyber draft, superseded by the finalised ML-KEM. Graded weak so it is retired
+            rather than left in place.
+    summary: >-
+      NIST SP 800-56A Rev 3 for key establishment, NIST IR 8547 ipd for transition dates (keyed
+      on security strength, not curve name) and NZISM Chapter 17, which approves DH, ECDH and
+      RSA and no post-quantum algorithm. The pqc rows rest on FIPS 203 (ML-KEM), with CNSA 2.0
+      preferring ML-KEM-1024.
+  signatures:
+    cites:
+      - authority: nist-sp-800-186
+        note: published with FIPS 186-5
+      - authority: nist-ir-8547-ipd
+        control: Tables 3–5
+      - authority: fips-204
+        note: the mldsa row
+      - authority: fips-205
+        note: the slhdsa row
+      - authority: nist-sp-800-208
+        note: the lms and xmss rows
+    tokens:
+      rsa_1024:
+        - authority: nzism
+          control: 17.2.24.C.01
+          breaches: true
+          note: below the 3072-bit RSA modulus this control requires
+          commentary: >-
+            Unambiguous, and it is the one RSA size where the manual's two floors agree: 1024 bits is
+            below the 3072 this control requires for signatures and session-key transport, and also below
+            the 2048 the X.509 certificate control requires, so whichever use the key is put to it falls
+            short.
+        - authority: nzism
+          control: 17.2.25.C.01
+          breaches: true
+          note: below the 2048-bit RSA modulus this control requires in X.509 PKI
+          commentary: >-
+            Unambiguous. This control sets the lower of the manual's two RSA floors — 2048 bits inside an
+            internet X.509 certificate — and 1024 is below it, so the usual question of which floor
+            applies does not arise here.
+      rsa_2048:
+        - authority: nist-sp-800-57p1r5
+          control: Table 2
+          note: IFC k=2048 is the 112-bit class
+        - authority: nist-ir-8547-ipd
+          control: Tables 3–5
+          note: >-
+            Deprecated after 2030 and disallowed after 2035. Approved but legacy today, which is what
+            `acceptable` means here.
+        - authority: nzism
+          control: 17.2.25.C.01
+          note: >-
+            Cited as MET, not breached: 2048 is exactly the floor this control sets for RSA inside an
+            internet X.509 certificate. It rides on the row so the competing control is visible beside the
+            one marked as breached.
+        - authority: nzism
+          control: 17.2.24.C.01
+          breaches: true
+          note: below the 3072-bit RSA modulus this control requires
+          commentary: >-
+            Genuinely ambiguous, and the ambiguity is in the manual rather than in the measurement. Two
+            MUST-level controls set different floors for RSA: 17.2.24.C.01 requires at least 3072 bits for
+            digital signatures and for passing session keys, and 17.2.25.C.01 requires at least 2048 bits
+            for RSA keys inside an internet X.509 certificate. A 2048-bit key fails the first and meets
+            the second. Where the key was read from a published certificate, the more permissive control's
+            scope is met; the manual does not settle whether that control displaces the general one for a
+            key that also signs the handshake. Marked against the higher floor, with both controls cited
+            on the row so the reading can be checked and argued the other way.
+      rsa_4096:
+        - authority: nist-sp-800-57p1r5
+          control: Table 2
+          note: above the 128-bit tier — the 152-bit class
+      ecdsa_p256:
+        - authority: nist-sp-800-57p1r5
+          control: Table 2
+          note: ECC f=256–383 is the 128-bit class
+        - authority: nist-ir-8547-ipd
+          control: Tables 3–5
+          note: disallowed after 2035; the 2030 deprecation is the 112-bit class only
+        - authority: nzism
+          control: 17.2.23.C.01
+          breaches: true
+          note: P-256 is not the P-384 this control names
+          commentary: >-
+            Arguable. The control says agencies using ECDSA MUST implement the curve P-384, and whether
+            *implement* means a system has to support that curve or has to use it for the observed
+            signature is open: a probe sees the key that was presented, not every key the system could
+            present. Marked on the stricter reading so the question stays visible; on the looser reading
+            it is not a gap at all, and the manual does not settle which is right.
+      ecdsa_p521:
+        - authority: nist-sp-800-57p1r5
+          control: Table 2
+          note: 256-bit class
+      ed25519:
+        - authority: nist-sp-800-186
+      ed448:
+        - authority: nist-sp-800-186
+      mldsa:
+        - authority: fips-204
+      slhdsa:
+        - authority: fips-205
+      lms:
+        - authority: nist-sp-800-208
+        - authority: cnsa-2
+          note: CNSA 2.0's choice for firmware and software signing
+      xmss:
+        - authority: nist-sp-800-208
+        - authority: cnsa-2
+          note: CNSA 2.0's choice for firmware and software signing
+    summary: >-
+      FIPS 186-5 and SP 800-186 for the curves, NIST IR 8547 ipd for transition dates. The pqc
+      rows rest on FIPS 204 (ML-DSA), FIPS 205 (SLH-DSA) and SP 800-208 (LMS and XMSS, CNSA
+      2.0's choice for firmware and software signing).
+  symmetric_strength:
+    cites:
+      - authority: nist-sp-800-57p1r5
+        control: Table 2
+        note: the security strength each key size actually provides
+      - authority: nist-ir-8547-ipd
+        control: § 4.1.3 and Table 6
+        note: >-
+          Places those strengths in the post-quantum security categories — AES-128 Category 1, AES-192
+          Category 3, AES-256 Category 5 — and states the one symmetric transition date NIST gives.
+      - authority: nzism
+        control: ch.17 §17.2
+        note: >-
+          Approves AES and sets NO minimum key length. In Chapter 17 the only symmetric-specific control
+          in the chapter is 17.2.28.C.01 (SHOULD NOT use ECB mode), and no NZISM chapter mentions
+          AES-256 or a 256-bit key.
+      - authority: cnsa-2
+        note: >-
+          Requires AES-256, for US National Security Systems. Used here as calibration, not as an
+          obligation.
+    tokens:
+      aes128:
+        - authority: nist-ir-8547-ipd
+          control: § 4.1.3
+          note: >-
+            "all NIST-approved symmetric primitives that provide at least 128 bits of classical security
+            are believed to meet the requirements of at least Category 1 security". AES-128 is inside the
+            post-quantum category system, so the question it raises is how much headroom to buy, not
+            whether it is exposed.
+      aes256:
+        - authority: nist-ir-8547-ipd
+          control: Table 6
+          note: Category 5, the top of the five categories.
+      3des:
+        - authority: nist-ir-8547-ipd
+          control: § 4.1.3
+          note: >-
+            "NIST has a few symmetric cryptography standards at the 112-bit security level, which will be
+            disallowed in 2030." Three-key TDEA is that level (SP 800-57 Pt 1 r5 Table 2). It is the only
+            date NIST states for a symmetric transition, and it is a NIST expectation rather than an
+            obligation.
+    summary: >-
+      NIST SP 800-57 Part 1 Rev 5 Table 2 for the strengths, and NIST IR 8547 ipd §4.1.3 and
+      Table 6 for the post-quantum security categories and the 2030 date on the 112-bit class.
+      NZISM Chapter 17 states no minimum AES key length. This table grades nothing; it feeds the
+      informational `quantum-symmetric-margin:<bits>` reading only.
+  symmetric:
+    cites:
+      - authority: fips-197
+        note: what AES is
+      - authority: nist-sp-800-38a
+        note: the modes
+      - authority: cnsa-2
+        note: requires AES-256
+      - authority: nist-sp-800-131ar2
+        control: §2
+        note: the approved-cipher list every unapproved row is graded against
+      - authority: nzism
+        control: ch.17 §17.2
+        note: approves AES only
+    tokens:
+      3des:
+        - authority: nzism
+          control: ch.17 §17.2
+          note: >-
+            Legacy only — must not be used for new implementations. Also a 64-bit block cipher, which is
+            the Sweet32 attack.
+      aes_cbc:
+        - authority: nist-sp-800-38a
+          note: >-
+            The TLS cipher-suite grader's fallback for any CBC-mode suite. CBC on a network carries
+            attacker-observable risk (BEAST, Lucky13, padding oracles) that AEAD avoids, so AEAD is
+            preferred.
+      aes192_cbc:
+        - authority: cnsa-2
+          note: an approved key size, but not the one CNSA 2.0 requires
+      aes256_cbc:
+        - authority: nzism
+          control: ch.17 §17.2
+          note: approves AES-256
+        - authority: cnsa-2
+          note: >-
+            Requires AES-256. At rest there is no attacker watching ciphertext-dependent timing over a
+            network, so CBC's TLS-specific attacks do not apply and the key size carries the grade.
+      aes256_xts:
+        - authority: nist-sp-800-38e
+          note: XTS-AES, the mode used for encrypting block storage such as disks and virtual machine files.
+      aes128_gcm:
+        - authority: nist-sp-800-38d
+      aes256_gcm:
+        - authority: cnsa-2
+          note: >-
+            Requires AES-256 as its symmetric primitive. That is not the same claim as "this is a
+            post-quantum algorithm", so this row is `strong` and not `pqc`
+      aes128_ccm:
+        - authority: nist-sp-800-38c
+      aes256_ccm:
+        - authority: nist-sp-800-38c
+      aes128_ccm_8:
+        - authority: nist-sp-800-38c
+          control: Appendix B
+          note: >-
+            The 64-bit-tag form comes from RFC 6655 §3, for constrained devices. Appendix B allows a
+            shortened tag with caveats, which is why this is `acceptable` and not `strong`.
+      aes256_ccm_8:
+        - authority: nist-sp-800-38c
+          control: Appendix B
+          note: >-
+            The 64-bit-tag form comes from RFC 6655 §3, for constrained devices. Appendix B allows a
+            shortened tag with caveats, which is why this is `acceptable` and not `strong`.
+      camellia_cbc:
+        - authority: nist-sp-800-131ar2
+          control: §2
+          note: not on the approved list; the cipher itself is RFC 5932 / ISO 18033-3
+        - authority: nzism
+          control: ch.17 §17.2
+          note: approves AES only
+      camellia128_gcm:
+        - authority: nist-sp-800-131ar2
+          control: §2
+          note: not on the approved list; the cipher itself is RFC 5932 / ISO 18033-3
+      camellia256_gcm:
+        - authority: nist-sp-800-131ar2
+          control: §2
+          note: not on the approved list; the cipher itself is RFC 5932 / ISO 18033-3
+      aria_cbc:
+        - authority: nist-sp-800-131ar2
+          control: §2
+          note: not on the approved list; the cipher itself is RFC 6209
+        - authority: nzism
+          control: ch.17 §17.2
+          note: approves AES only
+      aria128_gcm:
+        - authority: nist-sp-800-131ar2
+          control: §2
+          note: not on the approved list; the cipher itself is RFC 6209
+      aria256_gcm:
+        - authority: nist-sp-800-131ar2
+          control: §2
+          note: not on the approved list; the cipher itself is RFC 6209
+      seed_cbc:
+        - authority: nist-sp-800-131ar2
+          control: §2
+          note: not on the approved list; the cipher itself is RFC 4162
+      idea:
+        - authority: nist-sp-800-131ar2
+          control: §2
+          note: not approved, and a 64-bit block cipher (Sweet32)
+      rc2:
+        - authority: nist-sp-800-131ar2
+          control: §2
+          note: not approved, 64-bit block, and only ever seen in 40-bit export suites
+      blowfish:
+        - authority: nist-sp-800-131ar2
+          control: §2
+          note: not approved, and a 64-bit block cipher (Sweet32)
+        - authority: nzism
+          control: ch.17 §17.2
+          note: approves AES only
+      gost:
+        - authority: nist-sp-800-131ar2
+          control: §2
+          note: >-
+            GOST 28147-89 ("Magma") — a 64-bit block cipher, and never evaluated by either authority
+            graded against here.
+      twofish:
+        - authority: nist-sp-800-131ar2
+          control: §2
+          note: An AES finalist with no known practical break, but not on the approved list. Sunset to AES.
+      serpent:
+        - authority: nist-sp-800-131ar2
+          control: §2
+          note: An AES finalist with no known practical break, but not on the approved list. Sunset to AES.
+    summary: >-
+      FIPS 197 (AES), SP 800-38A (modes) and SP 800-131A Rev 2 §2 (the approved-cipher list
+      every unapproved row is graded against), with NZISM Chapter 17, which approves AES. No
+      symmetric row is graded pqc: a symmetric cipher is quantum-resistant by key length, which
+      is a different property from being a post-quantum algorithm.
+  hashes:
+    cites:
+      - authority: fips-180-4
+        note: the SHA-2 rows
+      - authority: fips-202
+        note: the SHA-3 rows
+      - authority: cnsa-2
+        note: prefers SHA-384 and SHA-512
+    tokens:
+      sha1:
+        - authority: nzism
+          control: 17.2.26.C.01
+          breaches: true
+          note: >-
+            Legacy only. Approved for processing information already protected, never for a new
+            implementation.
+          commentary: >-
+            Conditional, and it reaches the report as a question rather than a finding. The control
+            requires the SHA-2 family for new systems and permits SHA-1 only for legacy ones, so whether
+            it is met turns on whether this is a legacy system — a fact the system owner holds and a
+            listener cannot show. Here SHA-1 is the hash itself.
+      sha256:
+        - authority: fips-180-4
+      sha384:
+        - authority: fips-180-4
+        - authority: cnsa-2
+          note: >-
+            CNSA 2.0's hash choice. That is not the same claim as "this is a post-quantum algorithm", so
+            this row is `strong` and not `pqc`
+      sha512:
+        - authority: fips-180-4
+        - authority: cnsa-2
+          note: >-
+            CNSA 2.0's hash choice. That is not the same claim as "this is a post-quantum algorithm", so
+            this row is `strong` and not `pqc`
+      sha3_256:
+        - authority: fips-202
+      sha3_384:
+        - authority: fips-202
+      sha3_512:
+        - authority: fips-202
+    summary: >-
+      FIPS 180-4 (SHA-2) and FIPS 202 (SHA-3), with CNSA 2.0 preferring SHA-384 and SHA-512. No
+      hash is graded pqc, for the same reason as the symmetric table.
+  ssh_hostkey:
+    cites:
+      - authority: nist-ir-8547-ipd
+      - authority: nist-sp-800-186
+        note: published with FIPS 186-5
+    tokens:
+      ssh-dss:
+        - authority: nzism
+          control: ch.17 §17.2
+          note: DSA is legacy only — not for new implementations
+      ssh-rsa:
+        - authority: nzism
+          control: 17.2.26.C.01
+          breaches: true
+          note: This algorithm name means an RSA key with a SHA-1 signature, and SHA-1 is legacy only.
+          commentary: >-
+            Conditional, and it reaches the report as a question rather than a finding. The control
+            requires the SHA-2 family for new systems and permits SHA-1 only for legacy ones, so whether
+            it is met turns on whether this is a legacy system — a fact the system owner holds and a
+            listener cannot show. Here SHA-1 signs the host key this server presents.
+      ssh-ed25519:
+        - authority: nist-sp-800-186
+    summary: NIST IR 8547 ipd and FIPS 186-5 / SP 800-186 for the classical entries.
+  ssh_kex:
+    cites:
+      - authority: nist-ir-8547-ipd
+      - authority: cnsa-2
+      - authority: fips-203
+        note: the mlkem768x25519-sha256 row
+    tokens:
+      diffie-hellman-group1-sha1:
+        - authority: nzism
+          control: 17.2.26.C.01
+          breaches: true
+          note: SHA-1 in key derivation; legacy only
+          commentary: >-
+            Conditional, and it reaches the report as a question rather than a finding. The control
+            requires the SHA-2 family for new systems and permits SHA-1 only for legacy ones, so whether
+            it is met turns on whether this is a legacy system — a fact the system owner holds and a
+            listener cannot show. Here SHA-1 derives the session keys.
+        - authority: nzism
+          control: 17.2.19.C.01
+          breaches: true
+          note: a 1024-bit group, below the 3072-bit DH modulus this control requires
+          commentary: >-
+            Unambiguous, and separate from the SHA-1 question above. SSH "group1" is the 1024-bit Oakley
+            group, the control requires a Diffie-Hellman modulus of at least 3072 bits, and the only other
+            control in the manual that mentions DH asks for the largest modulus available — so no reading
+            of the manual sets a lower floor.
+      diffie-hellman-group14-sha1:
+        - authority: nzism
+          control: 17.2.26.C.01
+          breaches: true
+          note: SHA-1 in key derivation; legacy only
+          commentary: >-
+            Conditional, and it reaches the report as a question rather than a finding. The control
+            requires the SHA-2 family for new systems and permits SHA-1 only for legacy ones, so whether
+            it is met turns on whether this is a legacy system — a fact the system owner holds and a
+            listener cannot show. Here SHA-1 derives the session keys.
+      diffie-hellman-group-exchange-sha1:
+        - authority: nzism
+          control: 17.2.26.C.01
+          breaches: true
+          note: SHA-1 in key derivation; legacy only
+          commentary: >-
+            Conditional, and it reaches the report as a question rather than a finding. The control
+            requires the SHA-2 family for new systems and permits SHA-1 only for legacy ones, so whether
+            it is met turns on whether this is a legacy system — a fact the system owner holds and a
+            listener cannot show. Here SHA-1 derives the session keys.
+      mlkem768x25519-sha256:
+        - authority: fips-203
+    summary: >-
+      NIST IR 8547 ipd and CNSA 2.0 for the classical entries. mlkem768x25519-sha256 rests on
+      FIPS 203. sntrup761x25519-sha512 is a pre-standard NTRU Prime hybrid kept at pqc as an
+      interim quantum-resistant exchange; unlike the Kyber draft it has not been withdrawn or
+      superseded.
+  ssh_mac:
+    cites:
+      - authority: nist-ir-8547-ipd
+      - authority: nist-sp-800-107r1
+        control: §5.3.4
+        note: truncated HMAC output — the -96 rows
+    tokens:
+      hmac-sha1:
+        - authority: nzism
+          control: 17.2.26.C.01
+          breaches: true
+          note: SHA-1 is legacy only
+          commentary: >-
+            Conditional, and it reaches the report as a question rather than a finding. The control
+            requires the SHA-2 family for new systems and permits SHA-1 only for legacy ones, so whether
+            it is met turns on whether this is a legacy system — a fact the system owner holds and a
+            listener cannot show. Here SHA-1 authenticates each packet.
+      hmac-sha1-96:
+        - authority: nist-sp-800-107r1
+          control: §5.3.4
+          note: a 96-bit truncation of a legacy hash is not stronger than the hash
+        - authority: nzism
+          control: 17.2.26.C.01
+          breaches: true
+          note: SHA-1 is legacy only
+          commentary: >-
+            Conditional, and it reaches the report as a question rather than a finding. The control
+            requires the SHA-2 family for new systems and permits SHA-1 only for legacy ones, so whether
+            it is met turns on whether this is a legacy system — a fact the system owner holds and a
+            listener cannot show. Here SHA-1 authenticates each packet, truncated to a 96-bit tag.
+      hmac-sha1-etm@openssh.com:
+        - authority: nzism
+          control: 17.2.26.C.01
+          breaches: true
+          note: SHA-1 is legacy only; encrypt-then-MAC does not change the hash
+          commentary: >-
+            Conditional, and it reaches the report as a question rather than a finding. The control
+            requires the SHA-2 family for new systems and permits SHA-1 only for legacy ones, so whether
+            it is met turns on whether this is a legacy system — a fact the system owner holds and a
+            listener cannot show. Here SHA-1 authenticates each packet.
+      hmac-sha1-96-etm@openssh.com:
+        - authority: nist-sp-800-107r1
+          control: §5.3.4
+          note: a 96-bit truncation of a legacy hash is not stronger than the hash
+        - authority: nzism
+          control: 17.2.26.C.01
+          breaches: true
+          note: SHA-1 is legacy only
+          commentary: >-
+            Conditional, and it reaches the report as a question rather than a finding. The control
+            requires the SHA-2 family for new systems and permits SHA-1 only for legacy ones, so whether
+            it is met turns on whether this is a legacy system — a fact the system owner holds and a
+            listener cannot show. Here SHA-1 authenticates each packet, truncated to a 96-bit tag.
+      hmac-md5-96:
+        - authority: nist-sp-800-107r1
+          control: §5.3.4
+          note: a 96-bit truncation of a broken hash is not stronger than the hash
+      hmac-md5-96-etm@openssh.com:
+        - authority: nist-sp-800-107r1
+          control: §5.3.4
+          note: a 96-bit truncation of a broken hash is not stronger than the hash
+    summary: >-
+      NIST IR 8547 ipd for the classical entries and SP 800-107 Rev 1 for truncated tags. A MAC
+      is quantum-resistant by its hash's length, so no post-quantum MAC exists to grade.
+  ike_encryption:
+    cites:
+      - authority: nist-sp-800-38a
+        note: the modes
+      - authority: cnsa-2
+        note: requires AES-256
+      - authority: nist-sp-800-131ar2
+        control: §2
+        note: approves AES and 3DES-legacy only
+      - authority: nzism
+        control: ch.17 §17.2
+        note: approves AES only
+    tokens:
+      des:
+        - authority: nzism
+          control: ch.17 §17.2
+          note: approves AES only
+      3des:
+        - authority: nzism
+          control: ch.17 §17.2
+          note: legacy only, and a 64-bit block cipher (Sweet32)
+      aes-gcm-128:
+        - authority: nist-sp-800-38d
+      aes-gcm-256:
+        - authority: cnsa-2
+          note: >-
+            The same AES-256 primitive as symmetric.aes256_gcm, with the same reason it is `strong` rather
+            than `pqc`
+      aes-cbc-128:
+        - authority: nist-sp-800-38a
+          note: >-
+            IKEv1 transform 7 is AES-CBC (RFC 3602; IANA IKEv1 registry). CBC on the wire: AEAD preferred,
+            so `acceptable`.
+      aes-cbc-192:
+        - authority: nist-sp-800-38a
+          note: >-
+            IKEv1 transform 7 is AES-CBC (RFC 3602; IANA IKEv1 registry). CBC on the wire: AEAD preferred,
+            so `acceptable`.
+      aes-cbc-256:
+        - authority: nist-sp-800-38a
+          note: >-
+            IKEv1 transform 7 is AES-CBC (RFC 3602; IANA IKEv1 registry). CBC on the wire: AEAD preferred,
+            so `acceptable`. The at-rest argument that makes symmetric.aes256_cbc `strong` does not apply
+            to a network transform.
+      idea:
+        - authority: nist-sp-800-131ar2
+          control: §2
+          note: not approved, and a 64-bit block cipher (Sweet32)
+      blowfish:
+        - authority: nist-sp-800-131ar2
+          control: §2
+          note: not approved, and a 64-bit block cipher (Sweet32)
+      rc5:
+        - authority: nist-sp-800-131ar2
+          control: §2
+          note: not approved, and a 64-bit block cipher (Sweet32)
+      cast:
+        - authority: nist-sp-800-131ar2
+          control: §2
+          note: not approved, and a 64-bit block cipher (Sweet32)
+    summary: >-
+      SP 800-38A (modes) and CNSA 2.0 (AES-256), with SP 800-131A Rev 2 §2 and NZISM Chapter 17
+      for what is approved.
+  ike_dh:
+    cites:
+      - authority: nist-sp-800-56ar3
+        note: group strength
+      - authority: nist-ir-8547-ipd
+        control: Tables 3–5
+        note: deprecation dates
+      - authority: cnsa-2
+        note: >-
+          CNSA 2.0 moves away from elliptic curves toward ML-KEM entirely, so no group in this table is
+          post-quantum and none is graded `pqc`.
+    tokens:
+      '1':
+        - authority: nist-sp-800-131ar2
+          control: §2
+          note: a 768-bit finite-field group; under 2048 bits is disallowed
+        - authority: nzism
+          control: 17.2.19.C.01
+          breaches: true
+          note: a 768-bit group, below the 3072-bit DH modulus this control requires
+          commentary: >-
+            Unambiguous. The control requires a Diffie-Hellman modulus of at least 3072 bits and this IKE
+            group is 768. The only other control in the manual that mentions DH (17.8.15.C.01) asks for
+            the largest modulus available, so no reading of the manual sets a lower floor.
+      '2':
+        - authority: nist-sp-800-131ar2
+          control: §2
+          note: a 1024-bit finite-field group; under 2048 bits is disallowed
+        - authority: nzism
+          control: 17.2.19.C.01
+          breaches: true
+          note: a 1024-bit group, below the 3072-bit DH modulus this control requires
+          commentary: >-
+            Unambiguous. The control requires a Diffie-Hellman modulus of at least 3072 bits and this IKE
+            group is 1024. The only other control in the manual that mentions DH (17.8.15.C.01) asks for
+            the largest modulus available, so no reading of the manual sets a lower floor.
+      '5':
+        - authority: nist-sp-800-131ar2
+          control: §2
+          note: a 1536-bit finite-field group; under 2048 bits is disallowed
+        - authority: nzism
+          control: 17.2.19.C.01
+          breaches: true
+          note: a 1536-bit group, below the 3072-bit DH modulus this control requires
+          commentary: >-
+            Unambiguous. The control requires a Diffie-Hellman modulus of at least 3072 bits and this IKE
+            group is 1536. The only other control in the manual that mentions DH (17.8.15.C.01) asks for
+            the largest modulus available, so no reading of the manual sets a lower floor.
+      '14':
+        - authority: nist-sp-800-57p1r5
+          control: Table 2
+          note: a 2048-bit finite-field group — the 112-bit class
+        - authority: nist-ir-8547-ipd
+          control: Tables 3–5
+          note: deprecated after 2030, disallowed after 2035
+        - authority: nzism
+          control: 17.2.19.C.01
+          breaches: true
+          note: a 2048-bit group, below the 3072-bit DH modulus this control requires
+          commentary: >-
+            Unambiguous on the manual's arithmetic: the control requires a Diffie-Hellman modulus of at
+            least 3072 bits and this IKE group is 2048, and no other control in the manual sets a lower
+            floor. This baseline grades 2048-bit DH acceptable on NIST's strength guidance, so an asset
+            can be acceptable by that measure and still short of this control.
+      '20':
+        - authority: cnsa-2
+          note: group 20 is P-384, which was the CNSA 1.0 choice
+    summary: >-
+      SP 800-56A Rev 3 for group strength and NIST IR 8547 ipd for transition dates. No IKE
+      Diffie-Hellman group is post-quantum, so none is graded pqc.
+  ike_prf:
+    cites:
+      - authority: nist-ir-8547-ipd
+    tokens:
+      hmac-md5:
+        - authority: nzism
+          control: ch.17 §17.2
+          note: MD5 is not an approved hash
+      hmac-sha1:
+        - authority: nzism
+          control: 17.2.26.C.01
+          breaches: true
+          note: SHA-1 is legacy only
+          commentary: >-
+            Conditional, and it reaches the report as a question rather than a finding. The control
+            requires the SHA-2 family for new systems and permits SHA-1 only for legacy ones, so whether
+            it is met turns on whether this is a legacy system — a fact the system owner holds and a
+            listener cannot show. Here SHA-1 is the pseudo-random function the IKE exchange derives its
+            keys with.
+    summary: >-
+      NIST IR 8547 ipd for the classical entries; a PRF is quantum-resistant by its hash's
+      length.
+  smb_dialects:
+    cites:
+      - authority: microsoft-smb-versions
+        note: vendor guidance; NZISM v3.9 carries no SMB control
+    tokens:
+      SMB1:
+        - authority: microsoft-smb-versions
+          note: '"we strongly encourage you not to use it"'
+        - authority: microsoft-smb-signing
+          note: SMB1 signing uses MD5
+      SMB2.0.2:
+        - authority: microsoft-smb-signing
+          note: HMAC-SHA-256 signing; SMB2 has no encryption capability
+      SMB3.1.1:
+        - authority: microsoft-smb-signing
+          note: >-
+            Pre-authentication integrity "to prevent downgrade attacks". The `strong` tier is a judgement
+            by analogy with TLS 1.3; no standard states it.
+    summary: Microsoft's guidance on SMB versions and signing. NZISM has no SMB control.
+  deadlines:
+    cites:
+      - authority: nist-ir-8547-ipd
+        control: Tables 2–5
+      - authority: cnsa-2-advisory
+        control: § Other requirements for NSS (page 6)
+        note: >-
+          The per-category timetable. Ver. 1.0, Sep 2022 — NOT the FAQ Ver. 2.1, which carries no
+          per-category timetable.
+    tokens:
+      signing_and_networking:
+        - authority: cnsa-2-advisory
+          control: § Other requirements for NSS (page 6)
+          note: >-
+            "Software and firmware signing: … exclusively use CNSA 2.0 by 2030"; "Traditional networking
+            equipment (e.g., virtual private networks, routers): … exclusively use CNSA 2.0 by 2030." A
+            timetable NSA anticipates for US National Security Systems; used here as calibration.
+      general_infrastructure:
+        - authority: cnsa-2-advisory
+          control: § Other requirements for NSS (page 6)
+          note: >-
+            "Web browsers/servers and cloud services: … exclusively use CNSA 2.0 by 2033"; operating
+            systems and niche equipment likewise 2033. A timetable NSA anticipates for US National
+            Security Systems; used here as calibration.
+      disallow_quantum_vulnerable:
+        - authority: nist-ir-8547-ipd
+          control: Tables 2–5
+          note: >-
+            RSA, ECDSA, EdDSA, ECDH and finite-field DH read "Disallowed after 2035" at every security
+            strength; the 112-bit rows add "Deprecated after 2030". NIST's expected approach in an initial
+            public draft, not a binding rule.
+    summary: >-
+      NIST IR 8547 ipd Tables 2 to 5 for 2035, and the NSA CNSA 2.0 advisory (Ver. 1.0, page 6)
+      for the 2030 and 2033 per-category split. Neither binds an organisation outside its scope:
+      IR 8547 is a draft describing NIST's expected approach for US federal systems, and the
+      advisory's timetable is one NSA anticipates for US National Security Systems. They are
+      recorded as calibration.
+  ssh_cipher:
+    cites:
+      - authority: nist-sp-800-38a
+        note: the CTR and CBC modes
+      - authority: nist-sp-800-38d
+        note: GCM
+      - authority: nist-sp-800-131ar2
+        control: §2
+        note: approves AES and 3DES-legacy only; everything else here is unapproved
+      - authority: nzism
+        control: ch.17 §17.2
+        note: approves AES only
+      - authority: cve-2008-5161
+        note: CBC-mode plaintext recovery in SSH
+    tokens:
+      aes128-ctr:
+        - authority: nist-sp-800-38a
+          note: CTR has no padding and no known practical attack in SSH
+      aes192-ctr:
+        - authority: nist-sp-800-38a
+          note: CTR has no padding and no known practical attack in SSH
+      aes256-ctr:
+        - authority: nist-sp-800-38a
+          note: CTR has no padding and no known practical attack in SSH
+      aes128-gcm@openssh.com:
+        - authority: nist-sp-800-38d
+      aes256-gcm@openssh.com:
+        - authority: nist-sp-800-38d
+      aes128-cbc:
+        - authority: cve-2008-5161
+          note: plaintext recovery against CBC-mode SSH; ssh-audit warns on it
+      aes192-cbc:
+        - authority: cve-2008-5161
+          note: plaintext recovery against CBC-mode SSH; ssh-audit warns on it
+      aes256-cbc:
+        - authority: cve-2008-5161
+          note: plaintext recovery against CBC-mode SSH; ssh-audit warns on it
+      rijndael-cbc@lysator.liu.se:
+        - authority: cve-2008-5161
+          note: an alias for aes256-cbc, so the same attack applies
+      3des-cbc:
+        - authority: nzism
+          control: ch.17 §17.2
+          note: legacy only, and a 64-bit block cipher (Sweet32)
+      arcfour:
+        - authority: nist-sp-800-131ar2
+          control: §2
+          note: RC4 under its OpenSSH name; not approved
+      arcfour128:
+        - authority: nist-sp-800-131ar2
+          control: §2
+          note: RC4 under its OpenSSH name; not approved
+      arcfour256:
+        - authority: nist-sp-800-131ar2
+          control: §2
+          note: RC4 under its OpenSSH name; not approved
+      blowfish-cbc:
+        - authority: nist-sp-800-131ar2
+          control: §2
+          note: not approved, and a 64-bit block cipher (Sweet32)
+      cast128-cbc:
+        - authority: nist-sp-800-131ar2
+          control: §2
+          note: not approved, and a 64-bit block cipher (Sweet32)
+    summary: >-
+      SP 800-38A (CTR and CBC), SP 800-38D (GCM), SP 800-131A Rev 2 §2 (AES and 3DES are the
+      only approved block ciphers) and NZISM Chapter 17 (AES). CBC-mode plaintext recovery in
+      SSH is CVE-2008-5161. Tiers mirror the `symmetric` table.

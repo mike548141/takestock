@@ -1,0 +1,18 @@
+product,match,provides,branch,max_tls,citation,note
+OpenSSL,^openssl\b,tls,,,"OpenSSL project, documentation and release notes",General-purpose TLS and cryptography library; many other products link against it
+OpenSSL,^openssl\b,tls,1.0,TLSv1.2,"OpenSSL project, release notes for OpenSSL 1.1.1 (TLS 1.3 was first added in 1.1.1)",No 1.0.x release implements TLS 1.3: a capability ceiling rather than a configuration choice
+OpenSSL,^openssl\b,tls,3,TLSv1.3,"OpenSSL project, OpenSSL 3.0 release notes",
+LibreSSL,^libressl\b,tls,,,"LibreSSL project (OpenBSD), project page",A fork of OpenSSL maintained by the OpenBSD project
+BoringSSL,^boringssl\b,tls,,,"BoringSSL project (Google), project page",A fork of OpenSSL used inside other products rather than installed on its own
+GnuTLS,^gnutls\b,tls,,,"GnuTLS project, manual",TLS library from the GNU project
+Mozilla NSS,^(?:(?:mozilla )?nss|network security services)\b,tls,,,"Mozilla, Network Security Services documentation",TLS and cryptography libraries used by Mozilla products and others
+wolfSSL,^wolfssl\b,tls,,,"wolfSSL project, product documentation",Embedded TLS library
+Mbed TLS,^mbed ?tls\b,tls,,,"Mbed TLS project (Trusted Firmware), documentation",Embedded TLS library
+Libgcrypt,^libgcrypt\b,crypto,,,"GnuPG project, Libgcrypt reference manual",General-purpose cryptographic library behind GnuPG
+libsodium,^libsodium\b,crypto,,,"libsodium project, documentation",Cryptographic library built for ease of correct use
+Bouncy Castle,^(?:bouncy ?castle|bcprov)\b,crypto,,,"Legion of the Bouncy Castle, project page",Cryptography APIs for Java and C#
+Java platform,^(?:java|openjdk|jre|jdk)\b,tls,,,"OpenJDK, Java Security Developer's Guide (JCA and JSSE)",The Java runtime carries its own cryptography and TLS providers
+.NET platform,^(?:microsoft )?\.net\b,tls,,,".NET documentation, cryptography model",Applications reach the operating system's cryptography and TLS through it
+Go,^(?:go|golang)(?:\s|$),tls,,,"Go project, crypto and crypto/tls package documentation",Go programs carry the standard library's own TLS implementation
+OpenSSH,^openssh\b,ssh,,,"OpenSSH project, release notes",SSH client and server; version-to-capability mapping not established here
+GnuPG,^(?:gnupg2?|gpg4win|gpg)\b,signing,,,"GnuPG project, documentation",Signing and encryption for files and packages

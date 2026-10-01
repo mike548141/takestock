@@ -1,0 +1,559 @@
+# Disposition rules: what to do about a graded asset, and how big the job is.
+#
+# This file holds GENERIC rules only and ships with the tool. Decisions an
+# organisation makes about its own assets belong in an overlay beside its
+# target profile (`<target-stem>.dispositions.yaml`), whose rules and recorded
+# decisions are checked before these.
+#
+# Two sections:
+#   rules:    ordered, first match wins. A match produces
+#             `disposition_basis: proposed`.
+#   decisions: decisions a person made, keyed by a match block, overriding
+#             any rule. Always empty here: such a decision is one organisation's.
+#
+# Every entry with an `effort:` must declare `effort_scope:`, which says whether
+# the effort is owed once per matching asset (`per-asset`) or once for the
+# whole set the rule matches (`per-rule`). A `per-rule` entry needs an `id`,
+# which is the key its assets are grouped by. There is no default: one
+# configuration change that reaches many servers is one piece of work, and
+# multiplying its size by the number of servers would misstate it.
+#
+# A generic rule declares `per-rule` only where the fix is singular by its
+# nature (one policy object, one programme, one specification) on any estate.
+# Where it depends on how a particular estate is managed, the rule says
+# `per-asset`, and an organisation that manages the class centrally groups it
+# with a recorded decision in its overlay. Grouping is a person's decision, never
+# inferred by the tool.
+#
+# `until:` (optional) states the condition that ends a decision, in plain
+# language. An acceptance with one is time-limited; without one it reads as
+# open-ended, which is a weaker claim.
+#
+# Match keys: verdict, data_state, protocol, source, internet_facing,
+# flags_any, flags_all, flags_none, flags_prefix_any, host_pattern, extra_true,
+# primitive_any, third_party (whether an outside provider operates the
+# endpoint, as declared in the target profile). Every rule below is scoped;
+# none matches everything.
+#
+# The remediation ladder has four time-ordered rungs:
+#   critical  fix immediately, out of cycle. The bar is exploitability, not
+#             algorithm strength: the finding must plausibly let someone
+#             readily obtain data they are not authorised to see, or get onto
+#             the network. A weak algorithm alone (a 1024-bit key, a SHA-1
+#             floor) is not critical.
+#   wave-1    the highest-priority scheduled work.
+#   wave-2    the next priority, or work that depends on a prior wave.
+#   wave-3    the next priority after that, or dependent work.
+# Beside the rungs sit tracks that say why something is not being acted on in
+# the ordinary way: accept-no-alternative, accept-sase, defer-cloud,
+# retire-planned, pqc-migrate and no-action.
+#
+# No rule here proposes wave-2 or wave-3: placing work in a later wave is a
+# programme commitment, and that is an organisation's decision. The dates of
+# each wave are likewise the organisation's, set in its overlay.
+
+rules:
+
+  # ── checked first: the cleartext service with no encrypted alternative ──
+  #
+  # Must sit above `cleartext-service`, which would otherwise claim
+  # these assets: the flag carries the protocol name
+  # (`no-encrypted-alternative:dns`), so the next rule cannot exclude it by an
+  # exact `flags_none` match, and order alone carries the exclusion. The
+  # verdict is unchanged (the traffic really is readable); only the rung moves.
+  - id: accept-no-alternative-cleartext
+    match:
+      flags_prefix_any: ["no-encrypted-alternative:"]
+    disposition: accept-no-alternative
+    effort: S
+    # Per asset: what ends the acceptance is a platform change on the host
+    # carrying the finding, so each host is its own re-assessment. Not a work
+    # track, so nothing is counted in a work total.
+    effort_scope: per-asset
+    reason: >
+      This service carries no encryption and there is no encrypted alternative
+      the organisation could realistically adopt: the secure variant either
+      does not exist for the platform, or the cleartext port cannot be closed
+      without breaking something that depends on it. The finding is real and
+      stays on the record: anyone on the network path reads this traffic. What
+      it is not is an action item, so it does not sit on a rung that asks
+      somebody to fix it now. Re-assess when the platform gains the encrypted
+      option.
+
+      An asset belongs here only when configuration, replacement AND fronting
+      all fail. A weak endpoint that cannot be fixed in place can often be
+      fixed in the path: a secure edge terminates a strong connection and
+      forwards over a route nothing else can reach, with the endpoint
+      segmented so that edge is its only way in. Fronting removes the exposure
+      rather than the weakness, so where it applies the deliverable is the
+      segmentation, not the proxy: a fronted endpoint still reachable by its
+      old path has gained nothing.
+
+  # No encryption at all on the wire, measured or inferred from the port
+  # table. `flags_none` is an exact string comparison, so this excludes only
+  # `cleartext-exposure:metadata`; a cleartext port nobody has classified
+  # carries no exposure flag and still lands here, which is the safe direction.
+  - id: cleartext-service
+    match:
+      flags_prefix_any: ["plaintext:"]
+      flags_none: ["cleartext-exposure:metadata"]
+    disposition: wave-1
+    effort: M
+    # Per asset: the flag reaches any cleartext protocol, and the remedy
+    # differs per row (encrypt it, close it, or record a false positive where
+    # TLS runs on an unusual port). No single change closes the set.
+    effort_scope: per-asset
+    reason: >
+      This service carries traffic with no encryption at all, so anyone able
+      to observe the network path reads it in full, credentials included if
+      the protocol carries any. Where the finding came from the
+      port-encryption table rather than a measured probe, the flag names the
+      assumed protocol and the first action is to confirm what is actually
+      listening; a service genuinely running TLS on an unusual port is a false
+      positive and should be recorded as such, not left to sit. (This never
+      matches `plaintext-scan-inconclusive:` or `unverified-encryption:`,
+      which say the check could not settle it. Nor does it match a cleartext
+      service that carries only device metadata: that has its own rule below.)
+
+  # ── critical: exploitable now ──
+  #
+  # These match on the FLAG rather than the worst-of verdict: an endpoint
+  # whose overall grade is acceptable but which still accepts one anonymous or
+  # NULL suite is exploitable through that suite. Each is per asset because
+  # the remedy is an edit to one endpoint's accepted-suite list, owned by the
+  # service that terminates it; an organisation that manages those lists
+  # centrally groups them with a recorded decision in its overlay.
+
+  # Anonymous key exchange: nothing proves the peer's identity, so anyone on
+  # the path can be the server.
+  - id: anonymous-key-exchange
+    match:
+      flags_any: [anonymous-kex]
+    disposition: critical
+    effort: S
+    effort_scope: per-asset
+    reason: >
+      An anonymous (unauthenticated) key exchange is accepted here, so the
+      session is encrypted to whoever answers: no certificate is checked and
+      no identity is proven. An attacker on the network path becomes the
+      server, reads and alters everything, and neither end can tell. Remove
+      the anonymous suites from the configuration; it is a configuration
+      change on one system and should not wait for a planning cycle.
+
+  # NULL cipher: the peer is authenticated and the payload is sent in clear.
+  - id: null-cipher
+    match:
+      flags_any: [null-cipher]
+    disposition: critical
+    effort: S
+    effort_scope: per-asset
+    reason: >
+      A NULL cipher suite is accepted here: the connection is authenticated
+      but the payload is not encrypted, so anyone observing the path reads it
+      in clear. Remove the NULL suites from the configuration. Act out of
+      cycle: the data is exposed now, to anyone already able to watch the
+      traffic.
+
+  # SSLv2 (DROWN) and SSLv3 (POODLE) have practical, published, tooled
+  # attacks that recover plaintext; TLS 1.0 and 1.1 are deprecated but do not
+  # clear the bar. Prefix-matched because collectors spell the version
+  # several ways (SSLv3, SSL3, SSLv3.0) and no TLS version starts "SSL".
+  - id: sslv2-or-sslv3-offered
+    match:
+      flags_prefix_any: ["deprecated-protocol:SSL"]
+    disposition: critical
+    effort: S
+    effort_scope: per-asset
+    reason: >
+      This endpoint still offers SSLv2 or SSLv3. Both have practical,
+      published, tooled attacks against them (DROWN against SSLv2, POODLE
+      against SSLv3) that recover the plaintext of a session rather than
+      merely weakening it. Disable them; nothing in current use needs either.
+      Act out of cycle. (TLS 1.0 and 1.1 are deprecated but do not clear this
+      bar and are handled by the scheduled rules below.)
+
+  # Export-grade suites are the one strength case that clears the
+  # exploitability bar: a 512-bit export key or a 40-bit cipher falls to hours
+  # of commodity compute with published tooling (FREAK, Logjam).
+  - id: export-grade-crypto
+    match:
+      flags_any: [export-grade]
+    disposition: critical
+    effort: S
+    effort_scope: per-asset
+    reason: >
+      An export-grade cipher suite is accepted here: 40- or 56-bit symmetric
+      or 512-bit asymmetric keys, deliberately weakened for 1990s export
+      rules. These are breakable in hours on commodity hardware with published
+      tooling, so an attacker who can observe or force one of these sessions
+      obtains the plaintext. Remove the export suites from the configuration;
+      no service in current use negotiates them.
+
+  # ── cleartext device metadata ──
+  #
+  # The counterpart of the `flags_none` exclusion in `cleartext-service`:
+  # every cleartext service lands on exactly one of the two. It must also sit
+  # above the generic weak rules below, which would otherwise claim these
+  # assets with the wrong reason ("the weakest accepted crypto is below
+  # policy", when there is no cryptography at all).
+  - id: cleartext-device-metadata
+    match:
+      flags_all: ["cleartext-exposure:metadata"]
+    disposition: wave-1
+    effort: M
+    effort_scope: per-rule
+    reason: >
+      This service carries no encryption, but what crosses the wire is device
+      metadata: names, service descriptions and capability advertisements
+      (UPnP, SSDP, Web Services for Devices, mDNS). An observer on the path
+      reads it in full, so this is a real finding and worth closing; it is not
+      critical because what an attacker obtains is neither access nor data.
+      Nothing here carries a credential and nothing here lets a caller act on
+      the host. The remediation is one piece of work rather than one per
+      machine: disabling the discovery services across the fleet is a single
+      policy exercise (they are disabled in the CIS Level 1 Windows
+      benchmarks), and what it costs is zero-configuration discovery of
+      printers and media devices, which then have to be added by address.
+
+  # ── HSTS: a missing transport-security policy, not a weak algorithm ──
+  #
+  # Both HSTS rules sit above the generic weak rules for the same reason as
+  # the metadata rule: the cryptography on the HTTPS endpoint may be
+  # exemplary, and what is missing is the instruction that stops a client
+  # being walked off it. Not critical: exploiting it needs an attacker already
+  # on the user's network path. The prefixes cover `hsts-absent`,
+  # `hsts-malformed`, `hsts-max-age-zero` and `hsts-max-age-short:<seconds>`,
+  # never `hsts-unreadable` (the check did not settle) or the two mitigating
+  # flags.
+  #
+  # The provider rule must sit immediately above the general one: order is
+  # what confines the general rule to endpoints the organisation runs. It is
+  # limited to the header check's own rows (`source: hsts`) so it can never
+  # become the route by which a provider's weak cipher floor is accepted, and
+  # it applies only where the target profile declares the endpoint as run by
+  # an outside provider.
+  - id: accept-no-alternative-provider-hsts
+    match:
+      source: hsts
+      flags_prefix_any: ["hsts-absent", "hsts-malformed", "hsts-max-age"]
+      third_party: true
+    disposition: accept-no-alternative
+    effort: S
+    # Per asset: each endpoint's policy is its provider's to change. Not a
+    # work track.
+    effort_scope: per-asset
+    until: the provider publishes a usable policy on this endpoint
+    reason: >
+      This endpoint publishes no Strict-Transport-Security policy a browser
+      would honour, and it is operated by an outside provider: a consumed
+      service whose response headers the organisation cannot set. The finding
+      is real and stays on the record: the redirect to HTTPS can be stripped
+      by an attacker on the network path here exactly as it could on the
+      organisation's own site. What it is not is work the organisation can
+      schedule. What is open is to raise it with the provider, to use a
+      setting or tier the provider offers where one exists, and to re-measure.
+  - id: no-usable-hsts-policy
+    match:
+      flags_prefix_any: ["hsts-absent", "hsts-malformed", "hsts-max-age"]
+    disposition: wave-1
+    effort: S
+    # Per asset: a measured endpoint may belong to someone else, and grouping
+    # would imply one rollout covers endpoints the organisation does not run.
+    effort_scope: per-asset
+    reason: >
+      This endpoint publishes no Strict-Transport-Security policy a browser
+      would honour, so nothing tells a client to refuse plain HTTP to this
+      host. Where port 80 answers with a redirect to HTTPS (which is correct
+      configuration, and the usual case) that redirect travels in clear and
+      can be stripped: an attacker on the network path answers the first
+      request, keeps the browser on HTTP and relays HTTPS upstream, and the
+      user sees a working site. The row carries `redirect-strippable` where
+      both halves were observed on the same host. The remedy is one response
+      header on the HTTPS service, so the work is small; the care is in the
+      rollout, because `includeSubDomains` reaches every name under the domain
+      and a long `max-age` is hard to withdraw once browsers have cached it.
+      Start short, confirm nothing under the domain still needs plain HTTP,
+      then lengthen to a year.
+
+  # ── a domain whose DNS answers carry no signature ──
+  #
+  # Above the generic weak rules for the same reason as HSTS: an unsigned zone
+  # has no cryptography to be below policy. Unsigned and unanchored zones only;
+  # a zone FAILING validation is an outage for validating resolvers, a
+  # different problem, and is not absorbed here.
+  - id: dns-zone-unsigned
+    match:
+      flags_prefix_any: ["dnssec-unsigned", "dnssec-no-ds-at-parent"]
+    disposition: wave-1
+    effort: S
+    # Per asset: each zone is signed at its DNS host and its DS record lodged
+    # with its own registrar.
+    effort_scope: per-asset
+    reason: >
+      This domain's DNS answers carry no signature a resolver can check, so an
+      answer forged or altered on the way to a user, by a poisoned cache or a
+      compromised resolver, is indistinguishable from the real one, and every
+      address, mail route and certificate-authority record published for the
+      domain inherits that. The remedy is to sign the zone at its DNS host and
+      lodge the DS record the host produces with the domain's registrar; the
+      care is in the key handover when the DNS host or registrar changes,
+      because a stale DS record makes the whole domain unreachable for
+      validating resolvers.
+
+  # ── the precedence rail ──
+  #
+  # A weak floor on something internet-facing is scheduled remediation
+  # whatever is coming to replace it. It is checked before every softening
+  # track below (accept-sase, defer-cloud), so none of them can absorb it.
+  - id: internet-facing-weak
+    match:
+      verdict: weak
+      internet_facing: true
+    disposition: wave-1
+    effort: M
+    # Per asset: what is both weak and exposed (a VPN transform set, a web
+    # server's cipher list, an appliance's built-in stack) shares no common
+    # configuration surface.
+    effort_scope: per-asset
+    reason: >
+      This is reachable from the internet today and its weakest accepted
+      cryptography is below policy (a 1024-bit Diffie-Hellman group, SHA-1,
+      or a similar floor). That is a downgrade exposure, not an open door: an
+      attacker needs a privileged network position and serious compute to use
+      it, which is why it is scheduled rather than critical. Schedule it in
+      Wave 1, and do NOT let a migration or edge replacement absorb it: the
+      exposure exists now, and a future control cannot protect traffic
+      captured today.
+
+  # DKIM keys are published in DNS, so a weak one is visible to an attacker
+  # even though there is no listening port to mark internet-facing. A 1024-bit
+  # key is not critical by itself.
+  - id: dkim-weak-key
+    match:
+      protocol: dkim
+      flags_any: [weak-key-1024]
+    disposition: wave-1
+    effort: S
+    # Per asset, where the asset is a domain: each domain's key pair is
+    # generated, published and cut over on its own.
+    effort_scope: per-asset
+    reason: >
+      This domain's DKIM signing key is RSA-1024. Factoring one is expensive
+      and conspicuous rather than routine, and the pay-off is the ability to
+      forge validly signed mail from the domain: a spoofing risk, not access
+      to data or to the network, so it is scheduled, not critical.
+      Regenerating a DKIM key is a single DNS record change with no outage,
+      so it should land early in the window rather than at the end of it.
+
+  # sp=none lets an attacker spoof mail from a subdomain even though the apex
+  # enforces DMARC. Tightening it straight to sp=reject risks breaking
+  # legitimate subdomain senders, so it wants a monitored rollout.
+  - id: dmarc-subdomains-unprotected
+    match:
+      protocol: dmarc
+      flags_any: [subdomains-unprotected]
+    disposition: wave-1
+    effort: M
+    # Per asset, where the asset is a domain: the work is reading that
+    # domain's aggregate reports for its own legitimate senders first.
+    effort_scope: per-asset
+    reason: >
+      DMARC's subdomain policy (sp=) is "none" here, so a spoofed email from
+      a subdomain of this domain is not rejected or quarantined even though
+      the domain itself is protected. Tightening this safely needs a
+      monitored rollout (checking DMARC aggregate reports for legitimate
+      subdomain senders before locking sp= down) across every domain in
+      scope, so it is scheduled in Wave 1 rather than flipped immediately.
+
+  # SPF ~all (softfail) asks receivers to accept and mark, not reject.
+  - id: spf-softfail
+    match:
+      protocol: spf
+      flags_any: [softfail-all]
+    disposition: wave-1
+    effort: S
+    # Per asset, where the asset is a domain: one character changes per
+    # record, but the sender audit before it is per domain.
+    effort_scope: per-asset
+    reason: >
+      This domain's SPF record ends in "~all" (softfail): mail that fails the
+      SPF check is still accepted, just marked. Moving to "-all" (hardfail) is
+      a single DNS record change, but should follow the same sender-audit
+      window as the DMARC subdomain tightening, so it is scheduled rather than
+      treated as urgent.
+
+  # Whatever weak cryptography the rules above have not claimed: not known to
+  # be internet-facing (false, or unknown for collectors that cannot tell).
+  # A secure access edge protects user-to-application traffic only, so it does
+  # not make a weak internal service safe either.
+  - id: weak-not-internet-facing
+    match:
+      verdict: weak
+    disposition: wave-1
+    effort: M
+    # Per asset: the catch-all, heterogeneous by construction. One shared unit
+    # would merge unrelated changes; an organisation that wants to group a
+    # class does so with a recorded decision in its overlay.
+    effort_scope: per-asset
+    reason: >
+      This asset's weakest accepted cryptography is below policy, but it is
+      not known to be directly internet-reachable. The risk is real (lateral
+      movement, or a client on the internal network being downgraded) but
+      lower than something an outsider can reach directly, so it belongs in
+      Wave 1 rather than being treated as an emergency.
+
+  # Dormant until a person lists an asset under the target profile's
+  # `lifecycle.sase_replaces` patterns: whether a coming secure access service
+  # edge (SASE) replaces a control is a judgement only a person can make. It
+  # requires a non-weak verdict, so it can never contradict the rail above.
+  - id: accept-sase-tolerable-control
+    match:
+      extra_true: sase_replaces
+      verdict: [acceptable, strong, pqc]
+    disposition: accept-sase
+    effort: S
+    # Per asset: each control can stop being tolerable on its own before the
+    # cutover. Not a work track.
+    effort_scope: per-asset
+    reason: >
+      This control is being replaced by an incoming secure access service
+      edge, and its current cryptographic posture is acceptable in the
+      meantime, so no separate remediation is scheduled: effort spent here
+      before cutover would be thrown away. (This never matches anything with
+      a weak verdict; the internet-facing weak rail above is checked first,
+      and the critical rules before that.)
+
+  # Dormant until a person lists an asset under the target profile's
+  # `lifecycle.retiring_by_migration` patterns. Even then it fires only when
+  # the current exposure is tolerable; a weak internet-facing asset still
+  # meets the rail above.
+  - id: defer-cloud-retiring-infrastructure
+    match:
+      extra_true: retiring_by_migration
+      verdict: [acceptable, strong, pqc]
+    disposition: defer-cloud
+    effort: XL
+    # Per rule: the size is the migration, not the asset, and one migration
+    # retires the whole set. Known limit: two concurrent retirement programmes
+    # would be counted as one, because the declaration names no programme; an
+    # organisation running two separates them with a decision per programme.
+    effort_scope: per-rule
+    reason: >
+      This asset belongs to infrastructure that the organisation's cloud
+      migration programme retires, and its current exposure is tolerable in
+      the meantime, so fixing its cryptography on the platform being
+      replaced would be throwaway work. The migration itself is the
+      remediation.
+
+  # ── acceptable today, and still on its way out ──
+  #
+  # A grade and a remediation decision are different calls. SHA-1 used as a
+  # MAC is defensible today (a collision does not forge a MAC) and still
+  # being withdrawn everywhere, so it gets a planned track without becoming
+  # a finding: the verdict filter means this can never claim a weak asset.
+  # It matches the primitive directly, because a flag such as `sha1-mac` is
+  # raised only when the baseline grades SHA-1 weak. It sits above the
+  # post-quantum rules because an asset with both owes both, and the
+  # post-quantum deadline is computed from the asset's own flags whichever
+  # track it lands on. SHA-1 only: every other primitive due for retirement
+  # already grades weak and has a rung.
+  - id: retire-planned-sha1-still-accepted
+    match:
+      verdict: [acceptable, strong]
+      primitive_any: [sha1]
+    disposition: retire-planned
+    effort: M
+    effort_scope: per-rule
+    until: this service no longer accepts SHA-1
+    reason: >
+      This asset uses SHA-1 and is not graded weak for it. Where SHA-1 is used
+      as a message authentication code, an attacker cannot use a hash collision
+      to forge one, which is why the grade is defensible. It is still a
+      primitive being withdrawn everywhere, so the plan is to replace it
+      rather than keep it. Replace it inside the scheduled programme, not out
+      of cycle: this is planned work, not a fault. Removing SHA-1 is one
+      exercise across the class of services that still offer it (a change to
+      the accepted algorithm list) rather than one job per host, so it is
+      sized once.
+
+  # ── post-quantum work: two jobs, two entries ──
+  #
+  # KEY ESTABLISHMENT is a protocol migration. The exposure is already
+  # running (traffic recorded today can be decrypted once a quantum computer
+  # exists) and it can be started now: hybrid key exchange ships in current
+  # TLS libraries.
+  # SIGNATURES are certificate and key replacement. A forgery cannot be made
+  # before the machine exists, so nothing is lost by waiting, and the work
+  # cannot be started until post-quantum certificates can be bought.
+  #
+  # Order matters: an authenticated key exchange presents a certificate, so
+  # an asset with `quantum-vulnerable-kex` almost always carries
+  # `quantum-vulnerable-signature` too. The key-establishment entry must come
+  # first or every such asset would land in the bucket that cannot be started.
+  - id: pqc-migrate-key-establishment
+    match:
+      data_state: [in-transit, email-auth, certificate]
+      verdict: [acceptable, strong]
+      flags_any: [quantum-vulnerable-kex]
+    disposition: pqc-migrate
+    effort: L
+    # Per rule: enabling hybrid key exchange is a library or platform version
+    # move across a class of systems, not one job per endpoint.
+    effort_scope: per-rule
+    reason: >
+      This asset has no weak floor today, but the KEY EXCHANGE it negotiates is
+      classical (RSA or an elliptic-curve Diffie-Hellman group) rather than
+      post-quantum. The exposure is already running: traffic recorded today can
+      be decrypted once a quantum computer exists, and nobody can know what has
+      already been recorded, so every month of delay adds traffic that cannot
+      be taken back. This half of the post-quantum programme can be started
+      now: enabling a hybrid group (TLS 1.3 with ML-KEM alongside the
+      classical exchange) is a library or platform version move across a class
+      of systems rather than a per-endpoint change, which is what the larger
+      size covers. The post-quantum deadline itself comes from the
+      organisation's own target year, not from this rule.
+
+  # Per rule, and the size covers the preparation (a purchasing condition and
+  # a watch on issuers), not the replacement, which cannot be sized while it
+  # cannot be bought. The reason says so, so the small size is not read as
+  # "nearly done".
+  - id: pqc-migrate-signature-only
+    match:
+      data_state: [in-transit, email-auth, certificate]
+      verdict: [acceptable, strong]
+      flags_any: [quantum-vulnerable-signature]
+    disposition: pqc-migrate
+    effort: S
+    effort_scope: per-rule
+    reason: >
+      This asset has no weak floor today, and no classical key exchange behind
+      it either: what is classical is the SIGNATURE (a certificate, a host key
+      or a mail-signing key). The threat is forgery, and a forgery cannot be
+      produced before a quantum computer exists, so unlike a key exchange
+      nothing is lost by recording today's traffic. It still has to be
+      replaced, by the same programme date. What can be done today is
+      narrower than replacement, because no public certificate authority
+      issues post-quantum certificates yet: make post-quantum issuance a
+      condition of what is bought, keep a watch on the issuers already in use,
+      and re-measure as each one ships. That preparation is what the size
+      covers. THE REPLACEMENT ITSELF IS NOT SIZEABLE while it cannot be bought,
+      and no plan should read this size as the cost of migrating these assets.
+
+  # Strong or post-quantum, with neither quantum-vulnerability flag. Both flags
+  # must be listed: naming only one would let an asset with a classical
+  # signature and a post-quantum key exchange read "nothing owed".
+  - id: no-action-strong-or-pqc
+    match:
+      verdict: [strong, pqc]
+      flags_none: [quantum-vulnerable-kex, quantum-vulnerable-signature]
+    disposition: no-action
+    effort: S
+    # Per asset: a statement of fact ("nothing is owed here"), not a job, and
+    # never counted in a work total.
+    effort_scope: per-asset
+    reason: >
+      This asset's cryptography already meets or exceeds the strong or
+      post-quantum baseline it is graded against. Nothing is owed here today.
+
+# Recorded decisions belong in an organisation's overlay, never in the tool's data.
+decisions: []

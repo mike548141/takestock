@@ -1,0 +1,71 @@
+port,transport,protocol,posture,exposure,remediability,frontable,notes
+20,tcp,ftp-data,opportunistic,n/a,n/a,unresearched,RFC 4217 PROT P protects the data channel of an explicit-FTPS session
+21,tcp,ftp,opportunistic,n/a,n/a,unresearched,RFC 4217 AUTH TLS upgrades the control channel in band; implicit FTPS is 990
+23,tcp,telnet,cleartext,credentials,unresearched,unresearched,RFC 854 has no confidentiality; the RFC 2946 encryption option is not deployed and telnet-over-TLS is 992. The login exchange itself is readable
+25,tcp,smtp,opportunistic,n/a,n/a,unresearched,RFC 3207 STARTTLS; MTA-to-MTA delivery falls back to cleartext unless MTA-STS or DANE forbids it
+53,tcp,dns,cleartext,content,accepted-by-necessity,not-frontable-client-configured,RFC 1035 is cleartext; DNS-over-TLS is 853 and DNS-over-HTTPS is 443. Content and not metadata: the query stream records what users and systems actually reach (RFC 7626) rather than advertising a device
+53,udp,dns,cleartext,content,accepted-by-necessity,not-frontable-client-configured,RFC 1035 is cleartext; DNS-over-TLS is 853 and DNS-over-HTTPS is 443. Content and not metadata: the query stream records what users and systems actually reach (RFC 7626) rather than advertising a device
+69,udp,tftp,cleartext,content,unresearched,unresearched,RFC 1350 has no encryption and no authentication. Content rather than credentials because the protocol has no login of its own — but network-device configuration backups travel over it and those files carry credentials
+79,tcp,finger,cleartext,content,unresearched,unresearched,RFC 1288 has no encryption. Content rather than metadata: it discloses account names and login times — information about people and not a device advertisement
+80,tcp,http,cleartext,content,actionable-by-configuration,reverse-web-proxy,RFC 9110 over TCP; the RFC 2817 upgrade-to-TLS mechanism was never adopted by browsers. The value describes the port SERVING content; a host measured as redirect-only carries http-redirect: instead and this column cannot express that narrower case
+110,tcp,pop3,opportunistic,n/a,n/a,private-application-broker,RFC 2595 STLS; implicit TLS is 995
+135,tcp,msrpc,opportunistic,n/a,n/a,unresearched,DCE/RPC negotiates packet privacy in band (RPC_C_AUTHN_LEVEL_PKT_PRIVACY); whether a caller asks for it is not observable from the port
+137,udp,netbios-ns,cleartext,credentials,actionable-by-configuration,unresearched,NetBIOS name service (RFC 1002) has no encryption and no authentication. Credentials and not metadata: Windows falls back to it for name resolution so a forged answer draws an automatic authentication attempt and yields NetNTLM material
+138,udp,netbios-dgm,cleartext,metadata,actionable-by-configuration,unresearched,NetBIOS datagram service (RFC 1002) has no encryption. Metadata: browser and workgroup announcements with no authentication chain following them
+139,tcp,netbios-ssn,opportunistic,n/a,n/a,private-application-broker,SMB over the NetBIOS session service; SMB 3.0 can encrypt the session (MS-SMB2) and earlier dialects cannot — the dialect is not observable from the port
+143,tcp,imap,opportunistic,n/a,n/a,private-application-broker,RFC 3501 STARTTLS; implicit TLS is 993
+161,udp,snmp,opportunistic,n/a,n/a,not-frontable-client-configured,SNMPv3 USM adds privacy (RFC 3826) on the same port; v1 and v2c carry the community string and all data in clear
+162,udp,snmp-trap,opportunistic,n/a,n/a,unresearched,SNMPv3 traps may be encrypted (RFC 3826); v1 and v2c traps are cleartext. Exposure is n/a because the posture is not proven cleartext — were a collector ever to prove v1/v2c here the value would be credentials (the community string travels with every trap)
+389,tcp,ldap,opportunistic,n/a,n/a,private-application-broker,RFC 4511 StartTLS on the same port (RFC 4513 security considerations); implicit TLS is 636
+445,tcp,smb,opportunistic,n/a,n/a,private-application-broker,SMB 3.0 negotiates session encryption (MS-SMB2); SMB1 and SMB2 cannot — the dialect is not observable from the port
+512,tcp,exec,cleartext,credentials,unresearched,unresearched,BSD rexec sends the password in clear; no encrypted mode exists
+513,tcp,rlogin,cleartext,credentials,unresearched,unresearched,BSD rlogin has no encryption; SSH (22) replaced it. The login exchange is readable
+514,tcp,rsh,cleartext,credentials,unresearched,unresearched,BSD rsh has no encryption; SSH (22) replaced it. It also executes a command on the host it authenticates to
+514,udp,syslog,cleartext,content,unresearched,unresearched,RFC 5424 over UDP is cleartext; syslog-over-TLS is RFC 5425 on 6514. Content: log records are operational and personal data and routinely quote credentials logged by mistake
+623,tcp,asf-rmcp,opportunistic,n/a,n/a,not-frontable-out-of-band,ASF/IPMI remote management control; IPMI 2.0 RMCP+ can encrypt the session payload (AES-CBC-128) and IPMI 1.5 cannot — which one is in use is not observable from the port
+623,udp,ipmi-rmcp,opportunistic,n/a,n/a,not-frontable-out-of-band,ASF/IPMI remote management control; IPMI 2.0 RMCP+ can encrypt the session payload (AES-CBC-128) and IPMI 1.5 cannot — which one is in use is not observable from the port
+1433,tcp,mssql,opportunistic,n/a,n/a,unresearched,TDS negotiates TLS during pre-login; whether it is required is a server setting not visible from the port
+1521,tcp,oracle-net,opportunistic,n/a,n/a,private-application-broker,Oracle Native Network Encryption is negotiated in band; TCPS (TLS) is 2484
+1900,udp,ssdp,cleartext,metadata,actionable-by-configuration,not-frontable-discovery,UPnP Simple Service Discovery Protocol has no encryption; it is a discovery broadcast in clear. Metadata: device and service descriptions only
+2049,tcp,nfs,opportunistic,n/a,n/a,private-application-broker,RFC 9289 defines NFS over TLS on the same port and NFSv4 krb5p adds privacy; NFSv3 without either is cleartext. Exposure is n/a because the posture is not proven cleartext — an export proved to be NFSv3 without krb5p would be content (the files themselves)
+2869,tcp,upnp,cleartext,metadata,actionable-by-configuration,not-frontable-discovery,UPnP device control and eventing over plain HTTP; no encrypted variant is defined. Metadata on a workstation (device and service descriptions) — but the same protocol on a gateway carries Internet Gateway Device control where an unauthenticated caller can add port mappings; the port cannot tell the two apart
+3128,tcp,http-proxy,cleartext,content,unresearched,unresearched,Proxy control channel in clear; CONNECT tunnels the payload but the proxy exchange itself is unprotected. Content: every request URL is readable — and where proxy authentication is configured it is Basic so the credential crosses too
+3268,tcp,ldap-gc,cleartext,credentials,actionable-by-configuration,private-application-broker,Active Directory global catalog in clear; the TLS port is 3269. Credentials: an unsigned simple bind puts the distinguished name and password on the wire
+3306,tcp,mysql,opportunistic,n/a,n/a,unresearched,TLS is negotiated through the handshake capability flags; whether it is required is a server setting
+5432,tcp,postgresql,opportunistic,n/a,n/a,unresearched,The SSLRequest packet upgrades the connection in band; whether it is required is a pg_hba.conf setting
+5353,udp,mdns,cleartext,metadata,unresearched,unresearched,Multicast DNS (RFC 6762) has no encryption. Metadata with the rest of the discovery family — but note that Responder-class tooling poisons mDNS as well as LLMNR
+5355,udp,llmnr,cleartext,credentials,unresearched,unresearched,Link-Local Multicast Name Resolution (RFC 4795) has no encryption. Credentials and not metadata: it sits in the Windows name-resolution fallback chain so a poisoned answer draws an automatic authentication attempt and yields NetNTLM material
+5357,tcp,wsd,cleartext,metadata,actionable-by-isolation-or-replacement,not-frontable-discovery,Web Services for Devices over plain HTTP; the TLS variant is 5358 but no working encrypted discovery path exists. Metadata: printer and scanner descriptions
+5672,tcp,amqp,cleartext,credentials,unresearched,unresearched,AMQP 0-9-1 has no in-band upgrade; the TLS port is 5671. Credentials: the connection-start handshake carries PLAIN SASL login and the message payloads follow in clear
+5985,tcp,winrm-http,opportunistic,n/a,n/a,private-application-broker,WinRM over HTTP; Negotiate applies message-level encryption whatever the transport does — so a listener alone is not evidence of cleartext. Defaults are AllowUnencrypted=False on both client and service; Basic authentication is disabled on the SERVICE but ENABLED on the client — the half most readers get backwards. Provisioning and image-building tooling routinely turns both protections off deliberately so the defaults are not a safe assumption on an automation-built host. The TLS variant is 5986
+6000,tcp,x11,cleartext,control,actionable-by-configuration,ssh-tunnel-only,The X11 protocol has no encryption of its own; X traffic is protected only by tunnelling it over SSH. Control: the connection cookie crosses in clear and a client on the display reads the screen and injects input — keystrokes including passwords are readable with it
+6379,tcp,redis,cleartext,control,unresearched,unresearched,Classic Redis is cleartext; Redis 6 TLS is conventionally a separate port. Control and not content: CONFIG SET and module loading let a caller act on the host — the AUTH password and all cached data cross in clear as well
+8080,tcp,http-alt,cleartext,content,actionable-by-configuration,reverse-web-proxy,HTTP on an alternate port; same posture as 80. Commonly an application server serving content rather than redirecting
+11211,tcp,memcached,cleartext,content,unresearched,unresearched,The classic text and binary protocols have no encryption and no authentication. Content: cached application data — including session tokens where an application caches them and those are credential-equivalent
+11211,udp,memcached,cleartext,content,unresearched,unresearched,The classic text and binary protocols have no encryption and no authentication. Content: cached application data — including session tokens where an application caches them and those are credential-equivalent
+16992,tcp,intel-amt-http,cleartext,control,actionable-by-configuration,not-frontable-out-of-band,Intel AMT out-of-band management interface over plain HTTP; the TLS variant is 16993. Control: it owns the machine below the operating system and its administrative credentials cross in clear
+16994,tcp,intel-amt-redirection,cleartext,control,unresearched,unresearched,Intel AMT serial-over-LAN and storage redirection in clear; the TLS variant is 16995. Same family as 16992 — console and boot-media control below the operating system
+22,tcp,ssh,encrypted,n/a,n/a,n/a,Encryption is inherent (RFC 4253); its strength is what ssh_audit grades
+443,tcp,https,encrypted,n/a,n/a,n/a,TLS is inherent; its strength is what tls_scan grades
+465,tcp,smtps,encrypted,n/a,n/a,n/a,Implicit TLS submission (RFC 8314); its strength is what implicit_tls grades
+587,tcp,submission,opportunistic,n/a,n/a,unresearched,RFC 6409 message submission; RFC 3207 STARTTLS upgrades the session in band and RFC 8314 requires submission servers to offer it. A listener alone cannot say whether this one does. The implicit-TLS alternative is 465
+563,tcp,nntps,encrypted,n/a,n/a,n/a,Implicit TLS
+593,tcp,http-rpc-epmap,opportunistic,n/a,n/a,unresearched,IANA assigns 593 to the DCE/RPC endpoint mapper over HTTP (MS-RPCH); it is the RPC-over-HTTP path Outlook Anywhere uses. Same reading as 135: the RPC layer can negotiate packet privacy in band and whether a caller asks for it is not observable from the port. A listener here is an answer about reachability rather than about encryption
+636,tcp,ldaps,encrypted,n/a,n/a,n/a,Implicit TLS
+853,tcp,dns-over-tls,encrypted,n/a,n/a,n/a,RFC 7858
+989,tcp,ftps-data,encrypted,n/a,n/a,n/a,Implicit FTPS data channel
+990,tcp,ftps,encrypted,n/a,n/a,n/a,Implicit FTPS control channel
+992,tcp,telnets,encrypted,n/a,n/a,n/a,Telnet over TLS
+993,tcp,imaps,encrypted,n/a,n/a,n/a,Implicit TLS (RFC 8314); its strength is what implicit_tls grades
+995,tcp,pop3s,encrypted,n/a,n/a,n/a,Implicit TLS (RFC 8314); its strength is what implicit_tls grades
+2484,tcp,oracle-tcps,encrypted,n/a,n/a,n/a,Oracle Net over TLS
+3269,tcp,ldaps-gc,encrypted,n/a,n/a,n/a,Active Directory global catalog over TLS
+3389,tcp,rdp,encrypted,n/a,n/a,n/a,RDP always wraps its channel; legacy Standard Security is weak but not absent — its strength needs an active check
+5061,tcp,sips,encrypted,n/a,n/a,n/a,SIP over TLS
+5358,tcp,wsd-tls,encrypted,n/a,n/a,n/a,Web Services for Devices over TLS
+5671,tcp,amqps,encrypted,n/a,n/a,n/a,AMQP over TLS
+5986,tcp,winrm-https,encrypted,n/a,n/a,n/a,WinRM over TLS
+6514,tcp,syslog-tls,encrypted,n/a,n/a,n/a,RFC 5425
+8443,tcp,https-alt,encrypted,n/a,n/a,n/a,TLS on an alternate port
+16993,tcp,intel-amt-https,encrypted,n/a,n/a,n/a,Intel AMT out-of-band management interface over TLS
+16995,tcp,intel-amt-redirection-tls,encrypted,n/a,n/a,n/a,Intel AMT serial-over-LAN and storage redirection over TLS
