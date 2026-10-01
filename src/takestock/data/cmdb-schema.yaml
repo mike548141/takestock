@@ -1,0 +1,852 @@
+# The configuration register's schema: classes of configuration item, their
+# attributes, the relationships between them, and the vocabularies values are
+# expressed in.
+#
+# takestock reads this file to build a draft register from an observation
+# (src/takestock/cmdb.py). The builder refuses to record an attribute or draw a
+# relationship that is not declared here, so this file is the contract between
+# the evidence and the register. The schema is shipped beside the data in
+# every register takestock writes, so a reader never has to guess what a
+# column means.
+#
+# Nothing here belongs to any one organisation. Which system is authoritative
+# for an attribute, and who holds each governance role, are decisions an
+# organisation records for itself, outside this file.
+#
+# To extend it: add the element, say what question it answers, and cite an
+# authority for any obligation you claim. If you cannot name the question a
+# class or relationship answers, do not add it.
+
+schema_version: "1.0.0"
+
+# How far to lean on the model, in the usual alpha/beta/live service words.
+# beta: the model is settled and takestock populates it, and it stays a draft
+# until the people who will maintain a register have reviewed it against
+# their own estate.
+maturity: beta
+
+# ── Governance ─────────────────────────────────────────────────────────────
+#
+# Who is accountable for the register, named as ROLE titles. Who holds each
+# role is an appointment made by the organisation, never written here. A value
+# set to null is reported as unassigned in every register built.
+
+governance:
+  authority: Chief Information Security Officer
+  accountable_owner: Configuration Register Owner
+  conflict_arbiter: Configuration Register Owner
+  resourcing: Configuration Register Owner
+  cites: [ncsc-nz-mcss-assets]
+
+# ── Authorities ────────────────────────────────────────────────────────────
+#
+# Public documents the schema draws on. `cites:` on any element must name a
+# key below; the loader refuses a citation that does not resolve. Whether a
+# document binds a particular organisation is for that organisation to say:
+# here each is a design reference.
+
+authorities:
+  ncsc-nz-mcss-assets:
+    title: Minimum Cyber Security Standards (2025), Assets and their Importance
+    publisher: National Cyber Security Centre, New Zealand
+    published: 2025-10-30
+    note: >-
+      Among its suggested actions: keep a current inventory of hardware and
+      software that lists minimum configuration items (application name,
+      business owner, licensing model, server or instance names, IP address
+      and URL, vital dependencies, and supporting assurance material), and
+      establish business owners for business-critical systems.
+
+  hl7-fhir-data-absent-reason:
+    title: HL7 FHIR R4, DataAbsentReason code system
+    publisher: Health Level Seven International
+    note: >-
+      A controlled vocabulary saying why an expected value is missing, applied
+      per element rather than per record. Six of its codes are adopted in
+      absence_reason below, with their published definitions.
+
+# ── Vocabularies ───────────────────────────────────────────────────────────
+
+vocabularies:
+
+  # How a value came to be known, strongest first.
+  evidence_strength:
+    measured:
+      definition: An instrument read the value off the thing itself.
+    reported:
+      definition: >-
+        A management system states the value about something it manages. It
+        read its own record of the thing, not the thing.
+    declared:
+      definition: A person or a document says so.
+    inferred:
+      definition: >-
+        Derived from other facts by a rule. Always shown as a derivation, never
+        as a reading.
+
+  # Whether a person has settled the value or the tool has proposed it.
+  basis:
+    proposed:
+      definition: The tool produced this value and nobody has confirmed it.
+    decided:
+      definition: A named person decided this value, and the basis is recorded.
+
+  # Why a value is missing. An absence is recorded with the same standing as a
+  # value. Four codes are takestock's own; six are adopted from the HL7 FHIR
+  # vocabulary with its definitions.
+  absence_reason:
+    not-collected:
+      definition: >-
+        Nobody has supplied this input yet. Says nothing about the estate, only
+        that the question is open.
+      source: takestock
+    could-not-test:
+      definition: >-
+        The question was asked and no answer came back: a probe was not run or
+        was refused, or the source holds nothing for the question. The reason
+        is known and usually fixable.
+      source: takestock
+    extent-unknown:
+      definition: >-
+        Something can be shown to be missing, but not what. Measured by
+        subtraction against an independent count.
+      source: takestock
+    not-measured:
+      definition: >-
+        The instrument ran and returned a result, but this attribute of that
+        result was absent.
+      source: takestock
+    not-applicable:
+      definition: There is no proper value for this element.
+      source: hl7-fhir-data-absent-reason
+      note: >-
+        A virtual machine has no chassis serial. Recording that as
+        not-collected would count a fact that was never owed as a gap.
+    asked-unknown:
+      definition: The source was asked but does not know the value.
+      source: hl7-fhir-data-absent-reason
+    asked-declined:
+      definition: The source was asked but declined to answer.
+      source: hl7-fhir-data-absent-reason
+    temp-unknown:
+      definition: >-
+        There is reason to expect (from the workflow) that the value may become
+        known.
+      source: hl7-fhir-data-absent-reason
+      note: An outstanding request for information is in this state.
+    masked:
+      definition: >-
+        The information is not available due to security, privacy or related
+        reasons.
+      source: hl7-fhir-data-absent-reason
+    unsupported:
+      definition: The source system wasn't capable of supporting this element.
+      source: hl7-fhir-data-absent-reason
+
+  # Where an item is in its life. `discovered` is never folded into `live`:
+  # live asserts that an owner has accepted the item, and a tool cannot.
+  lifecycle_state:
+    planned:
+      definition: Declared on paper; no discovery source has confirmed it.
+    discovered:
+      definition: An instrument has seen it. Nobody has reviewed or accepted it.
+    live:
+      definition: In service, with an owner who has accepted it.
+    retiring:
+      definition: On a decided path out of service.
+    retired:
+      definition: Out of service; the record is kept.
+    disposed:
+      definition: Physically or contractually gone.
+
+  # Whether an item does live work. Two values only, because the vocabulary
+  # exists to order remediation, and a finer distinction can be added when a
+  # decision turns on it. An item labelled both ways resolves to production
+  # and is marked contested: treating a live machine as non-production delays
+  # work nobody notices, which is the costlier mistake.
+  environment:
+    production:
+      definition: The item does live work. Remediation starts here.
+    non-production:
+      definition: >-
+        Development, test or pre-production. Still in scope, because copies
+        often hold the same kind of data, but behind production in the order.
+
+  # What recorded an assertion. The two are wrong in different ways and are
+  # corrected differently: ask the person again, or run the collector again.
+  actor_kind:
+    person:
+      definition: A named person. Their assertion is declared and should expire.
+    collector:
+      definition: >-
+        A named instrument, with the artefact it read and that artefact's
+        digest. Its assertion is refreshed by running it again.
+
+  # The kinds of identifier an item can be matched on, in match order: the
+  # most stable first, and the first match wins.
+  alias_kind:
+    estate-name:
+      definition: >-
+        A name the organisation assigns: a hostname, service name or
+        certificate subject. Survives re-addressing.
+      rank: 1
+    hostname:
+      definition: A host's name as an export gives it.
+      rank: 2
+    agent-id:
+      definition: >-
+        A stable identifier issued by a management agent, one per install,
+        unchanged when the machine is renamed or re-addressed.
+      rank: 3
+    serial:
+      definition: >-
+        A hardware serial number. Stable, often absent, sometimes mistyped or
+        shared.
+      rank: 4
+    address:
+      definition: A network address. Used only when nothing better exists.
+      rank: 5
+
+  # Identifiers that may NEVER be used to match an item.
+  refused_alias_kind:
+    mac-address:
+      definition: >-
+        A hardware address. Modern client operating systems rotate a private
+        one per network by default, so an item keyed on it would change
+        identity on the vendor's schedule.
+      note: >-
+        Refused as a key, kept as an attribute: mac_address is declared below
+        and held with a validity window.
+
+# ── Minimum inventory items ────────────────────────────────────────────────
+#
+# The minimum configuration items the NCSC NZ assets standard suggests an
+# inventory list, each mapped to the attribute that holds it here. `populated`
+# says whether takestock fills the attribute from an observation; the others
+# are declared for an organisation to supply.
+
+minimum_attribute_set:
+  cites: [ncsc-nz-mcss-assets]
+  items:
+    - named: application name
+      attribute: name
+      populated: false
+      note: Applications come from a declared portfolio, which no collector reads.
+    - named: business owner
+      attribute: business_owner
+      populated: false
+    - named: licensing model
+      attribute: licence_metric
+      populated: false
+    - named: server/instance names
+      attribute: hostname
+      populated: true
+    - named: IP address and URL, if web-based
+      attribute: address
+      populated: true
+    - named: vital dependencies (other systems, networks)
+      attribute: null
+      populated: false
+      note: >-
+        A relationship rather than an attribute: runs-on and depends-on below.
+        Neither is drawn, because no evidence takestock reads joins an
+        application to a host.
+    - named: >-
+        other supporting information, such as certification and accreditation
+        artefacts and privacy impact assessments
+      attribute: assurance_artefact
+      populated: false
+
+# ── Families and classes ───────────────────────────────────────────────────
+#
+# Two levels: a family groups what its classes share, and classes are what
+# get created. `validated_by` names who checks records of the family; it is
+# null until an organisation appoints someone.
+
+families:
+  Service:
+    definition: Something the organisation offers, to staff or to the public.
+    validated_by: null
+    answers: Which service degrades when this stops.
+  Deployment:
+    definition: A running configuration of an application in one environment.
+    validated_by: null
+    answers: What is running, where, and in which environment.
+  Hardware:
+    definition: A physical or virtual machine.
+    validated_by: null
+    answers: What machines exist, and how much of each can be seen.
+  Software:
+    definition: What is installed, held as a product and its releases.
+    validated_by: null
+    answers: Where is this version installed, and how many copies.
+  Network and Naming:
+    definition: Names, ranges, certificates and listening services.
+    validated_by: null
+    answers: What is reachable, under what name, presenting what key material.
+  Location:
+    definition: Where a machine physically or logically sits.
+    validated_by: null
+    answers: What is affected by a site or region event.
+  Identity and Secret:
+    definition: Accounts, roles, credentials and key material.
+    validated_by: null
+    answers: Who and what can reach this, and with which secret.
+  Commercial and Organisation:
+    definition: Vendors, contracts, entitlements and support arrangements.
+    validated_by: null
+    answers: What is paid for, who fixes it, and when it expires.
+  Information Flow:
+    definition: What information moves where, to whom, under what classification.
+    validated_by: null
+    answers: What leaves the estate, to whom, and on what basis.
+    deferred: true
+    note: >-
+      Deferred. It depends on the other families being populated first.
+
+# `built_from` names the observation rows that create items of the class. A
+# class with no `built_from` is declared for an organisation to populate; the
+# register says so rather than reporting it as empty.
+
+classes:
+
+  Business Service:
+    family: Service
+    attributes: [name, description, criticality, business_owner, service_owner, lifecycle_state]
+    built_from: null
+
+  Technical Service:
+    family: Service
+    attributes: [name, description, service_owner, lifecycle_state]
+    built_from: null
+
+  Application:
+    family: Deployment
+    attributes: [name, description, business_owner, service_owner, system_sme, criticality,
+                 hosting_model, environment, lifecycle_state, assurance_artefact]
+    built_from: null
+
+  Application Instance:
+    family: Deployment
+    attributes: [name, environment, hosting_model, lifecycle_state]
+    built_from: null
+
+  Server:
+    family: Hardware
+    attributes: [hostname, agent_id, host_type, os, os_version, address, mac_address,
+                 serial_number, criticality, environment, lifecycle_state, sensor_version,
+                 last_seen, disk_encryption_state, key_custody]
+    built_from: machine rows whose host type is a server
+    answers: What runs on it, is it managed, and what stops if it stops.
+
+  Endpoint Device:
+    family: Hardware
+    attributes: [hostname, agent_id, host_type, os, os_version, address, mac_address,
+                 serial_number, assigned_user, environment, lifecycle_state, sensor_version,
+                 last_seen, disk_encryption_state, key_custody]
+    built_from: machine rows whose host type is a workstation, desktop or laptop
+    answers: Is this person's machine managed and compliant.
+
+  Domain Controller:
+    family: Hardware
+    attributes: [hostname, agent_id, host_type, os, os_version, address, environment,
+                 lifecycle_state, sensor_version, last_seen]
+    built_from: machine rows whose host type is a domain controller
+    answers: Which directory infrastructure is in scope for a change.
+    note: >-
+      Its own class because most privileged-access questions start here.
+
+  Network Device:
+    family: Hardware
+    attributes: [hostname, address, vendor_name, host_type, lifecycle_state, last_seen]
+    built_from: machine rows whose host type is a router, switch, firewall or network device
+
+  Virtual Machine:
+    family: Hardware
+    attributes: [hostname, address, os, os_version, environment, lifecycle_state, last_seen]
+    built_from: machine rows whose host type is a virtual machine
+
+  Host:
+    family: Hardware
+    attributes: [hostname, agent_id, os, os_version, address, environment, lifecycle_state,
+                 last_seen, disk_encryption_state, key_custody]
+    built_from: machine rows that do not say what kind of machine they are
+    answers: Which machines are known to exist and not yet classified.
+    note: >-
+      Its own class rather than a guess, because "nothing said what this is"
+      is a finding someone can act on. A row that types the machine moves it
+      to the matching class.
+
+  Software Product:
+    family: Software
+    attributes: [name, vendor_name, licence_metric, product_owner, lifecycle_state]
+    built_from: rows naming software installed on a machine
+    answers: What is licensed, and who the vendor conversation is with.
+
+  Software Release:
+    family: Software
+    attributes: [name, version, end_of_support, end_of_life, support_status,
+                 migration_strategy, lifecycle_state, description]
+    built_from: rows naming software installed on a machine
+    answers: Is this version supported, and where is it installed.
+    note: >-
+      Support and end-of-life dates live on the release and nowhere else: on
+      the product every version would inherit one date, and on each copy the
+      same date would be kept once per machine.
+
+  DNS Name:
+    family: Network and Naming
+    attributes: [name, address, ip_stack, internet_facing, lifecycle_state, last_seen]
+    built_from: discovery and mail-authentication rows, and DNS-layer readings of a name
+    answers: What names exist, and what is behind them.
+
+  Network Service:
+    family: Network and Naming
+    attributes: [name, port, transport, protocol, bind_scope, internet_facing,
+                 encryption_verdict, evidence_depth, lifecycle_state, last_seen]
+    built_from: rows naming a listening port on a machine
+    answers: What is listening, on what, and is the traffic protected.
+
+  Certificate:
+    family: Network and Naming
+    attributes: [name, issuer, issuing_ca, certificate_sha256, not_before, not_after,
+                 signature_algorithm, key_algorithm, key_length, encryption_verdict,
+                 post_quantum_signature, first_discovered, last_seen, lifecycle_state]
+    built_from: certificate rows
+    answers: What expires when, and is the key material strong enough.
+
+  Network Range:
+    family: Network and Naming
+    attributes: [name, address, description, lifecycle_state]
+    built_from: null
+
+  Site:
+    family: Location
+    attributes: [name, description, lifecycle_state]
+    built_from: null
+
+  Account:
+    family: Identity and Secret
+    attributes: [name, account_kind, privileged, directory, last_seen, lifecycle_state]
+    built_from: null
+    answers: Who and what can sign in, and with what standing.
+
+  Credential:
+    family: Identity and Secret
+    attributes: [name, credential_kind, not_after, key_algorithm, lifecycle_state]
+    built_from: key-material rows
+    answers: What secrets exist, of what kind, expiring when.
+
+  Vendor:
+    family: Commercial and Organisation
+    attributes: [name, vendor_name, description, lifecycle_state]
+    built_from: third-party rows that name the organisation behind them
+    answers: Which outside organisations the estate depends on.
+    note: >-
+      The unit is the organisation, not the name that was looked up.
+
+  Unattributed Dependency:
+    family: Commercial and Organisation
+    attributes: [name, description, lifecycle_state]
+    built_from: third-party rows that name only a domain
+    answers: Which outside names the estate depends on without knowing whose they are.
+    note: >-
+      Keyed on the registrable domain, because that is all the evidence
+      identifies; no organisation is guessed. It becomes a Vendor once a
+      declaration or the vendor-domain list names the organisation behind the
+      domain. Its own class for the reason Host is: "nobody knows whose this
+      is" is a finding, and a nameless supplier is not.
+
+  Contract:
+    family: Commercial and Organisation
+    attributes: [name, contract_expiry, contract_value, notice_period, lifecycle_state]
+    built_from: null
+
+  Support Arrangement:
+    family: Commercial and Organisation
+    attributes: [name, support_tier, provider, support_hours, escalation_path, lifecycle_state]
+    built_from: null
+    note: >-
+      An item rather than a bare relationship, because the tier, provider,
+      hours and escalation path are the content and cannot hang off a pointer.
+
+  Licence Entitlement:
+    family: Commercial and Organisation
+    attributes: [name, licence_metric, seats, term, true_up_date, lifecycle_state]
+    built_from: null
+
+  Declared Asset Class:
+    family: Commercial and Organisation
+    attributes: [name, description, instrument_state, lifecycle_state, declared_crypto]
+    built_from: rows from the target profile's declared estate
+    answers: What the organisation says it has, and whether any instrument can see it.
+    note: >-
+      Something that exists on paper before any discovery source confirms it.
+      It is a class of asset, not a machine, and never counted as one.
+
+# ── Relationships ──────────────────────────────────────────────────────────
+#
+# Direction and cardinality matter: `1:N` is one on the left to many on the
+# right. `test` is the one question that decides whether an edge is the right
+# kind; `built` says whether takestock draws it. A relationship declared and
+# not drawn is listed in every register with its reason.
+
+relationships:
+
+  runs-on:
+    from: Deployment
+    to: Hardware
+    cardinality: N:M
+    asserts: B is the execution substrate for A.
+    test: Is B the execution substrate for A?
+    wrong_if: >-
+      Confused with hosted-at, a question such as "which applications does
+      this hypervisor patch affect" follows the wrong edge and returns nothing.
+    built: false
+    note: >-
+      Not drawn: nothing in an observation joins an application to a host.
+      Matching them by name would look joined and be wrong where nobody can see.
+
+  hosted-at:
+    from: Hardware
+    to: Location
+    cardinality: N:1
+    asserts: Where the machine physically or logically sits.
+    test: If this site or region were lost, would the machine be lost with it?
+    built: false
+    note: Not drawn; no collector reads locations.
+
+  realised-by:
+    from: Service
+    to: Deployment
+    cardinality: 1:N
+    asserts: The service is delivered by these application deployments.
+    test: If every deployment on the right stopped, would the service stop?
+    built: false
+    note: Not drawn; services and applications are declared, not discovered.
+
+  release-of:
+    from: Software Release
+    to: Software Product
+    cardinality: N:1
+    asserts: This release belongs to that product.
+    test: Is the left a version of the right?
+    built: true
+
+  instance-of:
+    from: Application Instance
+    to: Application
+    cardinality: N:1
+    asserts: This environment's copy belongs to that application.
+    test: Is the left one environment's copy of the right?
+    built: false
+    note: Not drawn; applications are declared, not discovered.
+
+  installed-on:
+    from: Software Release
+    to: Hardware
+    cardinality: N:M
+    asserts: This release is installed on that machine.
+    test: Is a copy of this release present on that machine?
+    counted: true
+    built: true
+    note: >-
+      An edge with a count, never an item per copy: an item per copy makes the
+      register orders of magnitude larger and answers no further question. The
+      count carries its unit, and counts in different units are never added.
+
+  contains:
+    from: Hardware
+    to: Network Service
+    cardinality: 1:N
+    asserts: The child does not exist without the parent.
+    test: If the parent is deleted, does the child cease to exist?
+    wrong_if: >-
+      Used where depends-on was meant, retiring one item silently deletes
+      records of things that still exist.
+    built: true
+
+  depends-on:
+    from: Deployment
+    to: Deployment
+    cardinality: N:M
+    asserts: If B stops, A stops or degrades.
+    test: If B stops, does A stop or degrade?
+    wrong_if: >-
+      Under-recorded, a change is approved that stops a business-critical job.
+      Over-recorded, every impact analysis returns everything and is useless.
+    built: false
+    note: >-
+      Not drawn: nothing collected shows need, and a name lookup must never
+      stand in for it (see communicates-with).
+
+  communicates-with:
+    from: Hardware
+    to: Vendor
+    cardinality: N:M
+    asserts: Packets flow. Nothing more.
+    test: Do packets flow? It says nothing about need.
+    wrong_if: >-
+      Read as depends-on, an outage plan treats a monitoring poll as critical
+      and misses a critical link that ran outside the collection window.
+    qualifier: >-
+      Derived from a name lookup. A lookup proves only that a name was
+      requested, never that a connection was made, that data flowed, or that
+      anything was encrypted.
+    built: false
+    note: >-
+      Not drawn: the third-party rows takestock reads do not say which machine
+      made the lookup, and an edge with an unknown end is not an edge.
+
+  supported-by:
+    from: Hardware
+    to: Support Arrangement
+    cardinality: N:1
+    asserts: Who fixes it, at which tier.
+    test: When this breaks, is that the arrangement that is invoked?
+    built: false
+    note: Not drawn; support arrangements are declared, not discovered.
+
+  covered-by:
+    from: Hardware
+    to: Contract
+    cardinality: N:M
+    asserts: Which commercial agreement covers it.
+    test: Would this item's cost or entitlement change if that contract ended?
+    built: false
+    note: Not drawn; contracts are declared, not discovered.
+
+  entitled-by:
+    from: Software Product
+    to: Licence Entitlement
+    cardinality: 1:N
+    asserts: What the organisation may run, and how many.
+    test: Does that entitlement permit this product to be run?
+    built: false
+    note: Not drawn; entitlements are declared, not discovered.
+
+  owned-by:
+    from: Hardware
+    to: Account
+    cardinality: N:M
+    asserts: Who is accountable, in a named role.
+    test: Is this person or role accountable for the item in the role named on the edge?
+    role_qualified: true
+    built: false
+    note: >-
+      Not drawn; no collector reads owners. Business, service and technical
+      owner are different edges, each pointing at a directory account or a
+      role, never a free-text name that a leaver process cannot check.
+
+  presents:
+    from: Network and Naming
+    to: Certificate
+    cardinality: N:M
+    asserts: What key material this name or service offers.
+    test: Does a client connecting here receive that certificate?
+    built: true
+
+  resolves-to:
+    from: DNS Name
+    to: Hardware
+    cardinality: N:M
+    asserts: A lookup of the name returned this machine's address.
+    test: Did a lookup of that name return this address?
+    qualifier: >-
+      A lookup proves only that a name was requested, never that a connection
+      was made, that data flowed, or that anything was encrypted.
+    built: false
+    note: >-
+      Not drawn: addresses are attributes with a validity window, not items,
+      so there is nothing at the right-hand end to point at. The address is
+      held on the DNS Name instead.
+
+  replaces:
+    from: Hardware
+    to: Hardware
+    cardinality: "1:1"
+    asserts: Succession, for migration tracking.
+    test: Was the right retired because the left took over its job?
+    built: false
+    note: Not drawn; succession is declared, not discovered.
+
+  member-of:
+    from: Hardware
+    to: Declared Asset Class
+    cardinality: N:M
+    asserts: Grouping, with no claim that one depends on the other.
+    test: Is this item one of that group, without depending on it to exist?
+    built: true
+
+  part-of:
+    from: Hardware
+    to: Hardware
+    cardinality: N:1
+    asserts: Physical composition, such as a blade in a chassis.
+    test: Is the left a component of the right's assembly?
+    built: false
+    note: Not drawn; no collector reads physical composition.
+
+# ── Attributes ─────────────────────────────────────────────────────────────
+#
+# `refresh_interval_days` is set per attribute, because a machine's operating
+# system changes in days and its business owner in a year; one interval for
+# everything would make each attribute falsely stale or falsely fresh. null
+# means the value does not go stale on a clock.
+#
+# `expected_strength` is the strongest evidence an attribute can honestly
+# carry. A collector that claims more is capped to it: a grading is inferred
+# however directly the graded thing was read.
+
+attributes:
+  name: {refresh_interval_days: 365, expected_strength: measured}
+  description: {refresh_interval_days: 365, expected_strength: declared}
+  hostname: {refresh_interval_days: 7, expected_strength: measured}
+  agent_id: {refresh_interval_days: null, expected_strength: measured}
+  host_type: {refresh_interval_days: 30, expected_strength: reported}
+  os: {refresh_interval_days: 7, expected_strength: measured}
+  os_version: {refresh_interval_days: 7, expected_strength: measured}
+  address:
+    refresh_interval_days: 1
+    expected_strength: measured
+    note: Held with a validity window. Addresses change; ranges are items.
+  mac_address:
+    refresh_interval_days: 1
+    expected_strength: measured
+    note: Held with a validity window, and never used as an identifier.
+  serial_number: {refresh_interval_days: null, expected_strength: measured}
+  ip_stack: {refresh_interval_days: 7, expected_strength: measured}
+  internet_facing: {refresh_interval_days: 7, expected_strength: inferred}
+  port: {refresh_interval_days: 30, expected_strength: measured}
+  transport: {refresh_interval_days: 30, expected_strength: measured}
+  protocol: {refresh_interval_days: 30, expected_strength: measured}
+  bind_scope: {refresh_interval_days: 30, expected_strength: measured}
+  encryption_verdict:
+    refresh_interval_days: 30
+    expected_strength: inferred
+    note: >-
+      The grade against takestock's algorithm baseline: weak, acceptable,
+      strong or pqc, or unknown where nothing could be graded. For a
+      certificate it grades the signature key as it stands today; whether
+      that key resists a quantum computer is post_quantum_signature.
+  evidence_depth:
+    refresh_interval_days: 30
+    expected_strength: inferred
+    note: >-
+      How far the evidence about this item's protection goes: exists,
+      posture, strength, key or key-management. Derived from what the row
+      carries, so it is inferred.
+  disk_encryption_state: {refresh_interval_days: 30, expected_strength: reported}
+  key_custody: {refresh_interval_days: 30, expected_strength: reported}
+  sensor_version: {refresh_interval_days: 7, expected_strength: measured}
+  last_seen:
+    refresh_interval_days: 7
+    expected_strength: measured
+    note: >-
+      The date an instrument last saw the item. For a certificate read from
+      the transparency logs, the date the log was read and listed it as
+      current.
+  version: {refresh_interval_days: 7, expected_strength: measured}
+  end_of_support: {refresh_interval_days: 180, expected_strength: declared}
+  end_of_life: {refresh_interval_days: 180, expected_strength: declared}
+  support_status: {refresh_interval_days: 180, expected_strength: inferred}
+  migration_strategy: {refresh_interval_days: 365, expected_strength: declared}
+  issuer: {refresh_interval_days: 30, expected_strength: measured}
+  not_after: {refresh_interval_days: 30, expected_strength: measured}
+  signature_algorithm: {refresh_interval_days: 30, expected_strength: measured}
+  key_algorithm: {refresh_interval_days: 30, expected_strength: measured}
+  key_length:
+    refresh_interval_days: 30
+    expected_strength: measured
+    note: >-
+      The public key's length in bits. For an elliptic-curve key the curve is
+      named beside it, because the curve is what a grading reads.
+  not_before:
+    refresh_interval_days: 30
+    expected_strength: measured
+    note: The date the certificate became valid, normally the date it was issued.
+  certificate_sha256:
+    refresh_interval_days: 30
+    expected_strength: measured
+    note: >-
+      The SHA-256 fingerprint of the certificate itself, which any certificate
+      tool or transparency-log search accepts. It changes at every renewal.
+      One certificate can cover several names, so filtering on it shows every
+      name a single certificate serves.
+  issuing_ca:
+    refresh_interval_days: 30
+    expected_strength: measured
+    note: >-
+      The intermediate certificate that signed this one, taken from the common
+      name (CN) in the issuer's distinguished name; the whole name is kept
+      when it has no CN. `issuer` names the organisation; this names which of
+      its signing certificates, such as "Example Issuing CA 2".
+  post_quantum_signature:
+    refresh_interval_days: 30
+    expected_strength: inferred
+    note: >-
+      Whether the signature is quantum-resistant: ready, hybrid or classical,
+      or gap and n/a where there is no reading. Copied from the grading,
+      never judged again here.
+  first_discovered:
+    refresh_interval_days: null
+    expected_strength: inferred
+    note: >-
+      For a certificate, the earliest date its fingerprint appears in any
+      earlier observation kept beside this one, else this observation's own
+      date. It is per certificate, so a renewal resets it, and it can be no
+      earlier than the oldest observation kept.
+  environment:
+    refresh_interval_days: 365
+    expected_strength: inferred
+    note: >-
+      Derived by a rule and always shown as a derivation, because a declared
+      label goes stale when a machine is repurposed. A machine with no label
+      is absent, never non-production. See the environment vocabulary for how
+      a conflicting label resolves.
+  criticality:
+    refresh_interval_days: 365
+    expected_strength: declared
+    note: >-
+      The organisation's own scale. An invented scale gives a second
+      criticality that no risk process recognises.
+  business_owner:
+    refresh_interval_days: 365
+    expected_strength: declared
+    cites: [ncsc-nz-mcss-assets]
+  service_owner: {refresh_interval_days: 365, expected_strength: declared}
+  system_sme: {refresh_interval_days: 365, expected_strength: declared}
+  product_owner: {refresh_interval_days: 365, expected_strength: declared}
+  assigned_user:
+    refresh_interval_days: 7
+    expected_strength: reported
+    note: >-
+      Who uses the machine, which is not who is accountable for it; those are
+      different relationships.
+  hosting_model: {refresh_interval_days: 365, expected_strength: declared}
+  vendor_name: {refresh_interval_days: 365, expected_strength: declared}
+  contract_expiry: {refresh_interval_days: null, expected_strength: declared}
+  contract_value: {refresh_interval_days: null, expected_strength: declared}
+  notice_period: {refresh_interval_days: null, expected_strength: declared}
+  support_tier: {refresh_interval_days: 365, expected_strength: declared}
+  provider: {refresh_interval_days: 365, expected_strength: declared}
+  support_hours: {refresh_interval_days: 365, expected_strength: declared}
+  escalation_path: {refresh_interval_days: 365, expected_strength: declared}
+  licence_metric:
+    refresh_interval_days: 365
+    expected_strength: declared
+    cites: [ncsc-nz-mcss-assets]
+  seats: {refresh_interval_days: 365, expected_strength: declared}
+  term: {refresh_interval_days: null, expected_strength: declared}
+  true_up_date: {refresh_interval_days: null, expected_strength: declared}
+  account_kind: {refresh_interval_days: 30, expected_strength: measured}
+  privileged: {refresh_interval_days: 30, expected_strength: reported}
+  directory: {refresh_interval_days: 30, expected_strength: measured}
+  credential_kind: {refresh_interval_days: 30, expected_strength: measured}
+  instrument_state: {refresh_interval_days: 7, expected_strength: inferred}
+  declared_crypto: {refresh_interval_days: 365, expected_strength: declared}
+  assurance_artefact:
+    refresh_interval_days: 365
+    expected_strength: declared
+    cites: [ncsc-nz-mcss-assets]
+  lifecycle_state: {refresh_interval_days: 30, expected_strength: inferred}
