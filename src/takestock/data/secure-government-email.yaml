@@ -37,6 +37,8 @@
 # cover, written as a sentence a reader can use. `record`, where present,
 # names the DNS record the standard asks for; the evaluator checks it against
 # the name actually read rather than taking it as an instruction.
+# `settled_by` names the evidence that would settle the requirement when a
+# report has to leave it unmeasured; the conformance note prints it.
 
 standard:
   id: sge
@@ -122,6 +124,10 @@ requirements:
     source: framework §"Securing all email enabled domains" — TLS requirement
     document: framework
     measurable: observed
+    settled_by: >-
+      A TLS probe of each inbound MX host listing the protocol versions it
+      accepts; for the sending clause, a per-message mail transport export
+      giving the TLS version of each outbound delivery.
     # Both are read. `forbidden_versions` answers the "must not be used" list;
     # `minimum_version` answers "a minimum of TLS 1.2" positively, so a version
     # the evaluator cannot place is reported as an unconfirmed floor rather
@@ -141,6 +147,8 @@ requirements:
     source: TLS-RPT Deployment Guide v1.0 §3, quoting the framework
     document: tls-rpt-guide
     measurable: observed
+    settled_by: >-
+      A DNS reading of the TXT record at _smtp._tls.<domain>.
     # Documentation only: the evaluator does not read these two fields. The
     # name to publish and the shape to look for are fixed in the evaluator.
     record: _smtp._tls.<domain>
@@ -158,6 +166,9 @@ requirements:
     source: SPF Deployment Guide v1.0 §3; framework SPF requirement
     document: spf-guide
     measurable: observed
+    settled_by: >-
+      A DNS reading of the domain's TXT records, showing its v=spf1 record and
+      the qualifier on its final all term.
     note: >-
       A softfail ~all is explicitly called out as a weak posture: it permits
       unknown sending servers, so the message neither passes nor fails.
@@ -176,6 +187,10 @@ requirements:
     source: DKIM Deployment Guide v1.0 §3; framework §8 DKIM requirement
     document: dkim-guide
     measurable: no-instrument
+    settled_by: >-
+      The signing configuration of every service that sends as the
+      organisation, or the DKIM-Signature header of a sample message from each
+      one, showing that every outbound path signs.
     note: >-
       A published selector proves a key exists, never that outbound mail is
       signed with it. The claim is about mail flow, which cannot be seen from
@@ -192,6 +207,8 @@ requirements:
     source: DMARC Deployment Guide v1.0 §3; framework DMARC requirement
     document: dmarc-guide
     measurable: observed
+    settled_by: >-
+      A DNS reading of the TXT record at _dmarc.<domain>.
 
   - id: SGE-DMARC-02
     title: Inbound mail checked for DMARC compliance and acted on
@@ -206,6 +223,10 @@ requirements:
     source: framework DMARC requirements; DMARC Deployment Guide v1.0 §3
     document: framework
     measurable: no-instrument
+    settled_by: >-
+      The receiving mail platform's inbound policy settings, showing that
+      DMARC is evaluated and each sender's policy honoured; or the outcome of
+      a test message that fails DMARC, sent from a domain the tester controls.
 
   - id: SGE-DMARC-03
     title: DMARC reports reviewed regularly
@@ -221,6 +242,9 @@ requirements:
     source: DMARC Deployment Guide v1.0 §3; NZISM 15.2.36.C.04 (printed C.06 in the PDF framework and the DMARC guide)
     document: dmarc-guide
     measurable: no-instrument
+    settled_by: >-
+      A record of the review: who reads the DMARC aggregate reports, how
+      often, and what was done about what they showed.
     note: >-
       A published rua= address shows reports are being sent somewhere. It
       says nothing about whether anyone reads them.
@@ -240,6 +264,9 @@ requirements:
     source: framework §10 checklist; §8 and MTA-STS Deployment Guide v1.1 §3 state the same as "needs to"
     document: framework
     measurable: observed
+    settled_by: >-
+      A DNS reading of _mta-sts.<domain> and a fetch of the policy file over
+      HTTPS with certificate validation, showing mode: enforce.
 
   - id: SGE-ITLS-01
     title: Implicit TLS configured and enforced
@@ -252,6 +279,11 @@ requirements:
     source: framework §"Agency deployment checklist"
     document: framework
     measurable: observed
+    settled_by: >-
+      Written confirmation of whether the organisation is a member of the SGE
+      Restricted Group and, where the platform routes mail through configured
+      routing rules or relays, the definitions of the routes that carry mail to
+      other government organisations, with their hosts and ports.
     note: >-
       The TLS Deployment Guide narrows this: the requirement "has been
       further defined as applying to all email transmitted between
@@ -284,6 +316,9 @@ requirements:
     source: framework §4 and §10 checklist; §8 "Enforce DLP in line with the PSR and NZISM requirements"
     document: framework
     measurable: no-instrument
+    settled_by: >-
+      An export of the mail platform's data loss prevention policies, showing
+      which protective markings are blocked and on which mail flows.
     note: >-
       DLP is sender-side mail-flow policy; an export of the mail platform's
       data-loss-prevention policies would show it, and nothing collected here
@@ -311,6 +346,9 @@ requirements:
     # address that is published shows where reports go, never that a tool
     # processes them, so that row stays unmeasured and names the destination.
     measurable: observed
+    settled_by: >-
+      Confirmation of the service that receives aggregate reports at the
+      published rua= address, and evidence that its output is read.
 
   - id: SGE-DKIM-02
     title: Third-party sending platforms sign with the organisation's own domain
@@ -325,6 +363,9 @@ requirements:
     source: DKIM Deployment Guide v1.0 Appendix 1, "Bulk Senders (e.g., CRMs, ESPs)"
     document: dkim-guide
     measurable: no-instrument
+    settled_by: >-
+      The DKIM-Signature header, and its d= tag, from a message sent by each
+      third-party sending platform.
     note: >-
       The signing domain is carried in each message's DKIM-Signature header,
       not in DNS, so it can be read only from mail each platform has actually
@@ -348,6 +389,9 @@ requirements:
     # Both clauses are graded, from the policy file's mx lines and the MX
     # records read in the same run, so this row can pass.
     measurable: observed
+    settled_by: >-
+      The policy file's mx: lines and the domain's MX records, read in the
+      same run.
     note: >-
       A policy entry naming a host the domain does not publish as an MX host is
       reported and not graded: the sentence asks that every MX server be
@@ -372,6 +416,10 @@ requirements:
     source: Keyword Blocking Deployment Guide v1.2 §3 (quoting NZISM 15.2.40.C.01 and 15.2.41.C.01, both MUST in NZISM v3.9) and §4
     document: keyword-guide
     measurable: no-instrument
+    settled_by: >-
+      An export of the transport or gateway rules that act on protective
+      markings in inbound and outbound mail, with their reject, log and report
+      actions.
     note: >-
       Blocking is mail-flow policy (transport rules, a data-loss-prevention
       policy or an external gateway rule) and none of it is visible from
@@ -394,6 +442,10 @@ requirements:
     source: SPF Deployment Guide v1.0 §3 and §4.2; framework §9 "Securing non-email enabled domains" for the record value
     document: spf-guide
     measurable: observed
+    settled_by: >-
+      The full list of names in the organisation's DNS zones, taken from the
+      zones themselves rather than from certificate logs, with each name that
+      sends no mail read for a v=spf1 -all record.
     partial: >-
       Which sub-domains exist. The names read are the ones that have appeared in
       a public certificate, and that list leans away from the very names this
@@ -420,6 +472,10 @@ requirements:
     source: DKIM Deployment Guide v1.0 §3; framework §9 "Securing non-email enabled domains" for the record value
     document: dkim-guide
     measurable: observed
+    settled_by: >-
+      The full list of names in the organisation's DNS zones, with each name
+      that sends no mail read for an empty DKIM key (v=DKIM1; p=) at
+      *._domainkey.<name>.
     # A DNS wildcard: published, it answers for every selector beneath that has
     # no record of its own, which is what "no mail from here is ever signed"
     # needs to say. The evaluator compares this with the name the sweep read
@@ -455,6 +511,10 @@ requirements:
     source: DMARC Deployment Guide v1.0 §3 and §4 "Deploying DMARC on non-mail-enabled domains"; framework §9
     document: dmarc-guide
     measurable: observed
+    settled_by: >-
+      The full list of names in the organisation's DNS zones, with each name
+      that sends no mail read for a DMARC record of its own, or for the
+      parent's sp=reject where it has none.
     partial: >-
       Whether every sub-domain rejects. The root domain's sub-domain policy tag
       decides it for sub-domains that carry no DMARC record of their own. The
@@ -482,6 +542,10 @@ requirements:
     # Graded in one direction only, like the other sub-domain rows, because
     # the names read are a floor.
     measurable: observed
+    settled_by: >-
+      The full list of names in the organisation's DNS zones, with each name
+      that sends no mail read for strict alignment and a reporting address, on
+      its own DMARC record or the one it falls back to.
     partial: >-
       Which sub-domains exist, and the ones that send mail. The names read are
       the ones that have appeared in a public certificate, and only those that
@@ -509,6 +573,11 @@ requirements:
     source: DKIM Deployment Guide v1.0 §4 and its FAQ
     document: dkim-guide
     measurable: observed
+    settled_by: >-
+      A DNS reading of the DKIM key at every selector the organisation's
+      sending platforms use. The selector names come from each platform's
+      configuration or from the headers of mail it has sent; DNS cannot list
+      them.
     minimum_bits: 2048
     note: >-
       This is the only key-length statement in the whole SGE document set,
@@ -529,6 +598,10 @@ requirements:
     source: framework DMARC requirements; §"DKIM alignment within DMARC"
     document: framework
     measurable: observed
+    settled_by: >-
+      Which of the organisation's domains send bulk mail: the sending sources
+      named per domain in its DMARC aggregate reports, or a per-domain
+      breakdown of a mail transport export.
 
   - id: SGE-DMARC-R02
     title: Strict SPF alignment in the DMARC record
@@ -543,6 +616,8 @@ requirements:
     source: DMARC Deployment Guide v1.0 §4 step 2
     document: dmarc-guide
     measurable: observed
+    settled_by: >-
+      A DNS reading of the TXT record at _dmarc.<domain>.
     note: >-
       Unlike SGE-DMARC-R01, the guide attaches no bulk-mail condition to this
       recommendation, so relaxed SPF alignment is a recommendation unmet rather
@@ -565,6 +640,8 @@ requirements:
     source: DMARC Deployment Guide v1.0 Appendix 2, "What tags should not be used?" and "Can I use DMARC Forensic (RUF) Reports?"
     document: dmarc-guide
     measurable: observed
+    settled_by: >-
+      A DNS reading of the TXT record at _dmarc.<domain>.
     # The five tags the evaluator reads. The guide's reasons: forensic reports
     # carry message content; pct, rf and ri are deprecated in DMARCbis.
     tags: [ruf, fo, pct, rf, ri]
@@ -585,6 +662,9 @@ requirements:
     source: framework §8 "Inbound messages and DMARC"
     document: framework
     measurable: no-instrument
+    settled_by: >-
+      The receiving mail platform's quarantine and junk-mail settings for
+      messages that fail DMARC.
     note: >-
       Inbound handling is the receiving mail platform's own policy and cannot
       be seen from outside. The DMARC guide shows one platform's default
@@ -605,6 +685,9 @@ requirements:
     # Fails a domain on any sub-domain publishing its own sp= tag; never
     # passes, because the names read are a floor.
     measurable: observed
+    settled_by: >-
+      The full list of names in the organisation's DNS zones, each read for a
+      DMARC record of its own.
     partial: >-
       Which sub-domains exist, and the ones that send mail. The names read are
       the ones that have appeared in a public certificate, and only those that
@@ -625,6 +708,9 @@ requirements:
     source: framework §8 "DKIM alignment within DMARC"; DKIM Deployment Guide v1.0 Appendix 2 ("best practice")
     document: framework
     measurable: not-collected
+    settled_by: >-
+      The domains each bulk or customer-relationship platform sends as, from
+      DMARC aggregate reports or from the platforms' configuration.
     awaiting: >-
       which domains the organisation's bulk and CRM platforms send as is named
       per domain in the DMARC aggregate reports its reporting service receives,
@@ -643,6 +729,10 @@ requirements:
     source: SPF Deployment Guide v1.0 §4 step 6, "Avoid Deprecated or Risky Mechanisms"
     document: spf-guide
     measurable: observed
+    settled_by: >-
+      A DNS reading of the SPF record. Whether a listed address range is
+      overly broad is a judgement against the senders the organisation
+      actually uses, which its own records hold.
     partial: >-
       The guide gives no size at which an address range becomes overly broad,
       so that half is not graded; the ranges the record lists are reported so
@@ -661,6 +751,8 @@ requirements:
     # A second v=spf1 record is reported on the row, not graded: that is a
     # different sentence.
     measurable: observed
+    settled_by: >-
+      A DNS reading of every TXT record at the domain.
 
   - id: SGE-DKIM-R02
     title: A distinct DKIM selector and key for each sending platform
@@ -679,6 +771,9 @@ requirements:
     # Fails a domain whose selector shares its key with a differently named
     # selector; never passes.
     measurable: observed
+    settled_by: >-
+      A list of the organisation's sending platforms and the selector each one
+      signs with, from the platforms' configuration.
     partial: >-
       Which platforms sign the organisation's mail, and under which selectors,
       is not visible from outside, and the probe tries a list of known selector
@@ -699,6 +794,9 @@ requirements:
     source: MTA-STS Deployment Guide v1.1 §4 step 2 and Appendix 2
     document: mta-sts-guide
     measurable: no-instrument
+    settled_by: >-
+      The hosting arrangement for the policy file, from whoever hosts it: its
+      availability design and its security controls.
     note: >-
       One successful fetch shows the file was reachable at that moment. How
       available and how well protected the hosting is sits with whoever hosts
@@ -719,6 +817,8 @@ requirements:
     source: Keyword Blocking Deployment Guide v1.2 §3; SGE Keyword Blocking Scripts (text file)
     document: keyword-guide
     measurable: no-instrument
+    settled_by: >-
+      An export of the transport rules that carry the keyword list.
     note: >-
       The word list is in transport-rule configuration, which is not visible
       from outside. The guide's published scripts create four rules (inbound
@@ -741,6 +841,9 @@ requirements:
     source: TLS Deployment Guide §4.4 and Appendix 1
     document: tls-guide
     measurable: no-instrument
+    settled_by: >-
+      A record of who reviews TLS-RPT reports or TLS session logs, and how
+      often.
     note: >-
       A per-message transport export shows how much mail travelled without
       TLS; whether anyone reviews it is a practice, and nothing outside the
@@ -763,6 +866,9 @@ requirements:
     source: TLS Deployment Guide §4.2, §4.3, §4.4 and Appendix 1
     document: tls-guide
     measurable: no-instrument
+    settled_by: >-
+      The organisation's risk register entries, or supplier correspondence,
+      for any platform that cannot use TLS.
     note: >-
       The condition can be measured (a gateway offering no TLS, or messages
       in a transport export sent in clear) and SGE-TLS-01 reports it. The
