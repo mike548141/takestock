@@ -1,1 +1,184 @@
+# Registered domains mapped to the company behind them, for naming the providers in DNS or proxy logs.
+#
+# A log of name lookups shows domains, not companies. This table maps a registered domain to
+# the organisation that operates it, so a reader sees "Microsoft" rather than a list of service
+# names. The lookup is by suffix: an entry covers the domain and every name beneath it.
+#
+# Where the entries come from: providers of cloud, software-as-a-service, content delivery,
+# identity, security, certificate and developer services, chosen for their global market
+# presence. Each domain is one the provider documents as its own, on its website or in its
+# published network requirements. Nothing here records who uses a provider. A domain missing
+# from the table is a limit of the table, never a fact about the domain.
+#
+# Columns:
+#   domain    the registered domain, lower case, no leading dot
+#   vendor    the company that operates it
+#   category  one of: cloud, saas, collaboration, cdn, identity, security, pki, devtools,
+#             infrastructure (operating system updates, DNS, email delivery, registrars)
+#   notes     what the domain is used for
+#
+# To extend it: add one row per registered domain, keep the domain column unique, and add only
+# domains the provider itself documents. Domains specific to one organisation belong in that
+# organisation's own configuration, not here.
+# Lines starting with # are comments and are skipped by the reader.
 domain,vendor,category,notes
+microsoft.com,Microsoft,cloud,Corporate site and many service endpoints
+microsoftonline.com,Microsoft,identity,Microsoft Entra ID sign-in
+msauth.net,Microsoft,identity,Microsoft sign-in page assets
+msftauth.net,Microsoft,identity,Microsoft sign-in page assets
+live.com,Microsoft,identity,Microsoft account and consumer Outlook
+windows.net,Microsoft,cloud,Azure service namespace (storage and directory endpoints)
+azure.com,Microsoft,cloud,Azure portal and services
+azure.net,Microsoft,cloud,Azure service endpoints
+azurewebsites.net,Microsoft,cloud,Azure App Service hosting
+cloudapp.net,Microsoft,cloud,Azure cloud service hosting
+trafficmanager.net,Microsoft,infrastructure,Azure Traffic Manager DNS load balancing
+azureedge.net,Microsoft,cdn,Azure content delivery network
+azurefd.net,Microsoft,cdn,Azure Front Door
+msedge.net,Microsoft,cdn,Microsoft edge network
+office.com,Microsoft,saas,Microsoft 365 applications
+office.net,Microsoft,saas,Microsoft 365 service endpoints
+office365.com,Microsoft,saas,Microsoft 365 service endpoints
+outlook.com,Microsoft,saas,Exchange Online and Outlook
+sharepoint.com,Microsoft,saas,SharePoint Online and OneDrive for Business
+windows.com,Microsoft,infrastructure,Windows services and updates
+windowsupdate.com,Microsoft,infrastructure,Windows Update
+visualstudio.com,Microsoft,devtools,Visual Studio and Azure DevOps services
+google.com,Google,cloud,Corporate site and many service endpoints
+googleapis.com,Google,cloud,Google APIs and Google Cloud endpoints
+gstatic.com,Google,cdn,Google static content
+googleusercontent.com,Google,cloud,User and Google Cloud hosted content
+appspot.com,Google,cloud,Google App Engine hosting
+1e100.net,Google,infrastructure,Google server reverse DNS names
+gmail.com,Google,saas,Gmail
+googlevideo.com,Google,cdn,Video delivery
+youtube.com,Google,saas,YouTube
+amazonaws.com,Amazon Web Services,cloud,AWS service endpoints
+amazon.com,Amazon,cloud,Corporate site and AWS console
+cloudfront.net,Amazon Web Services,cdn,Amazon CloudFront
+awsstatic.com,Amazon Web Services,cdn,AWS static content
+amazontrust.com,Amazon Web Services,pki,Amazon Trust Services certificate authority
+amazonses.com,Amazon Web Services,infrastructure,Amazon Simple Email Service
+elasticbeanstalk.com,Amazon Web Services,cloud,AWS Elastic Beanstalk hosting
+oracle.com,Oracle,cloud,Corporate site and Oracle services
+oraclecloud.com,Oracle,cloud,Oracle Cloud Infrastructure
+ibm.com,IBM,cloud,Corporate site and IBM Cloud
+alibabacloud.com,Alibaba Cloud,cloud,Alibaba Cloud
+aliyuncs.com,Alibaba Cloud,cloud,Alibaba Cloud service endpoints
+digitalocean.com,DigitalOcean,cloud,DigitalOcean
+linode.com,Akamai,cloud,Linode cloud hosting
+apple.com,Apple,infrastructure,Corporate site and software updates
+icloud.com,Apple,saas,iCloud
+mzstatic.com,Apple,cdn,Apple content delivery
+cloudflare.com,Cloudflare,cdn,Corporate site and dashboard
+cloudflare.net,Cloudflare,cdn,Cloudflare edge network
+cloudflare-dns.com,Cloudflare,infrastructure,Cloudflare public DNS resolver
+workers.dev,Cloudflare,cloud,Cloudflare Workers hosting
+akamai.com,Akamai,cdn,Corporate site
+akamai.net,Akamai,cdn,Akamai edge network
+akamaiedge.net,Akamai,cdn,Akamai edge network
+akamaihd.net,Akamai,cdn,Akamai edge network
+akamaized.net,Akamai,cdn,Akamai edge network
+edgekey.net,Akamai,cdn,Akamai edge network
+edgesuite.net,Akamai,cdn,Akamai edge network
+fastly.com,Fastly,cdn,Corporate site
+fastly.net,Fastly,cdn,Fastly edge network
+fastlylb.net,Fastly,cdn,Fastly load balancing
+jsdelivr.net,jsDelivr,cdn,Open-source package content delivery network
+okta.com,Okta,identity,Okta identity platform
+oktacdn.com,Okta,identity,Okta static content
+okta-emea.com,Okta,identity,Okta identity platform (European cells)
+auth0.com,Okta,identity,Auth0 customer identity
+pingidentity.com,Ping Identity,identity,Corporate site and PingFederate services
+pingone.com,Ping Identity,identity,PingOne identity platform
+duosecurity.com,Cisco,identity,Duo multi-factor authentication
+salesforce.com,Salesforce,saas,Salesforce platform
+force.com,Salesforce,saas,Salesforce platform
+slack.com,Salesforce,collaboration,Slack
+slack-edge.com,Salesforce,cdn,Slack static content
+atlassian.com,Atlassian,saas,Corporate site and account services
+atlassian.net,Atlassian,saas,Jira and Confluence Cloud sites
+bitbucket.org,Atlassian,devtools,Bitbucket Cloud
+trello.com,Atlassian,collaboration,Trello
+statuspage.io,Atlassian,saas,Statuspage
+github.com,GitHub,devtools,GitHub
+githubusercontent.com,GitHub,devtools,GitHub hosted content
+github.io,GitHub,devtools,GitHub Pages hosting
+ghcr.io,GitHub,devtools,GitHub container registry
+gitlab.com,GitLab,devtools,GitLab
+zoom.us,Zoom,collaboration,Zoom meetings
+zoom.com,Zoom,collaboration,Zoom corporate site
+webex.com,Cisco,collaboration,Webex
+servicenow.com,ServiceNow,saas,Corporate site
+service-now.com,ServiceNow,saas,ServiceNow instances
+workday.com,Workday,saas,Corporate site and Workday services
+myworkday.com,Workday,saas,Workday tenant sign-in
+sap.com,SAP,saas,Corporate site and SAP services
+adobe.com,Adobe,saas,Adobe Creative Cloud and Document Cloud
+adobelogin.com,Adobe,identity,Adobe sign-in
+dropbox.com,Dropbox,collaboration,Dropbox
+dropboxapi.com,Dropbox,collaboration,Dropbox API
+box.com,Box,collaboration,Box
+boxcdn.net,Box,cdn,Box static content
+docusign.com,Docusign,saas,Corporate site
+docusign.net,Docusign,saas,Docusign eSignature service
+zendesk.com,Zendesk,saas,Zendesk
+hubspot.com,HubSpot,saas,HubSpot
+twilio.com,Twilio,saas,Twilio communications platform
+sendgrid.net,Twilio,infrastructure,SendGrid email delivery
+mailgun.org,Sinch,infrastructure,Mailgun email delivery
+mimecast.com,Mimecast,security,Mimecast email security
+pphosted.com,Proofpoint,security,Proofpoint hosted email filtering
+proofpoint.com,Proofpoint,security,Corporate site
+cisco.com,Cisco,security,Corporate site and Cisco services
+opendns.com,Cisco,security,Cisco Umbrella DNS security
+zscaler.com,Zscaler,security,Corporate site and Zscaler services
+zscaler.net,Zscaler,security,Zscaler cloud security service
+paloaltonetworks.com,Palo Alto Networks,security,Corporate site and cloud services
+fortinet.com,Fortinet,security,Corporate site
+fortiguard.com,Fortinet,security,FortiGuard threat intelligence updates
+crowdstrike.com,CrowdStrike,security,Corporate site and Falcon console
+sentinelone.com,SentinelOne,security,Corporate site
+sentinelone.net,SentinelOne,security,SentinelOne management consoles
+trendmicro.com,Trend Micro,security,Corporate site and Trend Micro services
+sophos.com,Sophos,security,Corporate site and Sophos Central
+eset.com,ESET,security,Corporate site and ESET services
+kaspersky.com,Kaspersky,security,Corporate site and Kaspersky services
+trellix.com,Trellix,security,Corporate site and Trellix services
+broadcom.com,Broadcom,security,Corporate site and support portal for Symantec and VMware products
+vmware.com,Broadcom,infrastructure,VMware product downloads and documentation
+citrix.com,Cloud Software Group,saas,Citrix
+digicert.com,DigiCert,pki,DigiCert certificate authority
+letsencrypt.org,Internet Security Research Group,pki,Let's Encrypt certificate authority
+lencr.org,Internet Security Research Group,pki,Let's Encrypt certificate status and issuer endpoints
+sectigo.com,Sectigo,pki,Sectigo certificate authority
+usertrust.com,Sectigo,pki,Sectigo certificate status endpoints
+globalsign.com,GlobalSign,pki,GlobalSign certificate authority
+entrust.net,Entrust,pki,Entrust certificate authority
+identrust.com,IdenTrust,pki,IdenTrust certificate authority
+godaddy.com,GoDaddy,infrastructure,Domain registrar and certificate authority
+domaincontrol.com,GoDaddy,infrastructure,GoDaddy DNS hosting
+datadoghq.com,Datadog,saas,Datadog monitoring
+newrelic.com,New Relic,saas,New Relic monitoring
+splunkcloud.com,Splunk,saas,Splunk Cloud Platform
+sumologic.com,Sumo Logic,saas,Sumo Logic
+elastic.co,Elastic,saas,Corporate site and Elastic Cloud
+pagerduty.com,PagerDuty,saas,PagerDuty
+sentry.io,Sentry,devtools,Sentry error monitoring
+docker.com,Docker,devtools,Docker
+docker.io,Docker,devtools,Docker Hub registry
+quay.io,Red Hat,devtools,Quay container registry
+npmjs.org,npm,devtools,npm package registry
+npmjs.com,npm,devtools,npm website
+pypi.org,Python Software Foundation,devtools,Python Package Index
+nuget.org,.NET Foundation,devtools,NuGet package registry
+rubygems.org,Ruby Central,devtools,RubyGems package registry
+maven.org,Sonatype,devtools,Maven Central repository
+crates.io,Rust Foundation,devtools,Rust package registry
+hashicorp.com,HashiCorp,devtools,HashiCorp releases and services
+redhat.com,Red Hat,infrastructure,Red Hat customer portal and updates
+ubuntu.com,Canonical,infrastructure,Ubuntu package archives and services
+canonical.com,Canonical,infrastructure,Corporate site and Canonical services
+snapcraft.io,Canonical,infrastructure,Snap package store
+debian.org,Debian project,infrastructure,Debian package archives
+suse.com,SUSE,infrastructure,SUSE customer centre and updates

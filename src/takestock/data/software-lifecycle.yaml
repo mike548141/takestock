@@ -1,3 +1,2050 @@
-# Vendor-published end-of-support dates for software product lines.
-# Placeholder: no product lines are recorded yet.
+# End-of-support dates for widely used server and platform software.
+#
+# A software inventory names a product and a version ("Ubuntu 22.04.4 LTS", "PostgreSQL 13.9").
+# This table says, for each product line, which support phase applies on a given date: still
+# fully supported, security fixes only, or past the end of support. It covers major Linux
+# distributions, databases, language runtimes, web servers, OpenSSL and VMware vSphere. Windows
+# client and server releases are in windows-lifecycle.yaml instead.
+#
+# Where the dates come from: the vendor's own published lifecycle for Ubuntu, Oracle Linux,
+# Oracle Database, MySQL, SQL Server, PostgreSQL, Python, Node.js, .NET, Java and the current
+# OpenSSL series; endoflife.date (a community-maintained aggregator that cites each vendor) for
+# the rest, whose dates were not checked one by one against the vendor's own page (Red Hat's,
+# for one, needs a browser to render). Every variant names its source, and `sources` gives
+# that source's address, the day it was read, and what it states. Dates are written exactly as
+# the source gives them: a day (2029-05-31) where the source gives a day, and a month (2029-05)
+# where the vendor states only a month, as Canonical, Oracle, the Python release team and
+# Adoptium do. Microsoft's lifecycle pages state SQL Server dates as US Pacific timestamps,
+# recorded here as Pacific days; where those pages render a date inconsistently with their own
+# convention, the date is recorded to the month only.
+#
+# Selection: every currently supported version line of each product in scope, plus ended lines
+# back to a cut-off set per product, not a fixed date. The oldest line kept is: RHEL 5,
+# CentOS 5, Oracle Linux 6, Ubuntu 14.04, Debian 7, SLES 11 SP4, Amazon Linux AMI, SQL Server
+# 2008, PostgreSQL 9.4, MySQL 5.5, Oracle Database 11.2, Python 2.7 and 3.2, Node.js 4,
+# .NET Core 1.0, Java 8, Apache HTTP Server 2.0, OpenSSL 1.0.1, ESXi and vCenter 6.0. Rocky,
+# AlmaLinux and CentOS Stream are complete. A product with no published end date for its
+# current line (OpenSSH, nginx, Apache HTTP Server 2.4) is left out rather than given a guess,
+# though older Apache HTTP Server lines with a stated end are included.
+#
+# Shape:
+#   sources.<key>     url, read (the day the source was read), says
+#   lines[]           one product line, for example one major release
+#     id              unique name for the line
+#     match[]         how an inventory row is recognised; every listed field must match:
+#       kind            inventory row kind: os, application, library or hypervisor
+#       product         exact product name, compared ignoring case and repeated spaces
+#       product_pattern regular expression the whole product name must match, ignoring case
+#       version_pattern regular expression the whole version string must match
+#     variants[]      one per reading of the line that the sources distinguish
+#       name, source  a label, and the key of its entry in `sources`
+#       known_from    optional: the first day a printed status may be applied
+#       phases[]      in date order; each phase holds up to and including `until`
+#         until         a day (YYYY-MM-DD) or a month (YYYY-MM); inside a month-only boundary
+#                       the band is undetermined rather than guessed
+#         band          supported | security-only
+#         condition     what the phase depends on, when it needs a paid add-on or subscription
+#       after         the band once every phase has ended: end-of-support, end-of-life, or
+#                     unknown when the source gives only a minimum ("at least") date
+#
+# A line with a single `supported` phase means the source states only when security fixes stop;
+# it does not say that earlier phases were full support. Service-pack-level end dates (SQL Server
+# service packs, for example) are not modelled: a line covers the whole major release, so an
+# unpatched service pack can be out of support before its line is.
+#
+# To extend it: add a source, then a line per version with the vendor's own dates and the
+# vendor's precision. Keep match patterns tight enough that no inventory row matches two lines;
+# a row that does is reported as ambiguous rather than graded.
 schema: 1
+sources:
+  endoflife-rhel:
+    url: 'https://endoflife.date/rhel'
+    read: '2026-10-02'
+    says: 'Full Support, Maintenance Support and Extended Life Cycle Support end dates per major release.'
+  endoflife-rocky:
+    url: 'https://endoflife.date/rocky-linux'
+    read: '2026-10-02'
+    says: 'Active support and security support end dates per major release.'
+  endoflife-almalinux:
+    url: 'https://endoflife.date/almalinux'
+    read: '2026-10-02'
+    says: 'Active support and security support end dates per major release.'
+  endoflife-centos:
+    url: 'https://endoflife.date/centos'
+    read: '2026-10-02'
+    says: 'Full updates and maintenance updates end dates for CentOS Linux.'
+  endoflife-centos-stream:
+    url: 'https://endoflife.date/centos-stream'
+    read: '2026-10-02'
+    says: 'End of builds for each CentOS Stream release.'
+  oracle-linux-lifetime:
+    url: 'https://www.oracle.com/a/ocom/docs/elsp-lifetime-069338.pdf'
+    read: '2026-10-02'
+    says: 'Oracle Linux and Oracle VM lifetime support policy: Premier Support and Extended Support end months.'
+  ubuntu-release-cycle:
+    url: 'https://ubuntu.com/about/release-cycle'
+    read: '2026-10-02'
+    says: 'Standard security maintenance, Expanded Security Maintenance (Ubuntu Pro) and Legacy add-on end months per LTS release.'
+  endoflife-debian:
+    url: 'https://endoflife.date/debian'
+    read: '2026-10-02'
+    says: 'Debian security team support, Debian LTS and Extended LTS end dates per release.'
+  endoflife-sles:
+    url: 'https://endoflife.date/sles'
+    read: '2026-10-02'
+    says: 'General support and Long Term Service Pack Support (LTSS) end dates per service pack.'
+  endoflife-amazon-linux:
+    url: 'https://endoflife.date/amazon-linux'
+    read: '2026-10-02'
+    says: 'Standard support and maintenance (security) support end dates.'
+  microsoft-lifecycle-sql-server:
+    url: 'https://learn.microsoft.com/lifecycle/products/?terms=SQL%20Server'
+    read: '2026-10-02'
+    says: 'Mainstream, extended and Extended Security Update end dates per SQL Server release (dates in US Pacific time).'
+  postgresql-versioning:
+    url: 'https://www.postgresql.org/support/versioning/'
+    read: '2026-10-02'
+    says: 'First and final release date for each major version.'
+  oracle-technology-lifetime:
+    url: 'https://www.oracle.com/us/support/library/lifetime-support-technology-069183.pdf'
+    read: '2026-10-02'
+    says: 'Oracle Technology Products lifetime support policy: Premier and Extended Support end months for Oracle Database and MySQL.'
+  python-release-cycle:
+    url: 'https://peps.python.org/api/release-cycle.json'
+    read: '2026-10-02'
+    says: 'End-of-life month (or day, once reached) for each Python release branch; mirrors devguide.python.org/versions.'
+  nodejs-schedule:
+    url: 'https://github.com/nodejs/Release/blob/main/schedule.json'
+    read: '2026-10-02'
+    says: 'Start, maintenance and end dates for each Node.js major line, as the Node.js Release working group publishes them.'
+  dotnet-releases-index:
+    url: 'https://github.com/dotnet/core/blob/main/release-notes/releases-index.json'
+    read: '2026-10-02'
+    says: 'End-of-support date for each .NET and .NET Core channel, from Microsoft''s release metadata.'
+  oracle-java-roadmap:
+    url: 'https://www.oracle.com/java/technologies/java-se-support-roadmap.html'
+    read: '2026-10-02'
+    says: 'Premier and Extended Support end months for Oracle Java SE long-term-support releases.'
+  adoptium-support:
+    url: 'https://adoptium.net/support/'
+    read: '2026-10-02'
+    says: 'Eclipse Temurin end-of-availability month for each long-term-support release, stated as ''at least''.'
+  endoflife-apache-http-server:
+    url: 'https://endoflife.date/apache-http-server'
+    read: '2026-10-02'
+    says: 'End-of-life dates for Apache HTTP Server release series that are no longer maintained.'
+  openssl-release-strategy:
+    url: 'https://openssl-library.org/policies/releasestrat/index.html'
+    read: '2026-10-02'
+    says: 'Support end date for each OpenSSL release series still listed as supported.'
+  endoflife-openssl:
+    url: 'https://endoflife.date/openssl'
+    read: '2026-10-02'
+    says: 'Support end dates for OpenSSL release series no longer listed on the release strategy page.'
+  endoflife-esxi:
+    url: 'https://endoflife.date/esxi'
+    read: '2026-10-02'
+    says: 'End of General Support date per VMware ESXi release.'
+  endoflife-vcenter:
+    url: 'https://endoflife.date/vcenter'
+    read: '2026-10-02'
+    says: 'End of General Support date per VMware vCenter Server release.'
+
+lines:
+  - id: 'rhel-5'
+    match:
+      - {kind: 'os', product_pattern: '(Red Hat Enterprise Linux|RHEL)( Server| Workstation| for \S+)? 5(\.\d+)*( .*)?'}
+      - {kind: 'os', product_pattern: 'Red Hat Enterprise Linux|RHEL', version_pattern: '5(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-rhel'
+        phases:
+          - {until: '2013-01-08', band: 'supported'}
+          - {until: '2017-03-31', band: 'security-only'}
+          - {until: '2020-11-30', band: 'security-only', condition: 'paid Extended Life Cycle Support add-on'}
+        after: 'end-of-support'
+  - id: 'rhel-6'
+    match:
+      - {kind: 'os', product_pattern: '(Red Hat Enterprise Linux|RHEL)( Server| Workstation| for \S+)? 6(\.\d+)*( .*)?'}
+      - {kind: 'os', product_pattern: 'Red Hat Enterprise Linux|RHEL', version_pattern: '6(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-rhel'
+        phases:
+          - {until: '2016-05-10', band: 'supported'}
+          - {until: '2020-11-30', band: 'security-only'}
+          - {until: '2024-06-30', band: 'security-only', condition: 'paid Extended Life Cycle Support add-on'}
+        after: 'end-of-support'
+  - id: 'rhel-7'
+    match:
+      - {kind: 'os', product_pattern: '(Red Hat Enterprise Linux|RHEL)( Server| Workstation| for \S+)? 7(\.\d+)*( .*)?'}
+      - {kind: 'os', product_pattern: 'Red Hat Enterprise Linux|RHEL', version_pattern: '7(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-rhel'
+        phases:
+          - {until: '2019-08-06', band: 'supported'}
+          - {until: '2024-06-30', band: 'security-only'}
+          - {until: '2029-05-31', band: 'security-only', condition: 'paid Extended Life Cycle Support add-on'}
+        after: 'end-of-support'
+  - id: 'rhel-8'
+    match:
+      - {kind: 'os', product_pattern: '(Red Hat Enterprise Linux|RHEL)( Server| Workstation| for \S+)? 8(\.\d+)*( .*)?'}
+      - {kind: 'os', product_pattern: 'Red Hat Enterprise Linux|RHEL', version_pattern: '8(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-rhel'
+        phases:
+          - {until: '2024-05-31', band: 'supported'}
+          - {until: '2029-05-31', band: 'security-only'}
+          - {until: '2033-05-31', band: 'security-only', condition: 'paid Extended Life Cycle Support add-on'}
+        after: 'end-of-support'
+  - id: 'rhel-9'
+    match:
+      - {kind: 'os', product_pattern: '(Red Hat Enterprise Linux|RHEL)( Server| Workstation| for \S+)? 9(\.\d+)*( .*)?'}
+      - {kind: 'os', product_pattern: 'Red Hat Enterprise Linux|RHEL', version_pattern: '9(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-rhel'
+        phases:
+          - {until: '2027-05-31', band: 'supported'}
+          - {until: '2032-05-31', band: 'security-only'}
+          - {until: '2036-05-31', band: 'security-only', condition: 'paid Extended Life Cycle Support add-on'}
+        after: 'end-of-support'
+  - id: 'rhel-10'
+    match:
+      - {kind: 'os', product_pattern: '(Red Hat Enterprise Linux|RHEL)( Server| Workstation| for \S+)? 10(\.\d+)*( .*)?'}
+      - {kind: 'os', product_pattern: 'Red Hat Enterprise Linux|RHEL', version_pattern: '10(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-rhel'
+        phases:
+          - {until: '2030-05-31', band: 'supported'}
+          - {until: '2035-05-31', band: 'security-only'}
+          - {until: '2039-05-31', band: 'security-only', condition: 'paid Extended Life Cycle Support add-on'}
+        after: 'end-of-support'
+  - id: 'rocky-8'
+    match:
+      - {kind: 'os', product_pattern: 'Rocky Linux 8(\.\d+)*( .*)?'}
+      - {kind: 'os', product_pattern: 'Rocky Linux', version_pattern: '8(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-rocky'
+        phases:
+          - {until: '2024-05-31', band: 'supported'}
+          - {until: '2029-05-31', band: 'security-only'}
+        after: 'end-of-support'
+  - id: 'rocky-9'
+    match:
+      - {kind: 'os', product_pattern: 'Rocky Linux 9(\.\d+)*( .*)?'}
+      - {kind: 'os', product_pattern: 'Rocky Linux', version_pattern: '9(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-rocky'
+        phases:
+          - {until: '2027-05-31', band: 'supported'}
+          - {until: '2032-05-31', band: 'security-only'}
+        after: 'end-of-support'
+  - id: 'rocky-10'
+    match:
+      - {kind: 'os', product_pattern: 'Rocky Linux 10(\.\d+)*( .*)?'}
+      - {kind: 'os', product_pattern: 'Rocky Linux', version_pattern: '10(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-rocky'
+        phases:
+          - {until: '2030-05-31', band: 'supported'}
+          - {until: '2035-05-31', band: 'security-only'}
+        after: 'end-of-support'
+  - id: 'almalinux-8'
+    match:
+      - {kind: 'os', product_pattern: 'AlmaLinux( OS)? 8(\.\d+)*( .*)?'}
+      - {kind: 'os', product_pattern: 'AlmaLinux( OS)?', version_pattern: '8(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-almalinux'
+        phases:
+          - {until: '2024-05-31', band: 'supported'}
+          - {until: '2029-05-31', band: 'security-only'}
+        after: 'end-of-support'
+  - id: 'almalinux-9'
+    match:
+      - {kind: 'os', product_pattern: 'AlmaLinux( OS)? 9(\.\d+)*( .*)?'}
+      - {kind: 'os', product_pattern: 'AlmaLinux( OS)?', version_pattern: '9(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-almalinux'
+        phases:
+          - {until: '2027-05-31', band: 'supported'}
+          - {until: '2032-05-31', band: 'security-only'}
+        after: 'end-of-support'
+  - id: 'almalinux-10'
+    match:
+      - {kind: 'os', product_pattern: 'AlmaLinux( OS)? 10(\.\d+)*( .*)?'}
+      - {kind: 'os', product_pattern: 'AlmaLinux( OS)?', version_pattern: '10(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-almalinux'
+        phases:
+          - {until: '2030-05-31', band: 'supported'}
+          - {until: '2035-05-31', band: 'security-only'}
+        after: 'end-of-support'
+  - id: 'centos-5'
+    match:
+      - {kind: 'os', product_pattern: 'CentOS( Linux)? 5(\.\d+)*( .*)?'}
+      - {kind: 'os', product_pattern: 'CentOS( Linux)?', version_pattern: '5(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-centos'
+        phases:
+          - {until: '2014-01-31', band: 'supported'}
+          - {until: '2017-03-31', band: 'security-only'}
+        after: 'end-of-life'
+  - id: 'centos-6'
+    match:
+      - {kind: 'os', product_pattern: 'CentOS( Linux)? 6(\.\d+)*( .*)?'}
+      - {kind: 'os', product_pattern: 'CentOS( Linux)?', version_pattern: '6(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-centos'
+        phases:
+          - {until: '2017-05-10', band: 'supported'}
+          - {until: '2020-11-30', band: 'security-only'}
+        after: 'end-of-life'
+  - id: 'centos-7'
+    match:
+      - {kind: 'os', product_pattern: 'CentOS( Linux)? 7(\.\d+)*( .*)?'}
+      - {kind: 'os', product_pattern: 'CentOS( Linux)?', version_pattern: '7(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-centos'
+        phases:
+          - {until: '2020-08-06', band: 'supported'}
+          - {until: '2024-06-30', band: 'security-only'}
+        after: 'end-of-life'
+  - id: 'centos-8'
+    match:
+      - {kind: 'os', product_pattern: 'CentOS( Linux)? 8(\.\d+)*( .*)?'}
+      - {kind: 'os', product_pattern: 'CentOS( Linux)?', version_pattern: '8(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-centos'
+        phases:
+          - {until: '2021-12-31', band: 'supported'}
+        after: 'end-of-life'
+  - id: 'centos-stream-8'
+    match:
+      - {kind: 'os', product_pattern: 'CentOS Stream( release)? 8( .*)?'}
+      - {kind: 'os', product_pattern: 'CentOS Stream', version_pattern: '8(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-centos-stream'
+        phases:
+          - {until: '2024-05-31', band: 'supported'}
+        after: 'end-of-life'
+  - id: 'centos-stream-9'
+    match:
+      - {kind: 'os', product_pattern: 'CentOS Stream( release)? 9( .*)?'}
+      - {kind: 'os', product_pattern: 'CentOS Stream', version_pattern: '9(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-centos-stream'
+        phases:
+          - {until: '2027-05-31', band: 'supported'}
+        after: 'end-of-life'
+  - id: 'centos-stream-10'
+    match:
+      - {kind: 'os', product_pattern: 'CentOS Stream( release)? 10( .*)?'}
+      - {kind: 'os', product_pattern: 'CentOS Stream', version_pattern: '10(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-centos-stream'
+        phases:
+          - {until: '2030-05-31', band: 'supported'}
+        after: 'end-of-life'
+  - id: 'oracle-linux-6'
+    match:
+      - {kind: 'os', product_pattern: 'Oracle Linux( Server)? 6(\.\d+)*( .*)?'}
+      - {kind: 'os', product_pattern: 'Oracle Linux( Server)?', version_pattern: '6(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'oracle-linux-lifetime'
+        phases:
+          - {until: '2021-03', band: 'supported'}
+          - {until: '2024-12', band: 'security-only', condition: 'paid Oracle Linux Extended Support'}
+        after: 'end-of-support'
+  - id: 'oracle-linux-7'
+    match:
+      - {kind: 'os', product_pattern: 'Oracle Linux( Server)? 7(\.\d+)*( .*)?'}
+      - {kind: 'os', product_pattern: 'Oracle Linux( Server)?', version_pattern: '7(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'oracle-linux-lifetime'
+        phases:
+          - {until: '2024-12', band: 'supported'}
+          - {until: '2029-07', band: 'security-only', condition: 'paid Oracle Linux Extended Support'}
+        after: 'end-of-support'
+  - id: 'oracle-linux-8'
+    match:
+      - {kind: 'os', product_pattern: 'Oracle Linux( Server)? 8(\.\d+)*( .*)?'}
+      - {kind: 'os', product_pattern: 'Oracle Linux( Server)?', version_pattern: '8(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'oracle-linux-lifetime'
+        phases:
+          - {until: '2029-07', band: 'supported'}
+          - {until: '2032-07', band: 'security-only', condition: 'paid Oracle Linux Extended Support'}
+        after: 'end-of-support'
+  - id: 'oracle-linux-9'
+    match:
+      - {kind: 'os', product_pattern: 'Oracle Linux( Server)? 9(\.\d+)*( .*)?'}
+      - {kind: 'os', product_pattern: 'Oracle Linux( Server)?', version_pattern: '9(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'oracle-linux-lifetime'
+        phases:
+          - {until: '2032-06', band: 'supported'}
+          - {until: '2035-06', band: 'security-only', condition: 'paid Oracle Linux Extended Support'}
+        after: 'end-of-support'
+  - id: 'oracle-linux-10'
+    match:
+      - {kind: 'os', product_pattern: 'Oracle Linux( Server)? 10(\.\d+)*( .*)?'}
+      - {kind: 'os', product_pattern: 'Oracle Linux( Server)?', version_pattern: '10(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'oracle-linux-lifetime'
+        phases:
+          - {until: '2035-06', band: 'supported'}
+          - {until: '2038-06', band: 'security-only', condition: 'paid Oracle Linux Extended Support'}
+        after: 'end-of-support'
+  - id: 'ubuntu-14.04'
+    match:
+      - {kind: 'os', product_pattern: 'Ubuntu( Server)? 14\.04(\.\d+)?( LTS)?( .*)?'}
+      - {kind: 'os', product_pattern: 'Ubuntu( Server)?', version_pattern: '14\.04(\.\d+)?( LTS)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'ubuntu-release-cycle'
+        phases:
+          - {until: '2019-04', band: 'supported'}
+          - {until: '2024-05', band: 'security-only', condition: 'Ubuntu Pro subscription (Expanded Security Maintenance)'}
+          - {until: '2029-05', band: 'security-only', condition: 'paid Ubuntu Pro Legacy add-on'}
+        after: 'end-of-support'
+  - id: 'ubuntu-16.04'
+    match:
+      - {kind: 'os', product_pattern: 'Ubuntu( Server)? 16\.04(\.\d+)?( LTS)?( .*)?'}
+      - {kind: 'os', product_pattern: 'Ubuntu( Server)?', version_pattern: '16\.04(\.\d+)?( LTS)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'ubuntu-release-cycle'
+        phases:
+          - {until: '2021-04', band: 'supported'}
+          - {until: '2026-05', band: 'security-only', condition: 'Ubuntu Pro subscription (Expanded Security Maintenance)'}
+          - {until: '2031-05', band: 'security-only', condition: 'paid Ubuntu Pro Legacy add-on'}
+        after: 'end-of-support'
+  - id: 'ubuntu-18.04'
+    match:
+      - {kind: 'os', product_pattern: 'Ubuntu( Server)? 18\.04(\.\d+)?( LTS)?( .*)?'}
+      - {kind: 'os', product_pattern: 'Ubuntu( Server)?', version_pattern: '18\.04(\.\d+)?( LTS)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'ubuntu-release-cycle'
+        phases:
+          - {until: '2023-05', band: 'supported'}
+          - {until: '2028-05', band: 'security-only', condition: 'Ubuntu Pro subscription (Expanded Security Maintenance)'}
+          - {until: '2033-05', band: 'security-only', condition: 'paid Ubuntu Pro Legacy add-on'}
+        after: 'end-of-support'
+  - id: 'ubuntu-20.04'
+    match:
+      - {kind: 'os', product_pattern: 'Ubuntu( Server)? 20\.04(\.\d+)?( LTS)?( .*)?'}
+      - {kind: 'os', product_pattern: 'Ubuntu( Server)?', version_pattern: '20\.04(\.\d+)?( LTS)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'ubuntu-release-cycle'
+        phases:
+          - {until: '2025-05', band: 'supported'}
+          - {until: '2030-05', band: 'security-only', condition: 'Ubuntu Pro subscription (Expanded Security Maintenance)'}
+          - {until: '2035-05', band: 'security-only', condition: 'paid Ubuntu Pro Legacy add-on'}
+        after: 'end-of-support'
+  - id: 'ubuntu-22.04'
+    match:
+      - {kind: 'os', product_pattern: 'Ubuntu( Server)? 22\.04(\.\d+)?( LTS)?( .*)?'}
+      - {kind: 'os', product_pattern: 'Ubuntu( Server)?', version_pattern: '22\.04(\.\d+)?( LTS)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'ubuntu-release-cycle'
+        phases:
+          - {until: '2027-05', band: 'supported'}
+          - {until: '2032-05', band: 'security-only', condition: 'Ubuntu Pro subscription (Expanded Security Maintenance)'}
+          - {until: '2037-05', band: 'security-only', condition: 'paid Ubuntu Pro Legacy add-on'}
+        after: 'end-of-support'
+  - id: 'ubuntu-24.04'
+    match:
+      - {kind: 'os', product_pattern: 'Ubuntu( Server)? 24\.04(\.\d+)?( LTS)?( .*)?'}
+      - {kind: 'os', product_pattern: 'Ubuntu( Server)?', version_pattern: '24\.04(\.\d+)?( LTS)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'ubuntu-release-cycle'
+        phases:
+          - {until: '2029-05', band: 'supported'}
+          - {until: '2034-05', band: 'security-only', condition: 'Ubuntu Pro subscription (Expanded Security Maintenance)'}
+          - {until: '2039-05', band: 'security-only', condition: 'paid Ubuntu Pro Legacy add-on'}
+        after: 'end-of-support'
+  - id: 'ubuntu-26.04'
+    match:
+      - {kind: 'os', product_pattern: 'Ubuntu( Server)? 26\.04(\.\d+)?( LTS)?( .*)?'}
+      - {kind: 'os', product_pattern: 'Ubuntu( Server)?', version_pattern: '26\.04(\.\d+)?( LTS)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'ubuntu-release-cycle'
+        phases:
+          - {until: '2031-05', band: 'supported'}
+          - {until: '2036-05', band: 'security-only', condition: 'Ubuntu Pro subscription (Expanded Security Maintenance)'}
+          - {until: '2041-05', band: 'security-only', condition: 'paid Ubuntu Pro Legacy add-on'}
+        after: 'end-of-support'
+  - id: 'debian-7'
+    match:
+      - {kind: 'os', product_pattern: 'Debian( GNU/Linux)? 7(\.\d+)*( \(Wheezy\))?( .*)?'}
+      - {kind: 'os', product_pattern: 'Debian( GNU/Linux)?', version_pattern: '7(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-debian'
+        phases:
+          - {until: '2016-04-25', band: 'supported'}
+          - {until: '2018-05-31', band: 'security-only'}
+          - {until: '2020-06-30', band: 'security-only', condition: 'paid Extended LTS (third-party commercial offering)'}
+        after: 'end-of-support'
+  - id: 'debian-8'
+    match:
+      - {kind: 'os', product_pattern: 'Debian( GNU/Linux)? 8(\.\d+)*( \(Jessie\))?( .*)?'}
+      - {kind: 'os', product_pattern: 'Debian( GNU/Linux)?', version_pattern: '8(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-debian'
+        phases:
+          - {until: '2018-06-17', band: 'supported'}
+          - {until: '2020-06-30', band: 'security-only'}
+          - {until: '2025-06-30', band: 'security-only', condition: 'paid Extended LTS (third-party commercial offering)'}
+        after: 'end-of-support'
+  - id: 'debian-9'
+    match:
+      - {kind: 'os', product_pattern: 'Debian( GNU/Linux)? 9(\.\d+)*( \(Stretch\))?( .*)?'}
+      - {kind: 'os', product_pattern: 'Debian( GNU/Linux)?', version_pattern: '9(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-debian'
+        phases:
+          - {until: '2020-07-18', band: 'supported'}
+          - {until: '2022-07-01', band: 'security-only'}
+          - {until: '2027-06-30', band: 'security-only', condition: 'paid Extended LTS (third-party commercial offering)'}
+        after: 'end-of-support'
+  - id: 'debian-10'
+    match:
+      - {kind: 'os', product_pattern: 'Debian( GNU/Linux)? 10(\.\d+)*( \(Buster\))?( .*)?'}
+      - {kind: 'os', product_pattern: 'Debian( GNU/Linux)?', version_pattern: '10(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-debian'
+        phases:
+          - {until: '2022-09-10', band: 'supported'}
+          - {until: '2024-06-30', band: 'security-only'}
+          - {until: '2029-06-30', band: 'security-only', condition: 'paid Extended LTS (third-party commercial offering)'}
+        after: 'end-of-support'
+  - id: 'debian-11'
+    match:
+      - {kind: 'os', product_pattern: 'Debian( GNU/Linux)? 11(\.\d+)*( \(Bullseye\))?( .*)?'}
+      - {kind: 'os', product_pattern: 'Debian( GNU/Linux)?', version_pattern: '11(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-debian'
+        phases:
+          - {until: '2024-08-14', band: 'supported'}
+          - {until: '2026-08-31', band: 'security-only'}
+          - {until: '2031-06-30', band: 'security-only', condition: 'paid Extended LTS (third-party commercial offering)'}
+        after: 'end-of-support'
+  - id: 'debian-12'
+    match:
+      - {kind: 'os', product_pattern: 'Debian( GNU/Linux)? 12(\.\d+)*( \(Bookworm\))?( .*)?'}
+      - {kind: 'os', product_pattern: 'Debian( GNU/Linux)?', version_pattern: '12(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-debian'
+        phases:
+          - {until: '2026-07-11', band: 'supported'}
+          - {until: '2028-06-30', band: 'security-only'}
+          - {until: '2033-06-30', band: 'security-only', condition: 'paid Extended LTS (third-party commercial offering)'}
+        after: 'end-of-support'
+  - id: 'debian-13'
+    match:
+      - {kind: 'os', product_pattern: 'Debian( GNU/Linux)? 13(\.\d+)*( \(Trixie\))?( .*)?'}
+      - {kind: 'os', product_pattern: 'Debian( GNU/Linux)?', version_pattern: '13(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-debian'
+        phases:
+          - {until: '2028-08-09', band: 'supported'}
+          - {until: '2030-06-30', band: 'security-only'}
+          - {until: '2035-06-30', band: 'security-only', condition: 'paid Extended LTS (third-party commercial offering)'}
+        after: 'end-of-support'
+  - id: 'sles-11.4'
+    match:
+      - {kind: 'os', product_pattern: '(SUSE Linux Enterprise Server|SLES) 11 SP4( .*)?'}
+      - {kind: 'os', product_pattern: 'SUSE Linux Enterprise Server|SLES', version_pattern: '11(\.4|-SP4| SP4)'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-sles'
+        phases:
+          - {until: '2019-03-31', band: 'supported'}
+          - {until: '2022-03-31', band: 'security-only', condition: 'paid Long Term Service Pack Support'}
+        after: 'end-of-support'
+  - id: 'sles-12.0'
+    match:
+      - {kind: 'os', product_pattern: '(SUSE Linux Enterprise Server|SLES) 12(?! SP)( .*)?'}
+      - {kind: 'os', product_pattern: 'SUSE Linux Enterprise Server|SLES', version_pattern: '12(\.0)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-sles'
+        phases:
+          - {until: '2016-06-30', band: 'supported'}
+          - {until: '2019-07-01', band: 'security-only', condition: 'paid Long Term Service Pack Support'}
+        after: 'end-of-support'
+  - id: 'sles-12.1'
+    match:
+      - {kind: 'os', product_pattern: '(SUSE Linux Enterprise Server|SLES) 12 SP1( .*)?'}
+      - {kind: 'os', product_pattern: 'SUSE Linux Enterprise Server|SLES', version_pattern: '12(\.1|-SP1| SP1)'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-sles'
+        phases:
+          - {until: '2017-05-31', band: 'supported'}
+          - {until: '2020-05-31', band: 'security-only', condition: 'paid Long Term Service Pack Support'}
+        after: 'end-of-support'
+  - id: 'sles-12.2'
+    match:
+      - {kind: 'os', product_pattern: '(SUSE Linux Enterprise Server|SLES) 12 SP2( .*)?'}
+      - {kind: 'os', product_pattern: 'SUSE Linux Enterprise Server|SLES', version_pattern: '12(\.2|-SP2| SP2)'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-sles'
+        phases:
+          - {until: '2018-03-31', band: 'supported'}
+          - {until: '2021-03-31', band: 'security-only', condition: 'paid Long Term Service Pack Support'}
+        after: 'end-of-support'
+  - id: 'sles-12.3'
+    match:
+      - {kind: 'os', product_pattern: '(SUSE Linux Enterprise Server|SLES) 12 SP3( .*)?'}
+      - {kind: 'os', product_pattern: 'SUSE Linux Enterprise Server|SLES', version_pattern: '12(\.3|-SP3| SP3)'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-sles'
+        phases:
+          - {until: '2019-06-30', band: 'supported'}
+          - {until: '2022-06-30', band: 'security-only', condition: 'paid Long Term Service Pack Support'}
+        after: 'end-of-support'
+  - id: 'sles-12.4'
+    match:
+      - {kind: 'os', product_pattern: '(SUSE Linux Enterprise Server|SLES) 12 SP4( .*)?'}
+      - {kind: 'os', product_pattern: 'SUSE Linux Enterprise Server|SLES', version_pattern: '12(\.4|-SP4| SP4)'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-sles'
+        phases:
+          - {until: '2020-06-30', band: 'supported'}
+          - {until: '2023-06-30', band: 'security-only', condition: 'paid Long Term Service Pack Support'}
+        after: 'end-of-support'
+  - id: 'sles-12.5'
+    match:
+      - {kind: 'os', product_pattern: '(SUSE Linux Enterprise Server|SLES) 12 SP5( .*)?'}
+      - {kind: 'os', product_pattern: 'SUSE Linux Enterprise Server|SLES', version_pattern: '12(\.5|-SP5| SP5)'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-sles'
+        phases:
+          - {until: '2024-10-31', band: 'supported'}
+          - {until: '2027-10-31', band: 'security-only', condition: 'paid Long Term Service Pack Support'}
+        after: 'end-of-support'
+  - id: 'sles-15.0'
+    match:
+      - {kind: 'os', product_pattern: '(SUSE Linux Enterprise Server|SLES) 15(?! SP)( .*)?'}
+      - {kind: 'os', product_pattern: 'SUSE Linux Enterprise Server|SLES', version_pattern: '15(\.0)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-sles'
+        phases:
+          - {until: '2019-12-31', band: 'supported'}
+          - {until: '2022-12-31', band: 'security-only', condition: 'paid Long Term Service Pack Support'}
+        after: 'end-of-support'
+  - id: 'sles-15.1'
+    match:
+      - {kind: 'os', product_pattern: '(SUSE Linux Enterprise Server|SLES) 15 SP1( .*)?'}
+      - {kind: 'os', product_pattern: 'SUSE Linux Enterprise Server|SLES', version_pattern: '15(\.1|-SP1| SP1)'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-sles'
+        phases:
+          - {until: '2021-01-31', band: 'supported'}
+          - {until: '2024-01-31', band: 'security-only', condition: 'paid Long Term Service Pack Support'}
+        after: 'end-of-support'
+  - id: 'sles-15.2'
+    match:
+      - {kind: 'os', product_pattern: '(SUSE Linux Enterprise Server|SLES) 15 SP2( .*)?'}
+      - {kind: 'os', product_pattern: 'SUSE Linux Enterprise Server|SLES', version_pattern: '15(\.2|-SP2| SP2)'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-sles'
+        phases:
+          - {until: '2021-12-31', band: 'supported'}
+          - {until: '2024-12-31', band: 'security-only', condition: 'paid Long Term Service Pack Support'}
+        after: 'end-of-support'
+  - id: 'sles-15.3'
+    match:
+      - {kind: 'os', product_pattern: '(SUSE Linux Enterprise Server|SLES) 15 SP3( .*)?'}
+      - {kind: 'os', product_pattern: 'SUSE Linux Enterprise Server|SLES', version_pattern: '15(\.3|-SP3| SP3)'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-sles'
+        phases:
+          - {until: '2022-12-31', band: 'supported'}
+          - {until: '2025-12-31', band: 'security-only', condition: 'paid Long Term Service Pack Support'}
+        after: 'end-of-support'
+  - id: 'sles-15.4'
+    match:
+      - {kind: 'os', product_pattern: '(SUSE Linux Enterprise Server|SLES) 15 SP4( .*)?'}
+      - {kind: 'os', product_pattern: 'SUSE Linux Enterprise Server|SLES', version_pattern: '15(\.4|-SP4| SP4)'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-sles'
+        phases:
+          - {until: '2023-12-31', band: 'supported'}
+          - {until: '2026-12-31', band: 'security-only', condition: 'paid Long Term Service Pack Support'}
+        after: 'end-of-support'
+  - id: 'sles-15.5'
+    match:
+      - {kind: 'os', product_pattern: '(SUSE Linux Enterprise Server|SLES) 15 SP5( .*)?'}
+      - {kind: 'os', product_pattern: 'SUSE Linux Enterprise Server|SLES', version_pattern: '15(\.5|-SP5| SP5)'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-sles'
+        phases:
+          - {until: '2024-12-31', band: 'supported'}
+          - {until: '2027-12-31', band: 'security-only', condition: 'paid Long Term Service Pack Support'}
+        after: 'end-of-support'
+  - id: 'sles-15.6'
+    match:
+      - {kind: 'os', product_pattern: '(SUSE Linux Enterprise Server|SLES) 15 SP6( .*)?'}
+      - {kind: 'os', product_pattern: 'SUSE Linux Enterprise Server|SLES', version_pattern: '15(\.6|-SP6| SP6)'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-sles'
+        phases:
+          - {until: '2025-12-31', band: 'supported'}
+          - {until: '2028-12-31', band: 'security-only', condition: 'paid Long Term Service Pack Support'}
+        after: 'end-of-support'
+  - id: 'sles-15.7'
+    match:
+      - {kind: 'os', product_pattern: '(SUSE Linux Enterprise Server|SLES) 15 SP7( .*)?'}
+      - {kind: 'os', product_pattern: 'SUSE Linux Enterprise Server|SLES', version_pattern: '15(\.7|-SP7| SP7)'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-sles'
+        phases:
+          - {until: '2031-07-31', band: 'supported'}
+          - {until: '2034-07-31', band: 'security-only', condition: 'paid Long Term Service Pack Support'}
+        after: 'end-of-support'
+  - id: 'sles-16.0'
+    match:
+      - {kind: 'os', product_pattern: '(SUSE Linux Enterprise Server|SLES) 16(\.0)?( .*)?'}
+      - {kind: 'os', product_pattern: 'SUSE Linux Enterprise Server|SLES', version_pattern: '16(\.0)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-sles'
+        phases:
+          - {until: '2027-11-30', band: 'supported'}
+          - {until: '2030-11-30', band: 'security-only', condition: 'paid Long Term Service Pack Support'}
+        after: 'end-of-support'
+  - id: 'amazon-linux-2023'
+    match:
+      - {kind: 'os', product_pattern: 'Amazon Linux 2023( .*)?'}
+      - {kind: 'os', product_pattern: 'Amazon Linux', version_pattern: '2023(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-amazon-linux'
+        phases:
+          - {until: '2027-06-30', band: 'supported'}
+          - {until: '2029-06-30', band: 'security-only'}
+        after: 'end-of-support'
+  - id: 'amazon-linux-2'
+    match:
+      - {kind: 'os', product_pattern: 'Amazon Linux 2(?!\d)( .*)?'}
+      - {kind: 'os', product_pattern: 'Amazon Linux', version_pattern: '2'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-amazon-linux'
+        phases:
+          - {until: '2026-06-30', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'amazon-linux-ami'
+    match:
+      - {kind: 'os', product_pattern: 'Amazon Linux AMI( 20\d\d\.\d\d)?( .*)?'}
+      - {kind: 'os', product_pattern: 'Amazon Linux( AMI)?', version_pattern: '20(1[0-8])\.\d\d'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-amazon-linux'
+        phases:
+          - {until: '2020-12-31', band: 'supported'}
+          - {until: '2023-12-31', band: 'security-only'}
+        after: 'end-of-support'
+  - id: 'sql-server-2025'
+    match:
+      - {kind: 'application', product_pattern: '(Microsoft )?SQL Server 2025( .*)?'}
+      - {kind: 'application', product_pattern: '(Microsoft )?SQL Server', version_pattern: '17\.0\.\d+(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'microsoft-lifecycle-sql-server'
+        phases:
+          - {until: '2031-01', band: 'supported'}
+          - {until: '2036-01', band: 'security-only'}
+        after: 'end-of-support'
+  - id: 'sql-server-2022'
+    match:
+      - {kind: 'application', product_pattern: '(Microsoft )?SQL Server 2022( .*)?'}
+      - {kind: 'application', product_pattern: '(Microsoft )?SQL Server', version_pattern: '16\.0\.\d+(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'microsoft-lifecycle-sql-server'
+        phases:
+          - {until: '2028-01-11', band: 'supported'}
+          - {until: '2033-01-11', band: 'security-only'}
+        after: 'end-of-support'
+  - id: 'sql-server-2019'
+    match:
+      - {kind: 'application', product_pattern: '(Microsoft )?SQL Server 2019( .*)?'}
+      - {kind: 'application', product_pattern: '(Microsoft )?SQL Server', version_pattern: '15\.0\.\d+(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'microsoft-lifecycle-sql-server'
+        phases:
+          - {until: '2025-02-28', band: 'supported'}
+          - {until: '2030-01-08', band: 'security-only'}
+        after: 'end-of-support'
+  - id: 'sql-server-2017'
+    match:
+      - {kind: 'application', product_pattern: '(Microsoft )?SQL Server 2017( .*)?'}
+      - {kind: 'application', product_pattern: '(Microsoft )?SQL Server', version_pattern: '14\.0\.\d+(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'microsoft-lifecycle-sql-server'
+        phases:
+          - {until: '2022-10-11', band: 'supported'}
+          - {until: '2027-10-12', band: 'security-only'}
+        after: 'end-of-support'
+  - id: 'sql-server-2016'
+    match:
+      - {kind: 'application', product_pattern: '(Microsoft )?SQL Server 2016( .*)?'}
+      - {kind: 'application', product_pattern: '(Microsoft )?SQL Server', version_pattern: '13\.0\.\d+(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'microsoft-lifecycle-sql-server'
+        phases:
+          - {until: '2021-07-13', band: 'supported'}
+          - {until: '2026-07-14', band: 'security-only'}
+          - {until: '2029-07-17', band: 'security-only', condition: 'paid Extended Security Updates'}
+        after: 'end-of-support'
+  - id: 'sql-server-2014'
+    match:
+      - {kind: 'application', product_pattern: '(Microsoft )?SQL Server 2014( .*)?'}
+      - {kind: 'application', product_pattern: '(Microsoft )?SQL Server', version_pattern: '12\.0\.\d+(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'microsoft-lifecycle-sql-server'
+        phases:
+          - {until: '2019-07-09', band: 'supported'}
+          - {until: '2024-07-09', band: 'security-only'}
+          - {until: '2027-07', band: 'security-only', condition: 'paid Extended Security Updates'}
+        after: 'end-of-support'
+  - id: 'sql-server-2012'
+    match:
+      - {kind: 'application', product_pattern: '(Microsoft )?SQL Server 2012( .*)?'}
+      - {kind: 'application', product_pattern: '(Microsoft )?SQL Server', version_pattern: '11\.0\.\d+(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'microsoft-lifecycle-sql-server'
+        phases:
+          - {until: '2017-07-11', band: 'supported'}
+          - {until: '2022-07-12', band: 'security-only'}
+          - {until: '2025-07-08', band: 'security-only', condition: 'paid Extended Security Updates'}
+        after: 'end-of-support'
+  - id: 'sql-server-2008-r2'
+    match:
+      - {kind: 'application', product_pattern: '(Microsoft )?SQL Server 2008\ R2( .*)?'}
+      - {kind: 'application', product_pattern: '(Microsoft )?SQL Server', version_pattern: '10\.50\.\d+(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'microsoft-lifecycle-sql-server'
+        phases:
+          - {until: '2014-07-08', band: 'supported'}
+          - {until: '2019-07-09', band: 'security-only'}
+          - {until: '2022-07-12', band: 'security-only', condition: 'paid Extended Security Updates'}
+        after: 'end-of-support'
+  - id: 'sql-server-2008'
+    match:
+      - {kind: 'application', product_pattern: '(Microsoft )?SQL Server 2008(?! R2)( .*)?'}
+      - {kind: 'application', product_pattern: '(Microsoft )?SQL Server', version_pattern: '10\.0\.\d+(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'microsoft-lifecycle-sql-server'
+        phases:
+          - {until: '2014-07-08', band: 'supported'}
+          - {until: '2019-07-09', band: 'security-only'}
+          - {until: '2022-07-12', band: 'security-only', condition: 'paid Extended Security Updates'}
+        after: 'end-of-support'
+  - id: 'postgresql-18'
+    match:
+      - {kind: 'application', product_pattern: 'PostgreSQL( Server)? 18(\.\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: 'PostgreSQL( Server)?', version_pattern: '18(\.\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'postgresql-versioning'
+        phases:
+          - {until: '2030-11-14', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'postgresql-17'
+    match:
+      - {kind: 'application', product_pattern: 'PostgreSQL( Server)? 17(\.\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: 'PostgreSQL( Server)?', version_pattern: '17(\.\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'postgresql-versioning'
+        phases:
+          - {until: '2029-11-08', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'postgresql-16'
+    match:
+      - {kind: 'application', product_pattern: 'PostgreSQL( Server)? 16(\.\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: 'PostgreSQL( Server)?', version_pattern: '16(\.\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'postgresql-versioning'
+        phases:
+          - {until: '2028-11-09', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'postgresql-15'
+    match:
+      - {kind: 'application', product_pattern: 'PostgreSQL( Server)? 15(\.\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: 'PostgreSQL( Server)?', version_pattern: '15(\.\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'postgresql-versioning'
+        phases:
+          - {until: '2027-11-11', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'postgresql-14'
+    match:
+      - {kind: 'application', product_pattern: 'PostgreSQL( Server)? 14(\.\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: 'PostgreSQL( Server)?', version_pattern: '14(\.\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'postgresql-versioning'
+        phases:
+          - {until: '2026-11-12', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'postgresql-13'
+    match:
+      - {kind: 'application', product_pattern: 'PostgreSQL( Server)? 13(\.\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: 'PostgreSQL( Server)?', version_pattern: '13(\.\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'postgresql-versioning'
+        phases:
+          - {until: '2025-11-13', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'postgresql-12'
+    match:
+      - {kind: 'application', product_pattern: 'PostgreSQL( Server)? 12(\.\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: 'PostgreSQL( Server)?', version_pattern: '12(\.\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'postgresql-versioning'
+        phases:
+          - {until: '2024-11-21', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'postgresql-11'
+    match:
+      - {kind: 'application', product_pattern: 'PostgreSQL( Server)? 11(\.\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: 'PostgreSQL( Server)?', version_pattern: '11(\.\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'postgresql-versioning'
+        phases:
+          - {until: '2023-11-09', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'postgresql-10'
+    match:
+      - {kind: 'application', product_pattern: 'PostgreSQL( Server)? 10(\.\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: 'PostgreSQL( Server)?', version_pattern: '10(\.\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'postgresql-versioning'
+        phases:
+          - {until: '2022-11-10', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'postgresql-9.6'
+    match:
+      - {kind: 'application', product_pattern: 'PostgreSQL( Server)? 9\.6(\.\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: 'PostgreSQL( Server)?', version_pattern: '9\.6(\.\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'postgresql-versioning'
+        phases:
+          - {until: '2021-11-11', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'postgresql-9.5'
+    match:
+      - {kind: 'application', product_pattern: 'PostgreSQL( Server)? 9\.5(\.\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: 'PostgreSQL( Server)?', version_pattern: '9\.5(\.\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'postgresql-versioning'
+        phases:
+          - {until: '2021-02-11', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'postgresql-9.4'
+    match:
+      - {kind: 'application', product_pattern: 'PostgreSQL( Server)? 9\.4(\.\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: 'PostgreSQL( Server)?', version_pattern: '9\.4(\.\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'postgresql-versioning'
+        phases:
+          - {until: '2020-02-13', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'mysql-5.5'
+    match:
+      - {kind: 'application', product_pattern: 'MySQL( Community| Enterprise)?( Server)? 5\.5(\.\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: 'MySQL( Community| Enterprise)?( Server)?', version_pattern: '5\.5(\.\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'oracle-technology-lifetime'
+        phases:
+          - {until: '2015-12', band: 'supported'}
+          - {until: '2018-12', band: 'security-only', condition: 'paid Oracle Extended Support'}
+        after: 'end-of-support'
+  - id: 'mysql-5.6'
+    match:
+      - {kind: 'application', product_pattern: 'MySQL( Community| Enterprise)?( Server)? 5\.6(\.\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: 'MySQL( Community| Enterprise)?( Server)?', version_pattern: '5\.6(\.\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'oracle-technology-lifetime'
+        phases:
+          - {until: '2018-02', band: 'supported'}
+          - {until: '2021-02', band: 'security-only', condition: 'paid Oracle Extended Support'}
+        after: 'end-of-support'
+  - id: 'mysql-5.7'
+    match:
+      - {kind: 'application', product_pattern: 'MySQL( Community| Enterprise)?( Server)? 5\.7(\.\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: 'MySQL( Community| Enterprise)?( Server)?', version_pattern: '5\.7(\.\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'oracle-technology-lifetime'
+        phases:
+          - {until: '2020-10', band: 'supported'}
+          - {until: '2023-10', band: 'security-only', condition: 'paid Oracle Extended Support'}
+        after: 'end-of-support'
+  - id: 'mysql-8.0'
+    match:
+      - {kind: 'application', product_pattern: 'MySQL( Community| Enterprise)?( Server)? 8\.0(\.\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: 'MySQL( Community| Enterprise)?( Server)?', version_pattern: '8\.0(\.\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'oracle-technology-lifetime'
+        phases:
+          - {until: '2025-04', band: 'supported'}
+          - {until: '2026-04', band: 'security-only', condition: 'paid Oracle Extended Support'}
+        after: 'end-of-support'
+  - id: 'mysql-8.4'
+    match:
+      - {kind: 'application', product_pattern: 'MySQL( Community| Enterprise)?( Server)? 8\.4(\.\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: 'MySQL( Community| Enterprise)?( Server)?', version_pattern: '8\.4(\.\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'oracle-technology-lifetime'
+        phases:
+          - {until: '2029-04', band: 'supported'}
+          - {until: '2032-04', band: 'security-only', condition: 'paid Oracle Extended Support'}
+        after: 'end-of-support'
+  - id: 'mysql-9.7'
+    match:
+      - {kind: 'application', product_pattern: 'MySQL( Community| Enterprise)?( Server)? 9\.7(\.\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: 'MySQL( Community| Enterprise)?( Server)?', version_pattern: '9\.7(\.\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'oracle-technology-lifetime'
+        phases:
+          - {until: '2031-04', band: 'supported'}
+          - {until: '2034-04', band: 'security-only', condition: 'paid Oracle Extended Support'}
+        after: 'end-of-support'
+  - id: 'oracle-database-12.2'
+    match:
+      - {kind: 'application', product_pattern: 'Oracle Database( \w+ Edition( \d)?)? (12c Release 2|12\.2(\.\d+)*)( .*)?'}
+      - {kind: 'application', product_pattern: 'Oracle Database( \w+ Edition( \d)?)?', version_pattern: '12\.2(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'oracle-technology-lifetime'
+        phases:
+          - {until: '2020-11-30', band: 'supported'}
+          - {until: '2022-03-31', band: 'security-only', condition: 'limited error correction period'}
+        after: 'end-of-support'
+  - id: 'oracle-database-11.2'
+    match:
+      - {kind: 'application', product_pattern: 'Oracle Database( \w+ Edition( \d)?)? (11g( Release 2)?|11\.2)( .*)?'}
+      - {kind: 'application', product_pattern: 'Oracle Database( \w+ Edition( \d)?)?', version_pattern: '11\.2(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'oracle-technology-lifetime'
+        phases:
+          - {until: '2015-01', band: 'supported'}
+          - {until: '2020-12', band: 'security-only', condition: 'paid Oracle Extended Support'}
+        after: 'end-of-support'
+  - id: 'oracle-database-12.1'
+    match:
+      - {kind: 'application', product_pattern: 'Oracle Database( \w+ Edition( \d)?)? (12c( Release 1)?|12\.1)( .*)?'}
+      - {kind: 'application', product_pattern: 'Oracle Database( \w+ Edition( \d)?)?', version_pattern: '12\.1(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'oracle-technology-lifetime'
+        phases:
+          - {until: '2018-07', band: 'supported'}
+          - {until: '2022-07', band: 'security-only', condition: 'paid Oracle Extended Support'}
+        after: 'end-of-support'
+  - id: 'oracle-database-18c'
+    match:
+      - {kind: 'application', product_pattern: 'Oracle Database( \w+ Edition( \d)?)? (18c)( .*)?'}
+      - {kind: 'application', product_pattern: 'Oracle Database( \w+ Edition( \d)?)?', version_pattern: '18(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'oracle-technology-lifetime'
+        phases:
+          - {until: '2021-06', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'oracle-database-19c'
+    match:
+      - {kind: 'application', product_pattern: 'Oracle Database( \w+ Edition( \d)?)? (19c)( .*)?'}
+      - {kind: 'application', product_pattern: 'Oracle Database( \w+ Edition( \d)?)?', version_pattern: '19(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'oracle-technology-lifetime'
+        phases:
+          - {until: '2029-12', band: 'supported'}
+          - {until: '2032-12', band: 'security-only', condition: 'paid Oracle Extended Support'}
+        after: 'end-of-support'
+  - id: 'oracle-database-21c'
+    match:
+      - {kind: 'application', product_pattern: 'Oracle Database( \w+ Edition( \d)?)? (21c)( .*)?'}
+      - {kind: 'application', product_pattern: 'Oracle Database( \w+ Edition( \d)?)?', version_pattern: '21(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'oracle-technology-lifetime'
+        phases:
+          - {until: '2027-07', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'oracle-database-26ai'
+    match:
+      - {kind: 'application', product_pattern: 'Oracle Database( \w+ Edition( \d)?)? (26ai)( .*)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'oracle-technology-lifetime'
+        phases:
+          - {until: '2031-12', band: 'supported'}
+        after: 'unknown'
+  - id: 'python-3.14'
+    match:
+      - {kind: 'application', product_pattern: '(C)?Python 3\.14(\.\d+)?([abc]\d+|rc\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: '(C)?Python( \d)?', version_pattern: '3\.14(\.\d+)?([abc]\d+|rc\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'python-release-cycle'
+        phases:
+          - {until: '2030-10', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'python-3.13'
+    match:
+      - {kind: 'application', product_pattern: '(C)?Python 3\.13(\.\d+)?([abc]\d+|rc\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: '(C)?Python( \d)?', version_pattern: '3\.13(\.\d+)?([abc]\d+|rc\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'python-release-cycle'
+        phases:
+          - {until: '2029-10', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'python-3.12'
+    match:
+      - {kind: 'application', product_pattern: '(C)?Python 3\.12(\.\d+)?([abc]\d+|rc\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: '(C)?Python( \d)?', version_pattern: '3\.12(\.\d+)?([abc]\d+|rc\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'python-release-cycle'
+        phases:
+          - {until: '2028-10', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'python-3.11'
+    match:
+      - {kind: 'application', product_pattern: '(C)?Python 3\.11(\.\d+)?([abc]\d+|rc\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: '(C)?Python( \d)?', version_pattern: '3\.11(\.\d+)?([abc]\d+|rc\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'python-release-cycle'
+        phases:
+          - {until: '2027-10', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'python-3.10'
+    match:
+      - {kind: 'application', product_pattern: '(C)?Python 3\.10(\.\d+)?([abc]\d+|rc\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: '(C)?Python( \d)?', version_pattern: '3\.10(\.\d+)?([abc]\d+|rc\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'python-release-cycle'
+        phases:
+          - {until: '2026-10', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'python-3.9'
+    match:
+      - {kind: 'application', product_pattern: '(C)?Python 3\.9(\.\d+)?([abc]\d+|rc\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: '(C)?Python( \d)?', version_pattern: '3\.9(\.\d+)?([abc]\d+|rc\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'python-release-cycle'
+        phases:
+          - {until: '2025-10-31', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'python-3.8'
+    match:
+      - {kind: 'application', product_pattern: '(C)?Python 3\.8(\.\d+)?([abc]\d+|rc\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: '(C)?Python( \d)?', version_pattern: '3\.8(\.\d+)?([abc]\d+|rc\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'python-release-cycle'
+        phases:
+          - {until: '2024-10-07', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'python-3.7'
+    match:
+      - {kind: 'application', product_pattern: '(C)?Python 3\.7(\.\d+)?([abc]\d+|rc\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: '(C)?Python( \d)?', version_pattern: '3\.7(\.\d+)?([abc]\d+|rc\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'python-release-cycle'
+        phases:
+          - {until: '2023-06-27', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'python-3.6'
+    match:
+      - {kind: 'application', product_pattern: '(C)?Python 3\.6(\.\d+)?([abc]\d+|rc\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: '(C)?Python( \d)?', version_pattern: '3\.6(\.\d+)?([abc]\d+|rc\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'python-release-cycle'
+        phases:
+          - {until: '2021-12-23', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'python-3.5'
+    match:
+      - {kind: 'application', product_pattern: '(C)?Python 3\.5(\.\d+)?([abc]\d+|rc\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: '(C)?Python( \d)?', version_pattern: '3\.5(\.\d+)?([abc]\d+|rc\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'python-release-cycle'
+        phases:
+          - {until: '2020-09-30', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'python-3.4'
+    match:
+      - {kind: 'application', product_pattern: '(C)?Python 3\.4(\.\d+)?([abc]\d+|rc\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: '(C)?Python( \d)?', version_pattern: '3\.4(\.\d+)?([abc]\d+|rc\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'python-release-cycle'
+        phases:
+          - {until: '2019-03-18', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'python-3.3'
+    match:
+      - {kind: 'application', product_pattern: '(C)?Python 3\.3(\.\d+)?([abc]\d+|rc\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: '(C)?Python( \d)?', version_pattern: '3\.3(\.\d+)?([abc]\d+|rc\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'python-release-cycle'
+        phases:
+          - {until: '2017-09-29', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'python-3.2'
+    match:
+      - {kind: 'application', product_pattern: '(C)?Python 3\.2(\.\d+)?([abc]\d+|rc\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: '(C)?Python( \d)?', version_pattern: '3\.2(\.\d+)?([abc]\d+|rc\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'python-release-cycle'
+        phases:
+          - {until: '2016-02-20', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'python-2.7'
+    match:
+      - {kind: 'application', product_pattern: '(C)?Python 2\.7(\.\d+)?([abc]\d+|rc\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: '(C)?Python( \d)?', version_pattern: '2\.7(\.\d+)?([abc]\d+|rc\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'python-release-cycle'
+        phases:
+          - {until: '2020-01-01', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'nodejs-4'
+    match:
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)? v?4(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)?', version_pattern: 'v?4(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'nodejs-schedule'
+        phases:
+          - {until: '2017-04-01', band: 'supported'}
+          - {until: '2018-04-30', band: 'security-only'}
+        after: 'end-of-support'
+  - id: 'nodejs-5'
+    match:
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)? v?5(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)?', version_pattern: 'v?5(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'nodejs-schedule'
+        phases:
+          - {until: '2016-04-30', band: 'supported'}
+          - {until: '2016-06-30', band: 'security-only'}
+        after: 'end-of-support'
+  - id: 'nodejs-6'
+    match:
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)? v?6(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)?', version_pattern: 'v?6(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'nodejs-schedule'
+        phases:
+          - {until: '2018-04-30', band: 'supported'}
+          - {until: '2019-04-30', band: 'security-only'}
+        after: 'end-of-support'
+  - id: 'nodejs-7'
+    match:
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)? v?7(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)?', version_pattern: 'v?7(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'nodejs-schedule'
+        phases:
+          - {until: '2017-04-30', band: 'supported'}
+          - {until: '2017-06-30', band: 'security-only'}
+        after: 'end-of-support'
+  - id: 'nodejs-8'
+    match:
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)? v?8(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)?', version_pattern: 'v?8(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'nodejs-schedule'
+        phases:
+          - {until: '2019-01-01', band: 'supported'}
+          - {until: '2019-12-31', band: 'security-only'}
+        after: 'end-of-support'
+  - id: 'nodejs-9'
+    match:
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)? v?9(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)?', version_pattern: 'v?9(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'nodejs-schedule'
+        phases:
+          - {until: '2018-04-01', band: 'supported'}
+          - {until: '2018-06-30', band: 'security-only'}
+        after: 'end-of-support'
+  - id: 'nodejs-10'
+    match:
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)? v?10(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)?', version_pattern: 'v?10(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'nodejs-schedule'
+        phases:
+          - {until: '2020-05-19', band: 'supported'}
+          - {until: '2021-04-30', band: 'security-only'}
+        after: 'end-of-support'
+  - id: 'nodejs-11'
+    match:
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)? v?11(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)?', version_pattern: 'v?11(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'nodejs-schedule'
+        phases:
+          - {until: '2019-04-22', band: 'supported'}
+          - {until: '2019-06-01', band: 'security-only'}
+        after: 'end-of-support'
+  - id: 'nodejs-12'
+    match:
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)? v?12(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)?', version_pattern: 'v?12(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'nodejs-schedule'
+        phases:
+          - {until: '2020-11-30', band: 'supported'}
+          - {until: '2022-04-30', band: 'security-only'}
+        after: 'end-of-support'
+  - id: 'nodejs-13'
+    match:
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)? v?13(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)?', version_pattern: 'v?13(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'nodejs-schedule'
+        phases:
+          - {until: '2020-04-01', band: 'supported'}
+          - {until: '2020-06-01', band: 'security-only'}
+        after: 'end-of-support'
+  - id: 'nodejs-14'
+    match:
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)? v?14(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)?', version_pattern: 'v?14(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'nodejs-schedule'
+        phases:
+          - {until: '2021-10-19', band: 'supported'}
+          - {until: '2023-04-30', band: 'security-only'}
+        after: 'end-of-support'
+  - id: 'nodejs-15'
+    match:
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)? v?15(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)?', version_pattern: 'v?15(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'nodejs-schedule'
+        phases:
+          - {until: '2021-04-01', band: 'supported'}
+          - {until: '2021-06-01', band: 'security-only'}
+        after: 'end-of-support'
+  - id: 'nodejs-16'
+    match:
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)? v?16(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)?', version_pattern: 'v?16(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'nodejs-schedule'
+        phases:
+          - {until: '2022-10-18', band: 'supported'}
+          - {until: '2023-09-11', band: 'security-only'}
+        after: 'end-of-support'
+  - id: 'nodejs-17'
+    match:
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)? v?17(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)?', version_pattern: 'v?17(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'nodejs-schedule'
+        phases:
+          - {until: '2022-04-01', band: 'supported'}
+          - {until: '2022-06-01', band: 'security-only'}
+        after: 'end-of-support'
+  - id: 'nodejs-18'
+    match:
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)? v?18(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)?', version_pattern: 'v?18(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'nodejs-schedule'
+        phases:
+          - {until: '2023-10-18', band: 'supported'}
+          - {until: '2025-04-30', band: 'security-only'}
+        after: 'end-of-support'
+  - id: 'nodejs-19'
+    match:
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)? v?19(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)?', version_pattern: 'v?19(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'nodejs-schedule'
+        phases:
+          - {until: '2023-04-01', band: 'supported'}
+          - {until: '2023-06-01', band: 'security-only'}
+        after: 'end-of-support'
+  - id: 'nodejs-20'
+    match:
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)? v?20(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)?', version_pattern: 'v?20(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'nodejs-schedule'
+        phases:
+          - {until: '2024-10-22', band: 'supported'}
+          - {until: '2026-04-30', band: 'security-only'}
+        after: 'end-of-support'
+  - id: 'nodejs-21'
+    match:
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)? v?21(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)?', version_pattern: 'v?21(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'nodejs-schedule'
+        phases:
+          - {until: '2024-04-01', band: 'supported'}
+          - {until: '2024-06-01', band: 'security-only'}
+        after: 'end-of-support'
+  - id: 'nodejs-22'
+    match:
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)? v?22(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)?', version_pattern: 'v?22(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'nodejs-schedule'
+        phases:
+          - {until: '2025-10-21', band: 'supported'}
+          - {until: '2027-04-30', band: 'security-only'}
+        after: 'end-of-support'
+  - id: 'nodejs-23'
+    match:
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)? v?23(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)?', version_pattern: 'v?23(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'nodejs-schedule'
+        phases:
+          - {until: '2025-04-01', band: 'supported'}
+          - {until: '2025-06-01', band: 'security-only'}
+        after: 'end-of-support'
+  - id: 'nodejs-24'
+    match:
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)? v?24(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)?', version_pattern: 'v?24(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'nodejs-schedule'
+        phases:
+          - {until: '2026-10-20', band: 'supported'}
+          - {until: '2028-04-30', band: 'security-only'}
+        after: 'end-of-support'
+  - id: 'nodejs-25'
+    match:
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)? v?25(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)?', version_pattern: 'v?25(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'nodejs-schedule'
+        phases:
+          - {until: '2026-04-01', band: 'supported'}
+          - {until: '2026-06-01', band: 'security-only'}
+        after: 'end-of-support'
+  - id: 'nodejs-26'
+    match:
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)? v?26(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: 'Node(\.js|JS)?', version_pattern: 'v?26(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'nodejs-schedule'
+        phases:
+          - {until: '2027-10-20', band: 'supported'}
+          - {until: '2029-04-30', band: 'security-only'}
+        after: 'end-of-support'
+  - id: 'dotnet-10.0'
+    match:
+      - {kind: 'application', product_pattern: '(Microsoft )?(\.NET( Core)?|ASP\.NET Core)( Runtime| Desktop Runtime| SDK| Shared Framework| Hosting Bundle)?( -)? 10\.0(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: '(Microsoft )?(\.NET( Core)?|ASP\.NET Core)( Runtime| Desktop Runtime| SDK)?', version_pattern: '10\.0(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'dotnet-releases-index'
+        phases:
+          - {until: '2028-11-14', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'dotnet-9.0'
+    match:
+      - {kind: 'application', product_pattern: '(Microsoft )?(\.NET( Core)?|ASP\.NET Core)( Runtime| Desktop Runtime| SDK| Shared Framework| Hosting Bundle)?( -)? 9\.0(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: '(Microsoft )?(\.NET( Core)?|ASP\.NET Core)( Runtime| Desktop Runtime| SDK)?', version_pattern: '9\.0(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'dotnet-releases-index'
+        phases:
+          - {until: '2026-11-10', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'dotnet-8.0'
+    match:
+      - {kind: 'application', product_pattern: '(Microsoft )?(\.NET( Core)?|ASP\.NET Core)( Runtime| Desktop Runtime| SDK| Shared Framework| Hosting Bundle)?( -)? 8\.0(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: '(Microsoft )?(\.NET( Core)?|ASP\.NET Core)( Runtime| Desktop Runtime| SDK)?', version_pattern: '8\.0(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'dotnet-releases-index'
+        phases:
+          - {until: '2026-11-10', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'dotnet-7.0'
+    match:
+      - {kind: 'application', product_pattern: '(Microsoft )?(\.NET( Core)?|ASP\.NET Core)( Runtime| Desktop Runtime| SDK| Shared Framework| Hosting Bundle)?( -)? 7\.0(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: '(Microsoft )?(\.NET( Core)?|ASP\.NET Core)( Runtime| Desktop Runtime| SDK)?', version_pattern: '7\.0(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'dotnet-releases-index'
+        phases:
+          - {until: '2024-05-14', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'dotnet-6.0'
+    match:
+      - {kind: 'application', product_pattern: '(Microsoft )?(\.NET( Core)?|ASP\.NET Core)( Runtime| Desktop Runtime| SDK| Shared Framework| Hosting Bundle)?( -)? 6\.0(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: '(Microsoft )?(\.NET( Core)?|ASP\.NET Core)( Runtime| Desktop Runtime| SDK)?', version_pattern: '6\.0(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'dotnet-releases-index'
+        phases:
+          - {until: '2024-11-12', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'dotnet-5.0'
+    match:
+      - {kind: 'application', product_pattern: '(Microsoft )?(\.NET( Core)?|ASP\.NET Core)( Runtime| Desktop Runtime| SDK| Shared Framework| Hosting Bundle)?( -)? 5\.0(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: '(Microsoft )?(\.NET( Core)?|ASP\.NET Core)( Runtime| Desktop Runtime| SDK)?', version_pattern: '5\.0(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'dotnet-releases-index'
+        phases:
+          - {until: '2022-05-10', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'dotnet-3.1'
+    match:
+      - {kind: 'application', product_pattern: '(Microsoft )?(\.NET( Core)?|ASP\.NET Core)( Runtime| Desktop Runtime| SDK| Shared Framework| Hosting Bundle)?( -)? 3\.1(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: '(Microsoft )?(\.NET( Core)?|ASP\.NET Core)( Runtime| Desktop Runtime| SDK)?', version_pattern: '3\.1(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'dotnet-releases-index'
+        phases:
+          - {until: '2022-12-13', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'dotnet-3.0'
+    match:
+      - {kind: 'application', product_pattern: '(Microsoft )?(\.NET( Core)?|ASP\.NET Core)( Runtime| Desktop Runtime| SDK| Shared Framework| Hosting Bundle)?( -)? 3\.0(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: '(Microsoft )?(\.NET( Core)?|ASP\.NET Core)( Runtime| Desktop Runtime| SDK)?', version_pattern: '3\.0(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'dotnet-releases-index'
+        phases:
+          - {until: '2020-03-03', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'dotnet-2.1'
+    match:
+      - {kind: 'application', product_pattern: '(Microsoft )?(\.NET( Core)?|ASP\.NET Core)( Runtime| Desktop Runtime| SDK| Shared Framework| Hosting Bundle)?( -)? 2\.1(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: '(Microsoft )?(\.NET( Core)?|ASP\.NET Core)( Runtime| Desktop Runtime| SDK)?', version_pattern: '2\.1(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'dotnet-releases-index'
+        phases:
+          - {until: '2021-08-21', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'dotnet-2.2'
+    match:
+      - {kind: 'application', product_pattern: '(Microsoft )?(\.NET( Core)?|ASP\.NET Core)( Runtime| Desktop Runtime| SDK| Shared Framework| Hosting Bundle)?( -)? 2\.2(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: '(Microsoft )?(\.NET( Core)?|ASP\.NET Core)( Runtime| Desktop Runtime| SDK)?', version_pattern: '2\.2(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'dotnet-releases-index'
+        phases:
+          - {until: '2019-12-23', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'dotnet-2.0'
+    match:
+      - {kind: 'application', product_pattern: '(Microsoft )?(\.NET( Core)?|ASP\.NET Core)( Runtime| Desktop Runtime| SDK| Shared Framework| Hosting Bundle)?( -)? 2\.0(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: '(Microsoft )?(\.NET( Core)?|ASP\.NET Core)( Runtime| Desktop Runtime| SDK)?', version_pattern: '2\.0(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'dotnet-releases-index'
+        phases:
+          - {until: '2018-10-01', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'dotnet-1.1'
+    match:
+      - {kind: 'application', product_pattern: '(Microsoft )?(\.NET( Core)?|ASP\.NET Core)( Runtime| Desktop Runtime| SDK| Shared Framework| Hosting Bundle)?( -)? 1\.1(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: '(Microsoft )?(\.NET( Core)?|ASP\.NET Core)( Runtime| Desktop Runtime| SDK)?', version_pattern: '1\.1(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'dotnet-releases-index'
+        phases:
+          - {until: '2019-06-27', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'dotnet-1.0'
+    match:
+      - {kind: 'application', product_pattern: '(Microsoft )?(\.NET( Core)?|ASP\.NET Core)( Runtime| Desktop Runtime| SDK| Shared Framework| Hosting Bundle)?( -)? 1\.0(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: '(Microsoft )?(\.NET( Core)?|ASP\.NET Core)( Runtime| Desktop Runtime| SDK)?', version_pattern: '1\.0(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'dotnet-releases-index'
+        phases:
+          - {until: '2019-06-27', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'oracle-java-8'
+    match:
+      - {kind: 'application', product_pattern: '(Oracle )?Java(\(TM\))?( SE)?( Development Kit| Runtime Environment)? (1\.8|8)( Update \d+)?(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: '(Oracle )?Java(\(TM\))?( SE)?( Development Kit| Runtime Environment)?', version_pattern: '(1\.8|8)(\.\d+)*(_\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'oracle-java-roadmap'
+        phases:
+          - {until: '2022-03', band: 'supported'}
+          - {until: '2030-12', band: 'security-only', condition: 'paid Oracle Extended Support'}
+        after: 'end-of-support'
+  - id: 'oracle-java-11'
+    match:
+      - {kind: 'application', product_pattern: '(Oracle )?Java(\(TM\))?( SE)?( Development Kit| Runtime Environment)? 11( Update \d+)?(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: '(Oracle )?Java(\(TM\))?( SE)?( Development Kit| Runtime Environment)?', version_pattern: '11(\.\d+)*(_\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'oracle-java-roadmap'
+        phases:
+          - {until: '2023-09', band: 'supported'}
+          - {until: '2032-01', band: 'security-only', condition: 'paid Oracle Extended Support'}
+        after: 'end-of-support'
+  - id: 'oracle-java-17'
+    match:
+      - {kind: 'application', product_pattern: '(Oracle )?Java(\(TM\))?( SE)?( Development Kit| Runtime Environment)? 17( Update \d+)?(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: '(Oracle )?Java(\(TM\))?( SE)?( Development Kit| Runtime Environment)?', version_pattern: '17(\.\d+)*(_\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'oracle-java-roadmap'
+        phases:
+          - {until: '2026-09', band: 'supported'}
+          - {until: '2029-09', band: 'security-only', condition: 'paid Oracle Extended Support'}
+        after: 'end-of-support'
+  - id: 'oracle-java-21'
+    match:
+      - {kind: 'application', product_pattern: '(Oracle )?Java(\(TM\))?( SE)?( Development Kit| Runtime Environment)? 21( Update \d+)?(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: '(Oracle )?Java(\(TM\))?( SE)?( Development Kit| Runtime Environment)?', version_pattern: '21(\.\d+)*(_\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'oracle-java-roadmap'
+        phases:
+          - {until: '2028-09', band: 'supported'}
+          - {until: '2031-09', band: 'security-only', condition: 'paid Oracle Extended Support'}
+        after: 'end-of-support'
+  - id: 'oracle-java-25'
+    match:
+      - {kind: 'application', product_pattern: '(Oracle )?Java(\(TM\))?( SE)?( Development Kit| Runtime Environment)? 25( Update \d+)?(\.\d+)*( .*)?'}
+      - {kind: 'application', product_pattern: '(Oracle )?Java(\(TM\))?( SE)?( Development Kit| Runtime Environment)?', version_pattern: '25(\.\d+)*(_\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'oracle-java-roadmap'
+        phases:
+          - {until: '2030-09', band: 'supported'}
+          - {until: '2033-09', band: 'security-only', condition: 'paid Oracle Extended Support'}
+        after: 'end-of-support'
+  - id: 'temurin-8'
+    match:
+      - {kind: 'application', product_pattern: '(Eclipse )?Temurin( JDK| JRE)?( with Hotspot)? 8(\.\d+)*(u\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: '(Eclipse )?Temurin( JDK| JRE)?( with Hotspot)?', version_pattern: '8(\.\d+)*(u\d+)?(-b\d+)?(\+\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'adoptium-support'
+        phases:
+          - {until: '2030-12', band: 'supported'}
+        after: 'unknown'
+  - id: 'temurin-11'
+    match:
+      - {kind: 'application', product_pattern: '(Eclipse )?Temurin( JDK| JRE)?( with Hotspot)? 11(\.\d+)*(u\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: '(Eclipse )?Temurin( JDK| JRE)?( with Hotspot)?', version_pattern: '11(\.\d+)*(u\d+)?(-b\d+)?(\+\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'adoptium-support'
+        phases:
+          - {until: '2027-10', band: 'supported'}
+        after: 'unknown'
+  - id: 'temurin-17'
+    match:
+      - {kind: 'application', product_pattern: '(Eclipse )?Temurin( JDK| JRE)?( with Hotspot)? 17(\.\d+)*(u\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: '(Eclipse )?Temurin( JDK| JRE)?( with Hotspot)?', version_pattern: '17(\.\d+)*(u\d+)?(-b\d+)?(\+\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'adoptium-support'
+        phases:
+          - {until: '2027-10', band: 'supported'}
+        after: 'unknown'
+  - id: 'temurin-21'
+    match:
+      - {kind: 'application', product_pattern: '(Eclipse )?Temurin( JDK| JRE)?( with Hotspot)? 21(\.\d+)*(u\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: '(Eclipse )?Temurin( JDK| JRE)?( with Hotspot)?', version_pattern: '21(\.\d+)*(u\d+)?(-b\d+)?(\+\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'adoptium-support'
+        phases:
+          - {until: '2029-12', band: 'supported'}
+        after: 'unknown'
+  - id: 'temurin-25'
+    match:
+      - {kind: 'application', product_pattern: '(Eclipse )?Temurin( JDK| JRE)?( with Hotspot)? 25(\.\d+)*(u\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: '(Eclipse )?Temurin( JDK| JRE)?( with Hotspot)?', version_pattern: '25(\.\d+)*(u\d+)?(-b\d+)?(\+\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'adoptium-support'
+        phases:
+          - {until: '2031-09', band: 'supported'}
+        after: 'unknown'
+  - id: 'apache-httpd-2.0'
+    match:
+      - {kind: 'application', product_pattern: '(Apache( HTTP Server)?|httpd) 2\.0(\.\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: 'Apache( HTTP Server)?|httpd', version_pattern: '2\.0(\.\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-apache-http-server'
+        phases:
+          - {until: '2013-07-10', band: 'supported'}
+        after: 'end-of-life'
+  - id: 'apache-httpd-2.2'
+    match:
+      - {kind: 'application', product_pattern: '(Apache( HTTP Server)?|httpd) 2\.2(\.\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: 'Apache( HTTP Server)?|httpd', version_pattern: '2\.2(\.\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-apache-http-server'
+        phases:
+          - {until: '2017-07-11', band: 'supported'}
+        after: 'end-of-life'
+  - id: 'openssl-4.0'
+    match:
+      - {kind: 'application', product_pattern: 'OpenSSL 4\.0(\.\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: 'OpenSSL|openssl|libssl', version_pattern: '4\.0(\.\d+)?'}
+      - {kind: 'library', product_pattern: 'OpenSSL 4\.0(\.\d+)?( .*)?'}
+      - {kind: 'library', product_pattern: 'OpenSSL|openssl|libssl', version_pattern: '4\.0(\.\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'openssl-release-strategy'
+        phases:
+          - {until: '2027-05-14', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'openssl-3.6'
+    match:
+      - {kind: 'application', product_pattern: 'OpenSSL 3\.6(\.\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: 'OpenSSL|openssl|libssl', version_pattern: '3\.6(\.\d+)?'}
+      - {kind: 'library', product_pattern: 'OpenSSL 3\.6(\.\d+)?( .*)?'}
+      - {kind: 'library', product_pattern: 'OpenSSL|openssl|libssl', version_pattern: '3\.6(\.\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'openssl-release-strategy'
+        phases:
+          - {until: '2026-11-01', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'openssl-3.5'
+    match:
+      - {kind: 'application', product_pattern: 'OpenSSL 3\.5(\.\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: 'OpenSSL|openssl|libssl', version_pattern: '3\.5(\.\d+)?'}
+      - {kind: 'library', product_pattern: 'OpenSSL 3\.5(\.\d+)?( .*)?'}
+      - {kind: 'library', product_pattern: 'OpenSSL|openssl|libssl', version_pattern: '3\.5(\.\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'openssl-release-strategy'
+        phases:
+          - {until: '2030-04-08', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'openssl-3.4'
+    match:
+      - {kind: 'application', product_pattern: 'OpenSSL 3\.4(\.\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: 'OpenSSL|openssl|libssl', version_pattern: '3\.4(\.\d+)?'}
+      - {kind: 'library', product_pattern: 'OpenSSL 3\.4(\.\d+)?( .*)?'}
+      - {kind: 'library', product_pattern: 'OpenSSL|openssl|libssl', version_pattern: '3\.4(\.\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'openssl-release-strategy'
+        phases:
+          - {until: '2026-10-22', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'openssl-3.3'
+    match:
+      - {kind: 'application', product_pattern: 'OpenSSL 3\.3(\.\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: 'OpenSSL|openssl|libssl', version_pattern: '3\.3(\.\d+)?'}
+      - {kind: 'library', product_pattern: 'OpenSSL 3\.3(\.\d+)?( .*)?'}
+      - {kind: 'library', product_pattern: 'OpenSSL|openssl|libssl', version_pattern: '3\.3(\.\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-openssl'
+        phases:
+          - {until: '2026-04-09', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'openssl-3.2'
+    match:
+      - {kind: 'application', product_pattern: 'OpenSSL 3\.2(\.\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: 'OpenSSL|openssl|libssl', version_pattern: '3\.2(\.\d+)?'}
+      - {kind: 'library', product_pattern: 'OpenSSL 3\.2(\.\d+)?( .*)?'}
+      - {kind: 'library', product_pattern: 'OpenSSL|openssl|libssl', version_pattern: '3\.2(\.\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-openssl'
+        phases:
+          - {until: '2025-11-23', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'openssl-3.1'
+    match:
+      - {kind: 'application', product_pattern: 'OpenSSL 3\.1(\.\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: 'OpenSSL|openssl|libssl', version_pattern: '3\.1(\.\d+)?'}
+      - {kind: 'library', product_pattern: 'OpenSSL 3\.1(\.\d+)?( .*)?'}
+      - {kind: 'library', product_pattern: 'OpenSSL|openssl|libssl', version_pattern: '3\.1(\.\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-openssl'
+        phases:
+          - {until: '2025-03-14', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'openssl-3.0'
+    match:
+      - {kind: 'application', product_pattern: 'OpenSSL 3\.0(\.\d+)?( .*)?'}
+      - {kind: 'application', product_pattern: 'OpenSSL|openssl|libssl', version_pattern: '3\.0(\.\d+)?'}
+      - {kind: 'library', product_pattern: 'OpenSSL 3\.0(\.\d+)?( .*)?'}
+      - {kind: 'library', product_pattern: 'OpenSSL|openssl|libssl', version_pattern: '3\.0(\.\d+)?'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-openssl'
+        phases:
+          - {until: '2026-09-07', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'openssl-1.1.1'
+    match:
+      - {kind: 'application', product_pattern: 'OpenSSL 1\.1\.1[a-z]{0,2}( .*)?'}
+      - {kind: 'application', product_pattern: 'OpenSSL|openssl|libssl', version_pattern: '1\.1\.1[a-z]{0,2}'}
+      - {kind: 'library', product_pattern: 'OpenSSL 1\.1\.1[a-z]{0,2}( .*)?'}
+      - {kind: 'library', product_pattern: 'OpenSSL|openssl|libssl', version_pattern: '1\.1\.1[a-z]{0,2}'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-openssl'
+        phases:
+          - {until: '2023-09-11', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'openssl-1.1.0'
+    match:
+      - {kind: 'application', product_pattern: 'OpenSSL 1\.1\.0[a-z]{0,2}( .*)?'}
+      - {kind: 'application', product_pattern: 'OpenSSL|openssl|libssl', version_pattern: '1\.1\.0[a-z]{0,2}'}
+      - {kind: 'library', product_pattern: 'OpenSSL 1\.1\.0[a-z]{0,2}( .*)?'}
+      - {kind: 'library', product_pattern: 'OpenSSL|openssl|libssl', version_pattern: '1\.1\.0[a-z]{0,2}'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-openssl'
+        phases:
+          - {until: '2019-09-11', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'openssl-1.0.2'
+    match:
+      - {kind: 'application', product_pattern: 'OpenSSL 1\.0\.2[a-z]{0,2}( .*)?'}
+      - {kind: 'application', product_pattern: 'OpenSSL|openssl|libssl', version_pattern: '1\.0\.2[a-z]{0,2}'}
+      - {kind: 'library', product_pattern: 'OpenSSL 1\.0\.2[a-z]{0,2}( .*)?'}
+      - {kind: 'library', product_pattern: 'OpenSSL|openssl|libssl', version_pattern: '1\.0\.2[a-z]{0,2}'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-openssl'
+        phases:
+          - {until: '2019-12-31', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'openssl-1.0.1'
+    match:
+      - {kind: 'application', product_pattern: 'OpenSSL 1\.0\.1[a-z]{0,2}( .*)?'}
+      - {kind: 'application', product_pattern: 'OpenSSL|openssl|libssl', version_pattern: '1\.0\.1[a-z]{0,2}'}
+      - {kind: 'library', product_pattern: 'OpenSSL 1\.0\.1[a-z]{0,2}( .*)?'}
+      - {kind: 'library', product_pattern: 'OpenSSL|openssl|libssl', version_pattern: '1\.0\.1[a-z]{0,2}'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-openssl'
+        phases:
+          - {until: '2016-12-31', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'esxi-6.0'
+    match:
+      - {kind: 'hypervisor', product_pattern: '(VMware )?ESXi 6\.0(\.\d+)*( Update \w+)?( .*)?'}
+      - {kind: 'hypervisor', product_pattern: '(VMware )?ESXi', version_pattern: '6\.0(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-esxi'
+        phases:
+          - {until: '2020-03-12', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'esxi-6.5'
+    match:
+      - {kind: 'hypervisor', product_pattern: '(VMware )?ESXi 6\.5(\.\d+)*( Update \w+)?( .*)?'}
+      - {kind: 'hypervisor', product_pattern: '(VMware )?ESXi', version_pattern: '6\.5(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-esxi'
+        phases:
+          - {until: '2022-10-15', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'esxi-6.7'
+    match:
+      - {kind: 'hypervisor', product_pattern: '(VMware )?ESXi 6\.7(\.\d+)*( Update \w+)?( .*)?'}
+      - {kind: 'hypervisor', product_pattern: '(VMware )?ESXi', version_pattern: '6\.7(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-esxi'
+        phases:
+          - {until: '2022-10-15', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'esxi-7.0'
+    match:
+      - {kind: 'hypervisor', product_pattern: '(VMware )?ESXi 7\.0(\.\d+)*( Update \w+)?( .*)?'}
+      - {kind: 'hypervisor', product_pattern: '(VMware )?ESXi', version_pattern: '7\.0(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-esxi'
+        phases:
+          - {until: '2025-10-02', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'esxi-8.0'
+    match:
+      - {kind: 'hypervisor', product_pattern: '(VMware )?ESXi 8\.0(\.\d+)*( Update \w+)?( .*)?'}
+      - {kind: 'hypervisor', product_pattern: '(VMware )?ESXi', version_pattern: '8\.0(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-esxi'
+        phases:
+          - {until: '2027-10-11', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'vcenter-6.0'
+    match:
+      - {kind: 'application', product_pattern: '(VMware )?vCenter( Server)?( Appliance)? 6\.0(\.\d+)*( Update \w+)?( .*)?'}
+      - {kind: 'application', product_pattern: '(VMware )?vCenter( Server)?( Appliance)?', version_pattern: '6\.0(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-vcenter'
+        phases:
+          - {until: '2020-03-12', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'vcenter-6.5'
+    match:
+      - {kind: 'application', product_pattern: '(VMware )?vCenter( Server)?( Appliance)? 6\.5(\.\d+)*( Update \w+)?( .*)?'}
+      - {kind: 'application', product_pattern: '(VMware )?vCenter( Server)?( Appliance)?', version_pattern: '6\.5(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-vcenter'
+        phases:
+          - {until: '2022-10-15', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'vcenter-6.7'
+    match:
+      - {kind: 'application', product_pattern: '(VMware )?vCenter( Server)?( Appliance)? 6\.7(\.\d+)*( Update \w+)?( .*)?'}
+      - {kind: 'application', product_pattern: '(VMware )?vCenter( Server)?( Appliance)?', version_pattern: '6\.7(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-vcenter'
+        phases:
+          - {until: '2022-10-15', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'vcenter-7.0'
+    match:
+      - {kind: 'application', product_pattern: '(VMware )?vCenter( Server)?( Appliance)? 7\.0(\.\d+)*( Update \w+)?( .*)?'}
+      - {kind: 'application', product_pattern: '(VMware )?vCenter( Server)?( Appliance)?', version_pattern: '7\.0(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-vcenter'
+        phases:
+          - {until: '2025-10-02', band: 'supported'}
+        after: 'end-of-support'
+  - id: 'vcenter-8.0'
+    match:
+      - {kind: 'application', product_pattern: '(VMware )?vCenter( Server)?( Appliance)? 8\.0(\.\d+)*( Update \w+)?( .*)?'}
+      - {kind: 'application', product_pattern: '(VMware )?vCenter( Server)?( Appliance)?', version_pattern: '8\.0(\.\d+)*'}
+    variants:
+      - name: 'vendor lifecycle'
+        source: 'endoflife-vcenter'
+        phases:
+          - {until: '2027-10-11', band: 'supported'}
+        after: 'end-of-support'

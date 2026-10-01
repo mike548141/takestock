@@ -1,3 +1,122 @@
-# Vendor-published end-of-servicing dates for Windows releases.
-# Placeholder: no releases are recorded yet.
+# Windows client and server servicing dates, from Microsoft's published lifecycle.
+#
+# A Windows device reports a version string such as 10.0.26100.1234. The third part is the OS
+# build, and the build selects a feature-update version (26100 is Windows 11 version 24H2). The
+# end of servicing for that version then depends on the edition: Enterprise and Education get a
+# longer window than Home and Pro for the same build. So every table here is either keyed by build
+# for one edition family, or lists products that carry their own build.
+#
+# Where the dates come from (all public Microsoft pages):
+#   https://learn.microsoft.com/lifecycle/products/windows-11-enterprise-and-education
+#   https://learn.microsoft.com/lifecycle/products/windows-11-home-and-pro
+#   https://learn.microsoft.com/lifecycle/products/windows-10-enterprise-and-education
+#   https://learn.microsoft.com/lifecycle/products/windows-10-home-and-pro
+#   https://learn.microsoft.com/lifecycle/products/ (one page per LTSC and Windows Server release)
+#   https://learn.microsoft.com/windows/release-health/windows11-release-information
+#   https://learn.microsoft.com/windows/release-health/release-information
+#   https://learn.microsoft.com/windows-server/get-started/windows-server-release-info
+# The release-information pages give the version-to-build mapping and state dates as calendar
+# days. The lifecycle pages give each end as an instant early on the following morning (shown as
+# 6:59:59 AM, Pacific time); this file records the last full day of support, which is the day
+# before that instant. Read against the lifecycle pages, every `end` here is one day earlier than
+# the date those pages display. Where both kinds of page give a date for the same version, the
+# release-information page is used, and a comment on the row says so if the two disagree.
+#
+# Dates are ISO 8601 days. `start` is availability; `end` (or `extended_end` where a product has
+# one) is the last day security updates are published without a paid extension.
+#
+# Tables:
+#   windows_11_enterprise_education  Windows 11 General Availability Channel, Enterprise,
+#                                    Education, IoT Enterprise and Enterprise multi-session
+#   windows_11_home_pro              Windows 11 General Availability Channel, Home, Pro,
+#                                    Pro Education and Pro for Workstations
+#   windows_10_enterprise_education  Windows 10, the same edition split as above
+#   windows_10_home_pro
+#   windows_ltsc                     Long-Term Servicing Channel and Branch releases; these share a
+#                                    build with a General Availability version but not its dates
+#   windows_server                   Windows Server Long-Term Servicing Channel releases;
+#                                    `esu_end` is the last year of paid Extended Security Updates
+#                                    outside Azure, where Microsoft offered them
+# `editions_covered` lists the editions the windows_11_enterprise_education table may be applied
+# to: the four the Windows 11 release-information page names for that column ("Enterprise,
+# Education, IoT Enterprise, and Enterprise multi-session"), written without spaces as device
+# inventories report them. A device whose edition is not listed is left unmatched rather than
+# given another edition's dates.
+#
+# Not included: Windows Server Semi-Annual and Annual Channel releases, and the paid Extended
+# Security Updates offer for Windows 10, whose end dates Microsoft does not list on the pages
+# above.
+#
+# To extend it: add a row per new version from the release-information page, keyed by its OS
+# build, and check the build against the page heading ("Version 26H2 (OS build 26300)").
 schema: 1
+editions_covered: [Enterprise, Education, IoTEnterprise, EnterpriseMultisession]
+
+windows_11_enterprise_education:
+  "22000": {version: "21H2", start: "2021-10-04", end: "2024-10-08"}
+  "22621": {version: "22H2", start: "2022-09-20", end: "2025-10-14"}
+  "22631": {version: "23H2", start: "2023-10-31", end: "2026-11-10"}
+  "26100": {version: "24H2", start: "2024-10-01", end: "2027-10-12"}
+  "26200": {version: "25H2", start: "2025-09-30", end: "2028-10-10"}
+  "26300": {version: "26H2", start: "2026-09-29", end: "2029-10-09"}  # release-information page; the lifecycle page gives 2029-10-08
+  "28000": {version: "26H1", start: "2026-02-10", end: "2029-03-13"}
+
+windows_11_home_pro:
+  "22000": {version: "21H2", start: "2021-10-04", end: "2023-10-10"}
+  "22621": {version: "22H2", start: "2022-09-20", end: "2024-10-08"}
+  "22631": {version: "23H2", start: "2023-10-31", end: "2025-11-11"}
+  "26100": {version: "24H2", start: "2024-10-01", end: "2026-10-13"}
+  "26200": {version: "25H2", start: "2025-09-30", end: "2027-10-12"}
+  "26300": {version: "26H2", start: "2026-09-29", end: "2028-10-10"}  # release-information page; the lifecycle page gives 2028-10-09
+  "28000": {version: "26H1", start: "2026-02-10", end: "2028-03-14"}
+
+windows_10_enterprise_education:
+  "10240": {version: "1507", start: "2015-07-29", end: "2017-05-09"}
+  "10586": {version: "1511", start: "2015-11-10", end: "2017-10-10"}
+  "14393": {version: "1607", start: "2016-08-02", end: "2019-04-09"}
+  "15063": {version: "1703", start: "2017-04-11", end: "2019-10-08"}
+  "16299": {version: "1709", start: "2017-10-17", end: "2020-10-13"}
+  "17134": {version: "1803", start: "2018-04-30", end: "2021-05-11"}
+  "17763": {version: "1809", start: "2018-11-13", end: "2021-05-11"}
+  "18362": {version: "1903", start: "2019-05-21", end: "2020-12-08"}
+  "18363": {version: "1909", start: "2019-11-12", end: "2022-05-10"}
+  "19041": {version: "2004", start: "2020-05-27", end: "2021-12-14"}
+  "19042": {version: "20H2", start: "2020-10-20", end: "2023-05-09"}
+  "19043": {version: "21H1", start: "2021-05-18", end: "2022-12-13"}
+  "19044": {version: "21H2", start: "2021-11-16", end: "2024-06-11"}
+  "19045": {version: "22H2", start: "2022-10-18", end: "2025-10-14"}
+
+windows_10_home_pro:
+  "10240": {version: "1507", start: "2015-07-29", end: "2017-05-09"}
+  "10586": {version: "1511", start: "2015-11-10", end: "2017-10-10"}
+  "14393": {version: "1607", start: "2016-08-02", end: "2018-04-10"}
+  "15063": {version: "1703", start: "2017-04-11", end: "2018-10-09"}
+  "16299": {version: "1709", start: "2017-10-17", end: "2019-04-09"}
+  "17134": {version: "1803", start: "2018-04-30", end: "2019-11-12"}
+  "17763": {version: "1809", start: "2018-11-13", end: "2020-11-10"}
+  "18362": {version: "1903", start: "2019-05-21", end: "2020-12-08"}
+  "18363": {version: "1909", start: "2019-11-12", end: "2021-05-11"}
+  "19041": {version: "2004", start: "2020-05-27", end: "2021-12-14"}
+  "19042": {version: "20H2", start: "2020-10-20", end: "2022-05-10"}
+  "19043": {version: "21H1", start: "2021-05-18", end: "2022-12-13"}
+  "19044": {version: "21H2", start: "2021-11-16", end: "2023-06-13"}
+  "19045": {version: "22H2", start: "2022-10-18", end: "2025-10-14"}
+
+windows_ltsc:
+  - {product: "Windows 10 2015 LTSB", version: "1507", build: "10240", start: "2015-07-29", mainstream_end: "2020-10-13", extended_end: "2025-10-14"}
+  - {product: "Windows 10 2016 LTSB", version: "1607", build: "14393", start: "2016-08-02", mainstream_end: "2021-10-12", extended_end: "2026-10-13"}
+  - {product: "Windows 10 Enterprise LTSC 2019", version: "1809", build: "17763", start: "2018-11-13", mainstream_end: "2024-01-09", extended_end: "2029-01-09"}
+  - {product: "Windows 10 Enterprise LTSC 2021", version: "21H2", build: "19044", start: "2021-11-16", mainstream_end: "2027-01-12"}
+  - {product: "Windows 10 IoT Enterprise LTSC 2021", version: "21H2", build: "19044", start: "2021-11-16", mainstream_end: "2027-01-12", extended_end: "2032-01-13"}
+  - {product: "Windows 11 Enterprise LTSC 2024", version: "24H2", build: "26100", start: "2024-10-01", mainstream_end: "2029-10-09"}
+  - {product: "Windows 11 IoT Enterprise LTSC 2024", version: "24H2", build: "26100", start: "2024-10-01", mainstream_end: "2029-10-09", extended_end: "2034-10-10"}
+
+windows_server:
+  - {product: "Windows Server 2025", build: "26100", start: "2024-11-01", mainstream_end: "2029-11-13", extended_end: "2034-11-14"}
+  - {product: "Windows Server 2022", build: "20348", start: "2021-08-18", mainstream_end: "2026-10-13", extended_end: "2031-10-14"}
+  - {product: "Windows Server 2019", build: "17763", start: "2018-11-13", mainstream_end: "2024-01-09", extended_end: "2029-01-09"}
+  - {product: "Windows Server 2016", build: "14393", start: "2016-10-15", mainstream_end: "2022-01-11", extended_end: "2027-01-12"}
+  - {product: "Windows Server 2012 R2", start: "2013-11-25", mainstream_end: "2018-10-09", extended_end: "2023-10-10", esu_end: "2026-10-13"}
+  - {product: "Windows Server 2012", start: "2012-10-30", mainstream_end: "2018-10-09", extended_end: "2023-10-10", esu_end: "2026-10-13"}
+  - {product: "Windows Server 2008 R2", start: "2009-10-22", mainstream_end: "2015-01-13", extended_end: "2020-01-14", esu_end: "2023-01-10"}
+  - {product: "Windows Server 2008", start: "2008-05-06", mainstream_end: "2015-01-13", extended_end: "2020-01-14", esu_end: "2023-01-10"}

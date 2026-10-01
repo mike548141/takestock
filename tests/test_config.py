@@ -96,11 +96,11 @@ def test_derived_ports_must_be_a_mapping(tmp_path):
     assert config.load_derived_ports({}) == {}
 
 
-def test_bundled_placeholders_load_as_minimal():
-    assert config.load_dictionary() == {}
-    assert config.load_vendor_domains() == {}
-    assert config.load_software_lifecycle() == {"schema": 1}
-    assert config.load_windows_lifecycle() == {"schema": 1}
+def test_bundled_reference_lists_load_through_the_config_readers():
+    assert config.load_dictionary()["sshd"]["product"]
+    assert config.load_vendor_domains()["github.com"]["vendor"] == "GitHub"
+    assert config.load_software_lifecycle()["schema"] == 1
+    assert config.load_windows_lifecycle()["schema"] == 1
 
 
 def test_absent_optional_data_files_load_as_empty(tmp_path, monkeypatch):
