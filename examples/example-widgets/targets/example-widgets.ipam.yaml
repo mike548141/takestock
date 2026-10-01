@@ -1,0 +1,130 @@
+# IP address plan for Example Widgets Ltd, a fictional manufacturer.
+#
+# This file holds what no export states: the sites, what each subnet is for,
+# and which sources to read. It never lists an address on its own authority.
+# Addresses come from the sources below, or from `documented_addresses`, each
+# of which names a dated document source.
+#
+# Every address here is from a range reserved for documentation (RFC 5737 and
+# RFC 3849), and every name is under the reserved .test domain.
+#
+# Build it with:
+#   python -m takestock.ipam examples/example-widgets/targets/example-widgets.ipam.yaml OUT_DIR \
+#       --exports examples/example-widgets/exports
+
+organisation:
+  name: Example Widgets Ltd
+
+title: IP address plan
+subtitle: Every site, with the evidence for each address
+summary:
+  - >-
+    Every range the organisation uses, where it lives, what is on it, and how
+    sure each fact is. Addresses come from exports and documents named under
+    Sources, each with its date.
+
+sites:
+  - id: head-office
+    name: Head office
+    kind: office
+    description: Offices, the server room and the main print room.
+    ranges: [192.0.2.0/24, "2001:db8:10::/48"]
+  - id: warehouse
+    name: Warehouse
+    kind: warehouse
+    description: Dispatch floor and the warehouse's own server cabinet.
+    ranges: [198.51.100.0/24, "2001:db8:20::/48"]
+  - id: edge
+    name: Internet edge
+    kind: internet-facing
+    operator: The organisation's internet provider
+    ranges: [203.0.113.0/24]
+  - id: showroom
+    name: Showroom
+    kind: office
+    status: planned
+    description: A retail showroom not yet connected.
+    ranges: ["2001:db8:30::/48"]
+
+subnets:
+  - {cidr: 192.0.2.0/26, site: head-office, environment: production, purpose: Servers,
+     vlan: 10, confidence: confirmed}
+  - {cidr: 192.0.2.64/26, site: head-office, purpose: Staff devices, vlan: 20,
+     addressing: dynamic}
+  - {cidr: 192.0.2.128/27, site: head-office, purpose: Printers, vlan: 30}
+  - {cidr: 192.0.2.192/27, site: head-office, purpose: Network device management, vlan: 99,
+     evidence: [network-diagram], only_sources: [network-diagram, asset-register]}
+  - {cidr: "2001:db8:10:1::/64", site: head-office, environment: production,
+     purpose: Servers (IPv6), vlan: 10}
+  - {cidr: 198.51.100.0/26, site: warehouse, environment: production, purpose: Servers,
+     vlan: 10}
+  - {cidr: 198.51.100.64/26, site: warehouse, purpose: Handheld scanners, vlan: 40,
+     addressing: dynamic}
+  - {cidr: 198.51.100.192/27, site: warehouse, purpose: Network device management, vlan: 40,
+     evidence: [network-diagram]}
+  - {cidr: 203.0.113.0/28, site: edge, scope: public, purpose: Published services}
+  - {cidr: 203.0.113.16/28, site: edge, scope: public, purpose: Spare public block,
+     evidence: [network-diagram]}
+
+# Address ranges that exist only inside a machine (container bridges and the
+# like). An address inside one describes no network, so it is set aside.
+host_internal_ranges:
+  - {cidr: "2001:db8:ffff::/48", reason: container bridge on staff laptops}
+
+sources:
+  - id: asset-register
+    kind: csv
+    label: Asset register export
+    path: asset-register.csv
+    as_of: 2030-03-01
+    as_of_basis: exported
+    columns: {ip: Address, name: Device, date: Last seen, mac: MAC, site: Location,
+              kind: Type}
+    authoritative_for: [warehouse]
+    supersedes: [asset-register-previous]
+  - id: asset-register-previous
+    kind: csv
+    label: Asset register export (previous)
+    path: asset-register-previous.csv
+    as_of: 2029-09-01
+    as_of_basis: exported
+    columns: {ip: Address, name: Device}
+  - id: laptop-checkins
+    kind: csv
+    label: Laptop check-in log
+    path: laptop-checkins.csv
+    as_of: 2030-02-28
+    as_of_basis: exported
+    roams: true
+    columns: {ip: IP, name: Computer, date: Seen}
+  - id: dns
+    kind: dns-zones
+    label: DNS zone export
+    path: dns
+    as_of: 2030-02-20
+    as_of_basis: exported
+  - id: network-diagram
+    kind: document
+    label: Network diagram
+    as_of: 2030-02-10
+    as_of_basis: issued
+
+documented_addresses:
+  - {ip: 192.0.2.193, name: core-sw-01, source: network-diagram,
+     note: core switch management interface}
+  - {ip: 198.51.100.193, name: wh-sw-01, source: network-diagram,
+     note: warehouse switch management interface}
+
+# Two sites laid out alike: each subnet at one should have a partner at the
+# same position in the other.
+mirrors:
+  - name: Head office and warehouse layouts
+    left: {site: head-office, prefix: 192.0.2.0/24}
+    right: {site: warehouse, prefix: 198.51.100.0/24}
+
+actions:
+  - id: A1
+    title: Confirm whether the spare public block is still held
+    subnets: [203.0.113.16/28]
+    detail: >-
+      The network diagram lists it, and no export shows anything using it.

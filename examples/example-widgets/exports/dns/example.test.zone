@@ -1,0 +1,12 @@
+$ORIGIN example.test.
+$TTL 3600
+@         IN SOA  ns1.example.test. hostmaster.example.test. ( 1 3600 600 86400 300 )
+@         IN NS   ns1.example.test.
+@         IN TXT  "v=spf1 ip4:203.0.113.6 -all"
+www       IN A    203.0.113.5
+mail      IN A    203.0.113.6
+old-ftp   IN A    203.0.113.9
+app-01    IN A    192.0.2.10
+app-01    IN AAAA 2001:db8:10:1::10
+intranet  IN CNAME app-01
+wh-app-01 IN A    198.51.100.10

@@ -1,0 +1,12 @@
+Device,Address,Last seen,MAC,Location,Type
+app-01,192.0.2.10,2030-02-27T08:00:00Z,02:00:00:00:00:10,Head office,Server
+app-01,2001:db8:10:1::10,2030-02-27T08:00:00Z,02:00:00:00:00:10,Head office,Server
+db-01,192.0.2.11,2030-02-27T08:00:00Z,02:00:00:00:00:11,Head office,Server
+print-01,192.0.2.130,2030-02-26T09:30:00Z,02:00:00:00:01:30,Head office,Printer
+print-02,192.0.2.130,2030-02-26T09:30:00Z,02:00:00:00:01:31,Head office,Printer
+wh-app-01,198.51.100.10,2030-02-27T08:00:00Z,02:00:00:00:02:10,Warehouse,Server
+wh-db-01,198.51.100.20,2030-02-27T08:00:00Z,02:00:00:00:02:20,Head office,Server
+scanner-01,198.51.100.65,2030-02-25T07:15:00Z,02:00:00:00:02:65,Warehouse,Scanner
+fw-01,203.0.113.1,2030-02-27T08:00:00Z,02:00:00:00:03:01,Internet edge,Firewall
+web-01,203.0.113.5,2030-02-27T08:00:00Z,02:00:00:00:03:05,Internet edge,Server
+spare-laptop,unknown,2030-01-10T10:00:00Z,,Head office,Laptop
