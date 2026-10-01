@@ -72,12 +72,36 @@ class DetectorsFire(unittest.TestCase):
         self.assertFalse(self.hits("tenant 00000000-0000-4000-8000-000000000001"))
 
     def test_denylist_term_is_caught_across_a_line_break_and_joins(self) -> None:
-        deny = [("Fictional Widget Co", guard.norm("Fictional Widget Co"))]
+        deny = [guard.make_term("Fictional Widget Co")]
         self.assertTrue(self.hits('a = "Fictional"\n  + " Widget-Co"', deny))
 
+    def test_long_denylist_term_is_caught_when_broken_mid_word(self) -> None:
+        deny = [guard.make_term("Fictional Widget Corporation")]
+        self.assertTrue(self.hits('a = "Fictional Wid" + "get Corporation"', deny))
+
     def test_denylist_ignores_accents(self) -> None:
-        deny = [("Mōhio Widgets", guard.norm("Mōhio Widgets"))]
-        self.assertTrue(self.hits("mohio widgets", deny))
+        deny = [guard.make_term("Crème Widgets")]
+        self.assertTrue(self.hits("creme widgets", deny))
+
+    def test_short_denylist_term_never_matches_inside_a_word(self) -> None:
+        deny = [guard.make_term("arc")]
+        self.assertFalse(self.hits("search the archive", deny))
+
+    def test_short_denylist_term_is_caught_inside_identifiers(self) -> None:
+        deny = [guard.make_term("FWC")]
+        for text in ("row['fwc_region']", "host FWC-WS-01", "fwcRegion = 1", "the FWC site"):
+            self.assertTrue(self.hits(text, deny), text)
+
+    def test_hostname_data_file_lifts_only_the_hostname_check(self) -> None:
+        line = "vendor.example-cloud" + "." + "com,Vendor,saas, see " + dotted(10, 1, 2, 3)
+        hits = guard.scan_text("t", line, self.allow, [], hostnames_are_data=True)
+        self.assertEqual(len(hits), 1)
+        self.assertIn("IPv4", hits[0])
+
+    def test_case_sensitive_denylist_term(self) -> None:
+        deny = [guard.make_term("=QRS")]
+        self.assertTrue(self.hits("the QRS site", deny))
+        self.assertFalse(self.hits("the qrs site", deny))
 
 
 if __name__ == "__main__":

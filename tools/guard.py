@@ -11,6 +11,12 @@ It **fails and never skips.** A repository with nothing in it still runs every
 check. There is no allow marker a line can carry. The only exemptions are the
 exact tokens listed in ``tools/guard-allow.txt``, which is reviewed like code.
 
+A reference-data file whose purpose is to list public domains (for example, which
+vendor owns which service domain) can be named on a ``hostname-data`` line in the
+allow file. Only the hostname check is lifted for that one file; addresses, emails,
+GUIDs and the denylist still apply, and each entry in such a file is reviewed like
+code.
+
 What it treats as safe by construction:
 
 * addresses reserved for documentation (RFC 5737, RFC 3849), plus loopback and
@@ -26,11 +32,17 @@ check for that, and this guard is only the floor beneath it.
 
 **Optional external denylist.** Anyone who works on takestock alongside their
 own private data can point ``git config takestock.denylist`` at a local file
-holding one term per line. The file stays outside the repository. Every term
-is then matched after both sides are normalised: case folded, accents
-stripped, and every character other than a letter or digit removed. A name
-split across lines, string joins or punctuation is still caught. When the
-setting is absent the guard says so and runs the generic checks.
+holding one term per line. The file stays outside the repository. Text and
+terms are both reduced to word pieces: runs of letters and runs of digits,
+case folded, accents stripped, camelCase split. A term matches when its pieces
+appear in order, so a name split across lines, string joins, underscores or
+punctuation is still caught, while a short term never matches inside a longer
+word (the term "abc" does not match "abcde", but does match "abc_region" and
+"ABC12"). A term of twelve or more letters and digits is also matched with
+every separator removed, which catches a name broken mid-word. A term written
+with a leading ``=`` is matched case-sensitively, for codes that are also
+ordinary words. When the setting is absent the guard says so and runs the
+generic checks.
 
 Guard declaration: this guard **forbids the act**. A leaked identifier cannot
 be recalled once published, so there is no cheap recovery to buy instead.
@@ -74,20 +86,55 @@ GUID = re.compile(r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4
 SYNTHETIC_GUID = re.compile(r"^00000000-0000-4000-8000-[0-9a-fA-F]{12}$")
 
 
-def norm(text: str) -> str:
-    """Casefold, strip accents (macrons included), keep letters and digits only."""
-    text = unicodedata.normalize("NFKD", text.casefold())
-    return "".join(c for c in text if c.isalnum() and not unicodedata.combining(c))
+FLAT_MIN = 12
+_CAMEL = re.compile(r"(?<=[a-z])(?=[A-Z])")
+_PIECE = re.compile(r"[^\W\d_]+|\d+")
+
+
+def pieces(text: str, fold: bool = True) -> list[str]:
+    """Letter runs and digit runs, accents (macrons included) stripped, camelCase split."""
+    text = "".join(c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c))
+    text = _CAMEL.sub(" ", text)
+    return _PIECE.findall(text.casefold() if fold else text)
+
+
+class Term:
+    """One denylist entry, ready to match. The original text is kept only in memory."""
+
+    def __init__(self, line: str) -> None:
+        self.case = line.startswith("=")
+        found = pieces(line[1:] if self.case else line, fold=not self.case)
+        self.seq = " " + " ".join(found) + " "
+        flat = "".join(found)
+        self.flat = flat if not self.case and len(flat) >= FLAT_MIN else ""
+        self.size = len(flat)
+
+    def found_in(self, text: str) -> bool:
+        found = pieces(text, fold=not self.case)
+        return self.seq in " " + " ".join(found) + " " or bool(self.flat and self.flat in "".join(found))
+
+
+def make_term(line: str) -> Term:
+    return Term(line)
+
+
+def _allow_lines() -> list[str]:
+    if not ALLOW_FILE.exists():
+        return []
+    return [ln.split("#", 1)[0].strip() for ln in ALLOW_FILE.read_text().splitlines()
+            if ln.split("#", 1)[0].strip()]
 
 
 def load_allow() -> set[str]:
-    if not ALLOW_FILE.exists():
-        return set()
-    return {ln.split("#", 1)[0].strip().lower() for ln in ALLOW_FILE.read_text().splitlines()
-            if ln.split("#", 1)[0].strip()}
+    return {ln.lower() for ln in _allow_lines() if not ln.startswith("hostname-data ")}
 
 
-def load_denylist() -> list[tuple[str, str]]:
+def load_hostname_data() -> set[str]:
+    """Reference-data files whose job is to list public domains (see guard-allow.txt)."""
+    return {ln.split(None, 1)[1] for ln in _allow_lines() if ln.startswith("hostname-data ")}
+
+
+def load_denylist() -> list[Term]:
     path = subprocess.run(["git", "-C", str(ROOT), "config", "--get", "takestock.denylist"],
                           capture_output=True, text=True).stdout.strip()
     if not path:
@@ -98,9 +145,9 @@ def load_denylist() -> list[tuple[str, str]]:
     if not p.is_file():
         raise SystemExit(f"guard: takestock.denylist points at {p}, which does not exist. "
                          "Refusing to run with a configured-but-missing denylist.")
-    terms = [ln.strip() for ln in p.read_text().splitlines() if ln.strip() and not ln.startswith("#")]
+    lines = [ln.strip() for ln in p.read_text().splitlines() if ln.strip() and not ln.startswith("#")]
     # Terms are never printed back: the report names the file and line only.
-    return [(t, norm(t)) for t in terms if len(norm(t)) >= 2]
+    return [t for t in (Term(ln) for ln in lines) if t.size >= 2]
 
 
 def host_ok(host: str, allow: set[str]) -> bool:
@@ -118,7 +165,8 @@ def ip_ok(text: str, allow: set[str]) -> bool | None:
     return text.lower() in allow or any(ip in n for n in DOC_NETS if n.version == ip.version)
 
 
-def scan_text(label: str, text: str, allow: set[str], deny: list[tuple[str, str]]) -> list[str]:
+def scan_text(label: str, text: str, allow: set[str], deny: list[Term],
+              hostnames_are_data: bool = False) -> list[str]:
     hits: list[str] = []
     for n, line in enumerate(text.splitlines(), 1):
         where = f"{label}:{n}"
@@ -133,19 +181,19 @@ def scan_text(label: str, text: str, allow: set[str], deny: list[tuple[str, str]
             if not host_ok(m.group(1), allow):
                 hits.append(f"{where}: email address at a real domain: {m.group(0)}")
         for m in HOST.finditer(line):
+            if hostnames_are_data:
+                break
             if not host_ok(m.group(1), allow) and "@" + m.group(1) not in line:
                 hits.append(f"{where}: hostname outside reserved domains: {m.group(1)}")
         for m in GUID.finditer(line):
             if not SYNTHETIC_GUID.match(m.group(0)) and m.group(0).lower() not in allow:
                 hits.append(f"{where}: GUID not in the synthetic 00000000-0000-4000-8000-… shape")
-    if deny:
-        flat = norm(text)
-        for _term, nt in deny:
-            if nt in flat:
-                # Locate the line without echoing the term.
-                line_no = next((i for i, ln in enumerate(text.splitlines(), 1) if nt in norm(ln)), None)
-                at = f"{label}:{line_no}" if line_no else f"{label} (spans lines)"
-                hits.append(f"{at}: matches a term in the external denylist")
+    for term in deny:
+        if term.found_in(text):
+            # Locate the line without echoing the term.
+            line_no = next((i for i, ln in enumerate(text.splitlines(), 1) if term.found_in(ln)), None)
+            at = f"{label}:{line_no}" if line_no else f"{label} (spans lines)"
+            hits.append(f"{at}: matches a term in the external denylist")
     return hits
 
 
@@ -157,6 +205,7 @@ def tracked_files() -> list[Path]:
 
 def main(argv: list[str]) -> int:
     allow = load_allow()
+    host_data = load_hostname_data()
     deny = load_denylist()
     hits: list[str] = []
     for path in tracked_files():
@@ -168,7 +217,7 @@ def main(argv: list[str]) -> int:
             hits.append(f"{rel}: binary file. The guard cannot read it, so it is refused "
                         "(fixtures must be text)")
             continue
-        hits += scan_text(rel, raw.decode("utf-8", "replace"), allow, deny)
+        hits += scan_text(rel, raw.decode("utf-8", "replace"), allow, deny, rel in host_data)
     if "--msg" in argv:
         msg = Path(argv[argv.index("--msg") + 1]).read_text()
         body = "\n".join(ln for ln in msg.splitlines() if not ln.startswith("#"))

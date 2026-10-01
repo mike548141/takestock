@@ -1,3 +1,6 @@
 #!/bin/sh
 # Commit messages are public too: scan the message as well as the tree.
-exec python3 "$(git rev-parse --show-toplevel)/tools/guard.py" --msg "$1"
+python3 "$(git rev-parse --show-toplevel)/tools/guard.py" --msg "$1" || exit 1
+# The optional local check sees the message as well (called as: <command> commit-msg FILE).
+extra="$(git config --get takestock.extraHook)"
+[ -z "$extra" ] || exec sh -c "$extra commit-msg \"\$1\"" sh "$1"

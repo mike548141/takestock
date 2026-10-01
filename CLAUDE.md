@@ -72,7 +72,10 @@ limited to public standards bodies and software projects, and a change to that
 file is reviewed like code. A contributor who works alongside private data can
 point `git config takestock.denylist` at a local file of terms. The file stays
 outside the repository, and the guard then matches those terms case-folded,
-accent-stripped and across line breaks.
+accent-stripped and across line breaks, as whole words (a leading `=` makes a
+term case-sensitive). They can also add a check of their own to both hooks with
+`git config takestock.extraHook "<command>"`; it is called as `<command>
+pre-commit` and `<command> commit-msg FILE`, and a failure blocks the commit.
 
 The guard is only the floor. It catches exact identifiers (addresses, hostnames,
 IDs, and any denylist terms), which are finite and precise, and nothing else.

@@ -1,3 +1,7 @@
 #!/bin/sh
 # Refuse any commit whose tree carries an organisation's identifiers.
-exec python3 "$(git rev-parse --show-toplevel)/tools/guard.py"
+python3 "$(git rev-parse --show-toplevel)/tools/guard.py" || exit 1
+# A contributor may add a check of their own, kept outside the repository:
+#   git config takestock.extraHook "<command>"   (called as: <command> pre-commit)
+extra="$(git config --get takestock.extraHook)"
+[ -z "$extra" ] || exec sh -c "$extra pre-commit"

@@ -1,8 +1,8 @@
 # Public reference domains and tokens the guard accepts, one per line.
 # A domain entry also covers its subdomains. Every entry must be public and
 # must point at no particular organisation's estate: standards bodies,
-# publishers of guidance, and software projects. Adding a line is a reviewed
-# change.
+# publishers of guidance, software projects, and software vendors' public
+# documentation sites cited as sources. Adding a line is a reviewed change.
 apache.org
 github.com
 python.org
@@ -22,3 +22,24 @@ ncsc.govt.nz
 digital.govt.nz
 protectivesecurity.govt.nz
 legislation.govt.nz
+# The AI coding assistant's co-author trailer address in commit messages.
+anthropic.com
+# Software vendors' public lifecycle and documentation pages, cited as sources
+# in the reference data.
+learn.microsoft.com
+oracle.com
+ubuntu.com
+postgresql.org
+openssl-library.org
+adoptium.net
+endoflife.date
+# Reference-data files whose purpose is to list public vendor domains. Only the
+# hostname check is lifted for these files; every row is still reviewed.
+hostname-data src/takestock/data/vendor-domains.csv
+# Namespaces inside standard SSH algorithm names (for example
+# chacha20-poly1305 at openssh.com); they name software projects, not hosts.
+openssh.com
+libssh.org
+lysator.liu.se
+# Publisher of the CNSA 2.0 algorithm suite, cited in the baseline policy.
+nsa.gov
