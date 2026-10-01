@@ -269,6 +269,22 @@ third.
   version to mail between government organisations. See the companion
   document.
 
+### DMARC `p=reject`: the New Zealand bar and the DMARC standard pull opposite ways
+
+- NZISM `15.2.36.C.02` (MUST) asks for a DMARC policy of `p=reject`, and the
+  SGE DMARC Deployment Guide says *"All domains must have a p=reject DMARC
+  policy."*
+- RFC 9989 §7.4, the DMARC standard itself, says *"domains that host users
+  who might post messages to mailing lists SHOULD NOT publish Domain Owner
+  Assessment Policies of "p=reject""*, and that a domain wishing to publish
+  it *"SHOULD"* first publish `p=none` for at least a month and then
+  `p=quarantine` for as long again. The same section says a domain that
+  publishes `p=reject` *"MUST NOT rely solely on SPF"* and *"MUST apply valid
+  DKIM signatures"*.
+
+takestock grades the New Zealand requirement as written and cites the RFC
+beside it. An organisation not bound by the NZISM control weighs the two.
+
 ### Inside the NZISM itself
 
 - **AES key size.** The §17.2.13 summary table lists AES with a minimum
@@ -286,11 +302,13 @@ third.
   certificate authorities and matches a listed host (RFC 8461 §3.3 and §4).
 - **A malformed example record.** §15.2.18 prints the DMARC record
   `V=DMARC1;p=reject;sp=reject;adkim-s;aspf=s;…`. `adkim-s` has a hyphen where
-  RFC 7489 §6.4 requires `adkim=s`. Under RFC 7489 §6.3, syntax errors outside
-  the version and policy tags *"SHOULD be discarded in favor of default values
-  (if any) or ignored outright"*, and the default is relaxed alignment, so
-  copying the example leaves DKIM alignment relaxed. The SGE framework repeats
-  the same example (see the companion document).
+  the DMARC standard, RFC 9989 §4.7, defines the tag as `adkim=s`. Under RFC
+  9989 §4.8, *"Syntax errors in the remainder of the record MUST be discarded
+  in favor of default values (if any) or ignored outright"*, and §4.7 makes
+  relaxed alignment the default, so copying the example leaves DKIM alignment
+  relaxed. (RFC 9989 obsoletes RFC 7489, whose §6.3 said the same with
+  SHOULD.) The SGE framework repeats the same example
+  (see the companion document).
 
 ## Severity labels and remediation clocks
 
@@ -329,4 +347,4 @@ severity scale should avoid them:
 | NIST | IR 8547 ipd, Tables 2 and 4, §4.1.3 | <https://csrc.nist.gov/pubs/ir/8547/ipd>, <https://nvlpubs.nist.gov/nistpubs/ir/2024/NIST.IR.8547.ipd.pdf> |
 | NSA | *Announcing the Commercial National Security Algorithm Suite 2.0*, Ver. 1.0, September 2022 | NSA press release and advisory PP-22-1338 |
 | ASD | ISM, *Guidelines for cryptography*, September 2026 edition | Australian Cyber Security Centre website |
-| IETF | RFC 2119, RFC 8174, RFC 3207, RFC 7489, RFC 8301, RFC 8461 | <https://www.rfc-editor.org/rfc/> |
+| IETF | RFC 2119, RFC 8174, RFC 3207, RFC 7489, RFC 8301, RFC 8461, RFC 9989 | <https://www.rfc-editor.org/rfc/> |

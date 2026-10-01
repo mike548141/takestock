@@ -1,0 +1,271 @@
+# The Secure Government Email conformance note
+
+takestock reads an organisation's mail configuration against New Zealand's
+**Secure Government Email (SGE) Common Implementation Framework** and writes
+the result as a self-contained HTML **conformance note**. Every requirement
+in the framework gets a row, including those nothing outside the
+organisation can see, and every row says *met*, *not met* or *not
+measured*, with the reason.
+
+How takestock reads the framework itself (which sentences decide a level,
+where its documents disagree) is in
+[`SECURE-GOVERNMENT-EMAIL.md`](SECURE-GOVERNMENT-EMAIL.md). This guide is
+about the note: what it shows, how each verdict is decided, and what
+evidence settles each kind of requirement.
+
+## Terms used here
+
+- **Requirement set**: `src/takestock/data/secure-government-email.yaml`,
+  the framework's requirements in machine-readable form. Each carries its
+  level, the deciding sentence quoted verbatim, the document it came from,
+  and what would settle it.
+- **Reading**: one requirement read against one **subject**: an email
+  domain, a mail host, a mail path, or the organisation as a whole.
+- **Email domain**: a domain named under `discovery.email_domains` in the
+  target profile.
+- **Sweep**: the reading of each sub-domain name found in
+  certificate-transparency logs, for the records a name that sends no mail
+  should publish.
+
+## Producing the note
+
+```bash
+python -m takestock.sge_note <observation_dir> <target.yaml> <out.html>
+```
+
+For a plain-text table instead, against the workspace's latest observation
+(or one named with `--observation`):
+
+```bash
+python -m takestock.sge <target-name> [--observation <dir>] [--json]
+```
+
+The text report exits with status 1 when any requirement stated as *must*
+is not met, so a script can act on it.
+
+The target profile supplies:
+
+| Key | Used for |
+|---|---|
+| `discovery.email_domains` | The domains read |
+| `organisation` | The name in the note's title |
+| `branding` | Colours, fonts and logo for the page |
+| `sge.bulk_mail_domains` | The SPF policy domains of bulk-mail providers, used to annotate one recommendation (see below) |
+
+## What the note shows
+
+1. **Summary**: how many requirements are met, not met and not measured,
+   at each level; which *must* requirements are not met, and for which
+   subjects; and why the unmeasured ones could not be measured.
+2. **Requirement by requirement**, grouped by level: each with its deciding
+   sentence, where that sentence was read, what it applies to, its source
+   document, and a table of readings (subject, result, what was observed,
+   and the explanation).
+3. **Not measured, and what would settle it**: every unsettled reading,
+   with the evidence that would settle it.
+4. **DNS records read, per domain**: the record text as read, and which
+   requirements read it.
+5. **What this note cannot show**: the limits of reading a mail
+   configuration from outside.
+6. **Appendix: evidence files**: the observation's `assets.json` and every
+   file under its `raw/` and `evidence/` directories, each with its size and
+   SHA-256 digest, so a reader can confirm they hold the same files.
+
+The note carries the framework's own implementation date as the
+framework's, beside the summary.
+
+## Levels
+
+The note groups requirements in two levels:
+
+| Level | Includes | An unmet one is |
+|---|---|---|
+| **Must** | sentences that say *must*, *must not* or *mandatory* | a breach of the framework |
+| **Recommended** | sentences that say *should*, *recommended* or *advised*, and bare instructions that carry no keyword | a recommendation not followed, never a breach |
+
+## How a verdict is decided
+
+### One reading
+
+Each reading has one of three results:
+
+| Result | Means |
+|---|---|
+| **Met** (`pass`) | The evidence shows the requirement is satisfied for this subject |
+| **Not met** (`fail`) | The evidence shows it is not |
+| **Not measured** | The evidence cannot settle it, for one of three reasons |
+
+The three reasons a reading is not measured:
+
+| Reason | Means |
+|---|---|
+| `no-instrument` | Nothing outside the organisation can see this |
+| `not-collected` | Visible from outside, but nothing in this observation reads it |
+| `inconclusive` | The check ran and could not settle it |
+
+### One requirement
+
+A requirement's result is worked out from all its readings:
+
+- **not met** if any reading failed;
+- **met** only if there is at least one reading and every one passed;
+- otherwise **not measured**.
+
+One reading that could not be measured therefore leaves the requirement
+unmeasured, never met. "No *must* requirement was found unmet" is not the
+same as conformance, and the note says so whenever unmeasured requirements
+remain.
+
+### Readings that can only fail
+
+The sweep reads the sub-domain names certificate-transparency logs list. That
+is a floor, not the full set: a name nobody has served TLS on never appears.
+So for the sub-domain requirements one name without the required record
+settles the requirement as **not met**, while any number of names carrying it
+leaves it **not measured**. These readings can report a breach and can never
+report conformance.
+
+The sweep also asks for a name nobody has registered in the same batch. If
+that control name answers, the run cannot tell an absent record from a
+resolver that did not reply, and nothing is graded from it.
+
+## What evidence settles each requirement
+
+The rows below come from an observation. The DNS and policy readings come
+from the `ct_dns` collector, the receiving mail hosts' TLS from
+`smtp_starttls`, and the sender-policy lookups from `spf_senders` (see
+[`COLLECTORS.md`](COLLECTORS.md)).
+
+### Read from public DNS and the MTA-STS policy
+
+| Requirement | Level | Reads | Met | Not met | Not measured |
+|---|---|---|---|---|---|
+| SGE-SPF-01 SPF ending in hardfail | must | the domain's SPF record | ends `-all` | ends `~all`, or neither | no SPF record was read |
+| SGE-DMARC-01 DMARC reject | must | the DMARC record | `p=reject` at 100% (`pct` absent or 100) | any other policy, or `pct` below 100 | no DMARC record was read |
+| SGE-MTASTS-01 MTA-STS in enforce mode | must | the `_mta-sts` record and the policy file | `mode: enforce` | no record published, or any other mode | the policy file could not be fetched, so the mode was not read |
+| SGE-MTASTS-02 every MX listed, no wildcards | must | the policy's `mx:` lines against the MX records | every MX host matched, no wildcard | an MX host unmatched, or a wildcard used | no policy, unreachable policy, or no MX reading |
+| SGE-TLSRPT-01 TLS reporting | must | the record at `_smtp._tls.<domain>` | published with a `rua=` address | not published, or no `rua=` | no lookup recorded |
+| SGE-DMARC-04 a DMARC reporting tool | must | the DMARC record's `rua=` | never: a published address is consistent with a tool, not proof of one | no `rua=` address | an address is published (`no-instrument`) |
+| SGE-DKIM-R01 2048-bit DKIM keys | recommended | the key at each selector that answered | 2048 bits or more | shorter | no selector answered, or no size could be read |
+| SGE-DMARC-R01 strict DKIM alignment where no bulk mail | recommended | `adkim` | `adkim=s` | never | relaxed alignment: whether the domain sends bulk mail is not established |
+| SGE-DMARC-R02 strict SPF alignment | recommended | `aspf` | `aspf=s` | relaxed, including by omission | no DMARC record was read |
+| SGE-DMARC-R03 unwanted DMARC tags absent | recommended | the record's tags | none of `ruf`, `fo`, `pct`, `rf`, `ri` | any of them present | no DMARC record was read |
+| SGE-SPF-R01 no `ptr`, no overly broad ranges | recommended | the SPF terms | never: breadth of a range cannot be judged from DNS | `ptr` used | no `ptr` (`inconclusive`) |
+| SGE-SPF-R02 no legacy SPF2.0 records | recommended | every TXT record at the domain | none published | one or more published | no SPF reading, or the observation kept only the first SPF record |
+| SGE-DKIM-R02 a key per sending platform | recommended | the public keys of the selectors that answered | never | two selectors publish one key | no key shared (other selectors may exist) |
+
+A domain with no SPF or DMARC record at all produces no row for that record,
+so its reading is left *not measured* rather than *not met*. Read the
+explanation column: "no SPF record was read" on a domain that sends mail is
+worth checking by hand.
+
+For SGE-DMARC-R01, a domain whose sender policy authorises one of the
+`sge.bulk_mail_domains` is annotated as a reason to think the
+recommendation may not apply, without changing the verdict.
+
+DKIM selectors cannot be listed from DNS, so only the selectors the target
+profile names under `discovery.dkim_selectors`, plus a short list of common
+defaults, are tried. A selector that does not answer proves nothing.
+
+### Read from the sub-domain sweep
+
+| Requirement | Level | Not met when | Otherwise |
+|---|---|---|---|
+| SGE-NED-SPF-01 a denying SPF record (`v=spf1 -all`) on names that send no mail | must | any swept name lacks it | not measured |
+| SGE-NED-DKIM-01 an empty DKIM key (`v=DKIM1; p=`) on names that send no mail | must | any swept name lacks it | not measured |
+| SGE-NED-DMARC-01 a rejecting DMARC policy on names that send no mail | must | the domain's own record sets `sp=none`, or a swept name's own record, or the domain's record it falls back to, does not reject all failing mail | not measured |
+| SGE-NED-DMARC-R01 strict alignment and a reporting address on those names | recommended | a swept name, on its own record or the one it falls back to, lacks `adkim=s`, `aspf=s` or `rua=` | not measured |
+| SGE-DMARC-R05 `sp=` only on organisational domains | recommended | a swept sub-domain publishes its own `sp=` | not measured |
+
+Names the sweep finds sending mail are excluded and listed; names it could
+not read are listed as not read, so not counted either way.
+
+### Read from the mail hosts
+
+**SGE-TLS-01, TLS 1.2 minimum on email connections** (must) has two halves.
+
+The **receiving** half is read per MX host, from the STARTTLS probe of that
+host:
+
+| Result | When |
+|---|---|
+| Met | the host offers at least one version at or above TLS 1.2, and none of SSL 2.0, SSL 3.0, TLS 1.0 or TLS 1.1 |
+| Not met | it offers a forbidden version, or it answers without offering STARTTLS at all |
+| Not measured | no MX host was probed; the host gave no version list; or its versions could not be placed against the floor |
+
+A host that *accepts* TLS 1.0 permits what the framework forbids, but a
+probe cannot see what senders actually negotiate.
+
+The **sending** half needs the organisation's own record of each outbound
+delivery: rows with `source: mail_transport` and `extra.direction: outbound`,
+each giving `messages`, `no_tls_messages` and a `tls_distribution` such as
+`TLS1.2=900; TLS1.3=100`. Any collector, including one an organisation plugs
+in, can supply such rows; without them this half is *not measured*. With them,
+any delivery with no TLS, or at a forbidden version, is *not met*.
+
+**SGE-ITLS-01, Implicit TLS configured and enforced** (must) can at best be
+*not measured*. A transport export that separates mail exchanged with
+government organisations (`govt_messages`, `govt_no_tls_messages` and
+related fields on the same rows) lets the note report how much of that mail
+crossed in clear. But no per-message record shows the port or how the
+session was set up, so a forced-STARTTLS path and an Implicit TLS path look
+the same. Whether the requirement applies also depends on membership of the
+SGE Restricted Group, which nothing read here establishes.
+
+### Not observable from outside
+
+These are listed so the note covers every requirement. Each carries
+*not measured* with the reason `no-instrument`, and the evidence that would
+settle it:
+
+- SGE-DKIM-01 all outbound mail DKIM signed (a published key shows signing is
+  possible, not that every service signs);
+- SGE-DKIM-02 third-party platforms sign with the organisation's domain;
+- SGE-DMARC-02 inbound mail checked for DMARC and acted on;
+- SGE-DMARC-03 DMARC reports reviewed regularly;
+- SGE-DLP-01 and SGE-DLP-02 data loss prevention and keyword blocking;
+- SGE-DMARC-R04 failed mail to an administrator quarantine, not a junk folder;
+- SGE-MTASTS-R01 the policy host secure and highly available;
+- SGE-DLP-R01 the minimum keyword list blocked;
+- SGE-TLS-R01 unencrypted mail monitored;
+- SGE-TLS-R02 systems that cannot use TLS raised as a risk.
+
+SGE-DMARC-R06 (bulk mail from a separate sub-domain) is visible in
+principle, from the sending sources DMARC aggregate reports name, but
+nothing reads those yet, so it is `not-collected`.
+
+## Marking the assets
+
+`takestock.sge.apply_conformance(assets, domains)` runs the same evaluation
+and marks every asset row behind an unmet *must* with
+`standards_verdict: non-conformant`, the requirement, what was observed and
+the citation. The asset's own grade is not changed: the standard's verdict
+sits beside it.
+
+## Changing the requirement set
+
+Copy `src/takestock/data/secure-government-email.yaml` to
+`data/secure-government-email.yaml` in the workspace (the directory named by
+`TAKESTOCK_HOME`, or the current directory) and edit the copy, for example
+when the framework publishes a new version. Each requirement has:
+
+| Field | Meaning |
+|---|---|
+| `id`, `title` | The requirement's identifier and one-line name |
+| `level` | `must` or `recommended` |
+| `level_basis` | `quote` (the deciding sentence, verbatim), `where` it was read, and `judgement` when the level needed one |
+| `scope` | `email-domain`, `non-email-domain`, `mail-path` or `organisation` |
+| `text`, `source`, `document` | The requirement's wording and where it came from; `document` names an entry under `documents:` so the note can cite its version, date, index and digest |
+| `measurable` | `observed`, `not-collected` or `no-instrument` |
+| `settled_by` | The evidence that would settle it, printed in the note |
+| `note`, `partial`, `awaiting` | Explanations; `partial` says what a reading does not cover and is quoted into the row; `awaiting` says what a `not-collected` row is waiting for |
+
+A few requirements carry settings their evaluator reads:
+`forbidden_versions` and `minimum_version` (SGE-TLS-01), `minimum_bits`
+(SGE-DKIM-R01), `tags` (SGE-DMARC-R03) and `record` (the sub-domain DKIM
+requirement checks it against the name the sweep actually read).
+
+Only the requirement ids takestock has an evaluator for are graded from
+evidence. A requirement marked `observed` that has no evaluator is reported
+as *not measured* (`not-collected`, "no evaluator is wired for it"), so a new
+row can be added to the set without being silently graded.

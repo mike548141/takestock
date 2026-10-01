@@ -265,9 +265,11 @@ verdict depends on one, the verdict names the document it followed.
 8. **A malformed example DMARC record.** The framework's Table 5 and its
    checklist (§10), in both the web and PDF versions, print
    `V=DMARC1;p=reject; adkim-s; aspf=s; rua=…`. The tag needs `adkim=s`
-   (RFC 7489 §6.4). Copied literally, the broken tag is discarded (RFC 7489
-   §6.3) and DKIM alignment stays relaxed on exactly the domains the record is
-   meant to lock down. The same example appears in NZISM §15.2.18.
+   (RFC 9989 §4.7). Copied literally, the broken tag is a syntax error that
+   *"MUST be discarded in favor of default values (if any) or ignored
+   outright"* (RFC 9989 §4.8), the default is relaxed (§4.7), and DKIM
+   alignment stays relaxed on exactly the domains the record is meant to lock
+   down. The same example appears in NZISM §15.2.18.
 9. **A malformed example DKIM record name.** The framework's Table 4 and the
    DKIM guide (§4.4) give the name as `*._domainkey<yourdomainname>`, without
    the dot before the domain. The working name is
