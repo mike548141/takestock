@@ -9,7 +9,7 @@
 # RFC 3849), and every name is under the reserved .test domain.
 #
 # Build it with:
-#   python -m takestock.ipam examples/example-widgets/targets/example-widgets.ipam.yaml OUT_DIR \
+#   takestock ipam examples/example-widgets/targets/example-widgets.ipam.yaml OUT_DIR \
 #       --exports examples/example-widgets/exports
 
 organisation:

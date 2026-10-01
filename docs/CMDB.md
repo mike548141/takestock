@@ -33,7 +33,20 @@ service stops when it stops) until someone supplies that.
 ## Building a register
 
 ```bash
-python -m takestock.cmdb <observation_dir> [<out_dir>] [--keys <keys.jsonl>]
+takestock cmdb <observation_dir> [<out_dir>] [--keys <keys.jsonl>] [--workspace <dir>]
+```
+
+For the sample organisation, from inside a copy of its workspace (see the
+README's quick start):
+
+```console
+$ takestock cmdb observations/latest
+observations/latest/cmdb/cmdb.json
+observations/latest/cmdb/csv/account.csv
+...
+observations/latest/cmdb/csv/relationships.csv
+observations/latest/cmdb/cmdb.xlsx
+observations/latest/cmdb/keys.jsonl
 ```
 
 - `out_dir` defaults to `<observation_dir>/cmdb`.
@@ -45,10 +58,12 @@ python -m takestock.cmdb <observation_dir> [<out_dir>] [--keys <keys.jsonl>]
 - If `summary.json` gives a `total_assets` count that differs from the rows
   in `assets.json`, the build stops: the observation is incomplete.
 - The schema is read from `data/cmdb-schema.yaml` in the workspace if one is
-  there, otherwise from the package. The workspace is the directory named by
-  `TAKESTOCK_HOME`, or the current directory. A stray `data/` folder in the
-  current directory therefore changes the schema; set `TAKESTOCK_HOME` when in
-  doubt.
+  there, otherwise from the package. Only a workspace named explicitly, by
+  `--workspace` or `TAKESTOCK_HOME`, is consulted; a `data/` folder in the
+  current directory is never read unless it was named that way (see
+  [`TARGET-PROFILE.md`](TARGET-PROFILE.md#bundled-data-and-a-workspaces-data)).
+- The command exits 0 when the register is written, and 2 on an error such
+  as an incomplete observation or a schema that does not hold together.
 
 The build checks the schema before it starts and stops with a list of every
 problem it finds (see [Changing the schema](#changing-the-schema)).
@@ -315,7 +330,8 @@ The workbook's sheets:
 ## Changing the schema
 
 Copy `src/takestock/data/cmdb-schema.yaml` to `data/cmdb-schema.yaml` in the
-workspace and edit the copy. For each element you add, say what question it
+workspace, edit the copy, and name the workspace with `--workspace` or
+`TAKESTOCK_HOME` when you build. For each element you add, say what question it
 answers, and cite an authority for any obligation you claim. The build
 refuses a schema in which:
 

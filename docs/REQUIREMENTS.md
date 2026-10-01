@@ -22,8 +22,23 @@ hosts.
 ## Producing the register
 
 ```bash
-python -m takestock.requirements <observation_dir> <out_dir> [<catalogue.yaml>]
+takestock requirements <observation_dir> [<out_dir>] [--catalogue <catalogue.yaml>] [--workspace <dir>]
 ```
+
+For the sample organisation, from inside a copy of its workspace (see the
+README's quick start):
+
+```console
+$ takestock requirements observations/latest
+observations/latest/requirements/requirements.md
+observations/latest/requirements/requirements.xlsx
+observations/latest/requirements/requirements.json
+6 requirement(s) derived
+```
+
+`out_dir` defaults to `<observation_dir>/requirements`. The command exits 1
+when at least one requirement was derived, 0 when none was, and 2 on an
+error.
 
 It reads the observation's `assets.json` and, if present, `summary.json`,
 whose `gaps` list (and the parallel `gap_kinds` list) holds the coverage
@@ -33,9 +48,9 @@ Only templates at least one clause matches are written. A template nothing
 triggers is left out entirely, so the register is as long as the findings
 make it and no longer.
 
-The catalogue is the third argument if given; otherwise
-`data/requirements-catalogue.yaml` in the workspace (the directory named by
-`TAKESTOCK_HOME`, or the current directory) if there is one; otherwise the
+The catalogue is the one `--catalogue` names if given; otherwise
+`data/requirements-catalogue.yaml` in the workspace, when the workspace was
+named with `--workspace` or `TAKESTOCK_HOME` and holds one; otherwise the
 copy in the package.
 
 ## What it writes
@@ -194,8 +209,8 @@ Matches the observation's coverage gaps of these kinds: `not-collected`,
 The catalogue is replaced as a whole, never merged. To change it:
 
 1. Copy `src/takestock/data/requirements-catalogue.yaml` to
-   `data/requirements-catalogue.yaml` in the workspace (or anywhere, and
-   pass its path as the third argument).
+   `data/requirements-catalogue.yaml` in a named workspace (or anywhere,
+   and pass its path with `--catalogue`).
 2. Edit the copy: reword a statement, change a level to suit the
    organisation's risk appetite, add a template, or delete one.
 3. Keep each `standards` entry honest: quote the source's own level, not the

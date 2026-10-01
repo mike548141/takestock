@@ -30,18 +30,33 @@ evidence settles each kind of requirement.
 ## Producing the note
 
 ```bash
-python -m takestock.sge_note <observation_dir> <target.yaml> <out.html>
+takestock sge-note <observation_dir> <target> [--out <file.html>] [--workspace <dir>]
 ```
+
+`<target>` is the profile the observation was taken for, as a name or a
+path. For the sample organisation, from inside a copy of its workspace (see
+the README's quick start):
+
+```console
+$ takestock sge-note observations/latest example-widgets
+observations/latest/sge-note.html
+```
+
+The note is written to `<observation_dir>/sge-note.html` unless `--out`
+names another file. The command exits 1 when any requirement stated as
+*must* is not met, 0 otherwise, and 2 on an error, including a profile that
+names no `discovery.email_domains`. (The sample's offline observation reads
+no mail records, so every requirement is *not measured* and it exits 0.)
 
 For a plain-text table instead, against the workspace's latest observation
-(or one named with `--observation`):
+(or one named with `--observation`), there is no subcommand yet; run the
+module:
 
 ```bash
-python -m takestock.sge <target-name> [--observation <dir>] [--json]
+TAKESTOCK_HOME=<workspace> python -m takestock.sge <target-name> [--observation <dir>] [--json]
 ```
 
-The text report exits with status 1 when any requirement stated as *must*
-is not met, so a script can act on it.
+It too exits 1 when a *must* requirement is not met.
 
 The target profile supplies:
 
@@ -245,9 +260,9 @@ sits beside it.
 ## Changing the requirement set
 
 Copy `src/takestock/data/secure-government-email.yaml` to
-`data/secure-government-email.yaml` in the workspace (the directory named by
-`TAKESTOCK_HOME`, or the current directory) and edit the copy, for example
-when the framework publishes a new version. Each requirement has:
+`data/secure-government-email.yaml` in the workspace and edit the copy, for
+example when the framework publishes a new version. The copy is read only
+when the workspace is named with `--workspace` or `TAKESTOCK_HOME`. Each requirement has:
 
 | Field | Meaning |
 |---|---|

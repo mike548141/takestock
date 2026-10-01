@@ -39,24 +39,35 @@ can therefore be traced to something outside the plan file.
 ## Building a plan
 
 ```bash
-python -m takestock.ipam <plan.ipam.yaml> <out_dir> [--exports <dir>] [--lookup-asn]
+takestock ipam <plan.ipam.yaml> <out_dir> [--exports <dir>] [--workspace <dir>]
 ```
 
-For the sample:
+For the sample, from the repository root:
 
-```bash
-python -m takestock.ipam examples/example-widgets/targets/example-widgets.ipam.yaml out \
+```console
+$ takestock ipam examples/example-widgets/targets/example-widgets.ipam.yaml out \
     --exports examples/example-widgets/exports
+out/example-widgets.json
+out/example-widgets.csv
+out/example-widgets.html
 ```
+
+The command exits 0 when the plan is written and 2 on an error.
 
 - Source paths in the plan file are read relative to `--exports`. Without
   it they are read from the workspace's `inbox/` (or the directory named by
   `TAKESTOCK_INBOX`).
+- To look addresses up with the internet registries first (see
+  [Internet-registry lookups](#internet-registry-lookups)), run the module,
+  which takes the same arguments plus `--lookup-asn`; the subcommand does
+  not offer it yet:
+
+  ```bash
+  python -m takestock.ipam <plan.ipam.yaml> <out_dir> [--exports <dir>] --lookup-asn
+  ```
 - A source whose input is missing stops the build: a plan built from fewer
   exports than it names would read as complete and not be. The one exception
   is a source of kind `asn-lookups`, whose folder may not exist yet.
-- `--lookup-asn` first asks the internet registries about the plan's public
-  addresses (see [Internet-registry lookups](#internet-registry-lookups)).
 - The plan is named after its file: `example-widgets.ipam.yaml` writes
   `example-widgets.json`, `.csv` and `.html`.
 - The organisation's name and branding come from the target profile beside

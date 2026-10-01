@@ -1,0 +1,277 @@
+# Architecture
+
+How takestock turns a target profile into an observation and its outputs:
+the pipeline, the data model, the places a module plugs in, and how to add a
+collector. Module names are under `src/takestock/`.
+
+## Terms used here
+
+- **Row**: one `CryptoAsset`: one observed use of cryptography, or of its
+  absence (a listener, a certificate, a mail record, a device control).
+- **Failure**: something a collector was asked to do and could not, such as
+  a configured service that errored. A failure means the observation cannot
+  judge everything it was asked to.
+- **Coverage gap**: a question a collector was meant to answer and could
+  not, recorded with why. A gap narrows what the observation claims; it is
+  not a failure.
+- **Finding**: a row judged adverse: a `weak` verdict, or a disposition on an
+  out-of-cycle rung such as `critical`.
+
+## The pipeline
+
+```text
+target profile ──┐
+inbox exports ───┤
+public DNS, logs ┼─► collectors ─► rows + failures + gaps
+authorised hosts ┘   (collectors/*)          │
+                                             ▼
+                 observe.py ─► normalise.finalise ─► sge.apply_conformance ─► findings, summary
+                                (merge, lifecycle,                               │
+                                 grading, disposition)                           ▼
+                                                    observations/<stamp>/  assets.json
+                                                                           summary.json
+                                                                           bom.cdx.json, raw/
+                                                                                 │
+                       ┌────────────────────────┬────────────────────────┬──────┘
+                       ▼                        ▼                        ▼
+                  cmdb.py                 requirements.py         sge.py + sge_note.py
+              (configuration register)  (requirements register)  (conformance note)
+
+plan file + exports ─► ipam.py + ipam_view.py ─► IP address plan   (reads no observation)
+```
+
+### 1. Collect (`observe.py`, `collectors/`)
+
+`observe.observe(target, Options)` takes one observation:
+
+1. **Refuse early.** With `scan`, an incomplete `authorisation:` record
+   (`inside_scope.scan_authorisation_problems`) refuses the whole run before
+   anything is written or contacted. So do `scan` with `offline`, and an
+   observation directory that already exists.
+2. **Decide what runs.** For each registered collector, `_why_not` gives a
+   reason it does not run: an offline run, for anything but an ingest
+   collector or an offline-safe step; or an active collector without `scan`. Each reason becomes one coverage gap naming the
+   collectors it held back.
+3. **Run the early steps**, in registration order, then finish any
+   certificate-transparency domains that were parked while a search service
+   asked the run to wait, then run the **late** steps, which read the rows
+   the earlier ones produced (`caa`, `dns_zones`, `winrm_config`).
+4. **Contain failure.** A collector that raises is recorded as a failure and
+   the run continues. What a collector returns in its failures list is split
+   by `observe.split_failures`: a `coverage.Gap` (a service nobody
+   configured) is a gap; anything else is a failure.
+
+Each collector step returns `(rows, failures, gaps)`. The adapters in
+`observe.py` (`_rows_and_failures`, `_ingest`, `_port_probe`) fit each
+collector's own signature to that shape.
+
+### 2. Normalise and grade (`normalise.py`, `policy.py`, `disposition.py`)
+
+`normalise.finalise` makes the run's rows one consistent set, in order:
+
+1. **merge** rows that describe the same thing (the same
+   `CryptoAsset.bom_ref()`);
+2. **lifecycle**: migration strategy and support status from the profile,
+   then support derived from the bundled Windows lifecycle data
+   (`lifecycle.py`);
+3. **readings across rows**: a key served by more than one host, a port-80
+   redirect nothing stops being stripped, HTTP readings carried onto the TLS
+   row for the same endpoint, certificate expiry from a live handshake in
+   preference to a log;
+4. **software names** from the daemon dictionary;
+5. **grading** by `policy.Policy` against `data/baseline.yaml`, and a
+   **disposition** from the organisation's decisions and the generic rules
+   (`disposition.py`);
+6. **usage bands** (`usage.py`) and **evidence depth** (`depth.py`).
+
+Then `normalise.not_measured_gaps` turns each `not-measured:` flag into a
+gap, `sge.apply_conformance` marks rows behind an unmet Secure Government
+Email MUST, `normalise.findings` picks out the findings, and
+`normalise.summarise` counts everything (post-quantum readiness, plaintext,
+dispositions, agility, hardware or software binding, evidence depth, the
+gaps and their classifications) into `summary.json`. Dispensations are
+assessed by `dispensation.py` from Python; an observation does not yet run
+that assessment.
+
+### 3. Write (`model.py`)
+
+`assets.json` and `summary.json` are written, then `bom.cdx.json`
+(`model.to_cyclonedx`), last, so its presence marks a finished run, and
+`observations/latest` is pointed at the new directory.
+
+`summary.json["complete"]` is true only when no collector failed and no
+required gap is open. The command's exit code is 2 when a collector failed,
+else 1 when there are findings, else 0.
+
+### 4. Outputs
+
+Each output reads a finished observation, never the network:
+
+| Module | Reads | Writes |
+|---|---|---|
+| `cmdb.py`, `cmdb_export.py` | `assets.json`, `summary.json`, `data/cmdb-schema.yaml` | `cmdb/`: JSON, a CSV per class, a workbook and the key ledger |
+| `requirements.py` | `assets.json`, the gaps in `summary.json`, `data/requirements-catalogue.yaml` | `requirements/`: Markdown, a workbook and JSON |
+| `sge.py`, `sge_note.py` | `assets.json`, `raw/`, `data/secure-government-email.yaml`, the profile | `sge-note.html` |
+| `ipam.py`, `ipam_view.py` | an `<stem>.ipam.yaml` plan file and the exports it names | `<stem>.json`, `.csv` and `.html` |
+
+Every HTML page uses one shell, `htmlpage.py`: self-contained, light and dark
+schemes, a print stylesheet, no external fonts or scripts, and the profile's
+`branding:` applied.
+
+`cli.py` is a thin layer over these modules; each subcommand calls one
+module's functions, and every module stays usable from Python.
+
+## The data model
+
+### `CryptoAsset` (`model.py`)
+
+One row. Its fields, by purpose:
+
+| Purpose | Fields |
+|---|---|
+| What and where | `name`, `data_state` (`in-transit`, `certificate`, `email-auth`, `at-rest`, `discovery`, `estate`, `third-party` and so on), `protocol`, `role` (a plain-language sentence from `roles.py`), `host`, `ip`, `port`, `internet_facing`, `serial` |
+| Software | `software`, `software_binary`, `version` |
+| Provenance | `source` (the collector), `source_class`, `source_name`, `collected_at` |
+| The cryptography | `protocol_versions`, `key_exchange`, `signatures`, `symmetric`, `hashes` |
+| The grade | `verdict`, `flags`, `citations`, `evidence_depth` |
+| Post-quantum | `pq_kex`, `pq_sig` and their `*_basis` |
+| What to do | `disposition`, `disposition_basis` (`proposed` or `decided`), `disposition_reason`, `disposition_until`, `disposition_review`, `effort`, `effort_group`, `pqc_deadline` |
+| A named standard's reading | `standards_verdict`, `standards_requirement`, `standards_observed`, `standards_citation` |
+| Lifecycle and use | `migration_strategy`, `support_status`, `support_end`, `usage_count`, `usage_band`, `hosts_count` |
+| Everything else | `notes`, and `extra`: whatever a collector measured that has no field of its own |
+
+`bom_ref()` derives a stable reference from the row's state, protocol, host,
+port and name, so the same thing gets the same reference on every run.
+
+### Verdicts
+
+| Verdict | Means |
+|---|---|
+| `weak`, `acceptable`, `strong`, `pqc` | The four grades, weakest first. A row is graded as the weakest thing it accepts |
+| `unknown` | Cryptography is present and nothing observed could be graded. An `ungraded:<table>:<token>` flag names what the baseline lacked |
+| `n/a` | The row carries no cryptographic primitive by nature (a discovered name, a mail policy record). Never a gap |
+
+The baseline (`data/baseline.yaml`) maps every token a collector can report
+to a grade, table by table, with the citation behind it.
+
+### Flags
+
+A flag is a short, machine-readable string on a row: `weak-dh`, `expired`,
+or a prefix and a value, such as `deprecated-protocol:` followed by the
+version the instrument reported. Two kinds:
+
+- **adverse** flags say something is wrong;
+- **informational** flags state a fact or a limit on what was measured
+  (`ungraded:`, `not-measured:`, an unreachable host). Their first
+  appearance is never read as the estate getting worse.
+
+Requirements triggers and disposition rules match on flags, so a flag's
+spelling is part of the interface.
+
+### Post-quantum readiness
+
+`pq_kex` (key establishment) and `pq_sig` (signatures) each read `ready`,
+`hybrid` or `classical`, or, when there is no reading, `gap` or `n/a` with a
+basis saying why. Rows doing a job only with classical public-key
+cryptography also carry `quantum-vulnerable-kex` or
+`quantum-vulnerable-signature`.
+
+### Gaps (`coverage.py`)
+
+A `Gap` is the sentence a reader sees, carrying three classifications:
+
+| Classification | Values |
+|---|---|
+| kind: why the answer is missing | `not-collected`, `could-not-test`, `extent-unknown`, `not-measured` (and `unclassified` when read back from an older file) |
+| impact kind: what it costs a reader | `changes-conclusion`, `narrows-confidence`, `impact-unwritten` |
+| nature: nothing held, or held too coarsely | `no-data`, `low-fidelity`, `nature-unstated` |
+
+`summary.json` keeps the gap sentences in `gaps` and each classification in a
+parallel list (`gap_kinds`, `gap_impact_kinds`, `gap_natures` and so on), so
+they survive a round trip through JSON.
+
+## Registries: where a module plugs in
+
+Each of these is a function or table a module calls when it is imported, so
+a new collector or reader declares itself without editing a central list
+(the first two excepted).
+
+| Registry | Declares | Shipped entries |
+|---|---|---|
+| `collectors.register(name, module, kind, function="collect")`; `collectors.REGISTRY` | A collector: its module, its kind (`passive`, `active`, `ingest`) and its entry point | Twenty-one, listed in `collectors/__init__.py` |
+| `observe.PLANS` | How an observation runs each registered collector: its step, and whether it is `late` or `offline`-safe | One per collector; a collector without one is skipped and recorded as a gap |
+| `model.register_informational_prefixes(*prefixes)` | Flags, or flag prefixes ending in `:`, that are informational | Built-in list in `model.py`, plus many collectors' own |
+| `depth.register_flags(rung, *flags, convention=False)` | Flags that lift a row to an evidence-depth rung (`key-management`, `key`, `posture`), or record an unanswered question (`unanswered`) | Built-in lists in `depth.py` |
+| `plaintext.register_host_listener_source(source, marker)` | A source whose rows are listening ports seen from the host itself | None |
+| `binding.register_binding(binding, protocols=..., data_states=...)` | Protocols or data states bound to `hardware` or `software` | Built-in tables in `binding.py` |
+| `cmdb.register_source_strength(source, strength)` | The evidence strength a source's rows carry in the register when a row does not say (for example `reported` for a management system's own records) | None: rows default to `measured` |
+| `config.register_overlay_suffix(*suffixes)` | File suffixes beside a profile that are overlays, never profiles | `.dispositions.yaml`, `.derived-ports.yaml`, and `.ipam.yaml` (registered by `ipam.py`) |
+| `ipam.register_reader(kind, fn, optional=False, evidence="observed", replace=False)`, or the entry-point group `takestock.ipam_readers` | A reader for one kind of IP plan source | `csv`, `dns-zones`, `asn-lookups` |
+| `coverage.SCOPE_AREAS` | Whole areas of an assessment, so a gap that names a whole area (undone work, not a gap) is refused | Empty: a caller fills it or passes its own |
+
+## Data files
+
+`src/takestock/data/` holds everything the code grades against, so a
+standard can change without a code change. Each is read through
+`config.data_file`, which prefers a named workspace's `data/` copy (see
+[`TARGET-PROFILE.md`](TARGET-PROFILE.md#bundled-data-and-a-workspaces-data)).
+
+| File | Holds |
+|---|---|
+| `baseline.yaml` | The algorithm baseline: every token's grade, by table, with citations |
+| `dispositions.yaml` | The default ladder and the generic disposition rules |
+| `cmdb-schema.yaml` | The register's classes, attributes, relationships and vocabularies |
+| `requirements-catalogue.yaml` | Requirement templates and their triggers |
+| `secure-government-email.yaml` | The Secure Government Email requirement set |
+| `dns-services.yaml` | Public resolvers, a DNSSEC validation control, a certificate-transparency endpoint, CAA issuers and takeover namespaces; shipped empty |
+| `port-encryption.csv` | Each well-known port's posture (`encrypted`, `opportunistic` or `cleartext`), exposure and remedy |
+| `daemon-dictionary.csv` | Process binary names mapped to products |
+| `vendor-domains.csv` | Public vendor domains, for naming the operator of an outside service |
+| `windows-lifecycle.yaml`, `software-lifecycle.yaml` | Vendor support dates, filled from public sources |
+| `crypto-software.csv` | Cryptographic libraries, and the highest TLS version a release line can negotiate, from public sources. Reference data: no collector reads it yet |
+
+## Adding a collector
+
+1. **Write the module**, `src/takestock/collectors/<name>.py`, with an entry
+   point that takes the loaded profile first and returns
+   `(rows, failures_or_gaps)`. An active probe's entry point starts
+   `(target, raw_dir, ref_time, ...)`; an ingest collector's is
+   `(target, root=None)` and reads its export with `config.inbox_path`. Its
+   docstring says what it reads or sends, what it cannot see, and its
+   profile keys.
+2. **Gate before contacting anything.** An outside-in probe checks
+   `inside_scope.scan_refusal(SOURCE, target)` and returns that line as its
+   only failure when refused. An inside probe reads its hosts only through
+   `inside_scope.entries(target, group)`, which demands the group's own
+   authorisation record, and names each host one at a time
+   (`entry_address`, `check_unique`, `check_ceiling`). Refuse, never
+   truncate.
+3. **Run external programs through `util.run`**, so tests can replace it,
+   and save each transcript under `raw_dir`.
+4. **Say what was not seen.** Return a `coverage.gap(...)` for every
+   question the collector could not answer, a missing export included. A
+   missing tool is a gap or an `unknown` row, never a clean result.
+5. **Grade through the baseline.** Put the tokens the collector reports in
+   the row's cryptography fields; add any token the baseline lacks to
+   `data/baseline.yaml` with its citation, or leave it to be flagged
+   `ungraded:`.
+6. **Register it** in `collectors/__init__.py`
+   (`register("<name>", "<module>", "<kind>")`) and give it a step in
+   `observe.PLANS`, using an existing adapter where the signature fits. Set
+   `late=True` if it reads other collectors' rows and `offline=True` if it
+   sends nothing over the network.
+7. **Declare its flags**: informational ones with
+   `model.register_informational_prefixes`, depth rungs with
+   `depth.register_flags`, and any new protocol's hardware or software
+   binding with `binding.register_binding`. If it reads an overlay file,
+   register the suffix with `config.register_overlay_suffix`.
+8. **Test it on synthetic fixtures** (see
+   [`CONTRIBUTING.md`](../CONTRIBUTING.md)): its parsing, its refusals, and
+   that it contacts nothing it was not told to.
+9. **Document it**: its section in [`COLLECTORS.md`](COLLECTORS.md), its
+   profile keys in [`TARGET-PROFILE.md`](TARGET-PROFILE.md), and its tools
+   in [`SETUP-SCANNERS.md`](SETUP-SCANNERS.md).
+
+`tests/test_observe.py` checks that every registered collector has a step,
+and `tests/test_probe_registry.py` checks each active probe's kind and
+signature.

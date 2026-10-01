@@ -50,7 +50,11 @@ the others loading.
 | `smb_scan` | active, inside | SMB dialects and message signing | `scan_targets.smb_445` and `authorisation.smb_445` | `nmap` |
 | `rdp_scan` | active, inside | whether remote desktop requires authentication first | `scan_targets.rdp_3389` and `authorisation.rdp_3389` | `nmap` |
 | `ssh_audit_inside` | active, inside | SSH algorithms on internal hosts, in batches | `scan_targets.ssh_inside` and `authorisation.ssh_inside` | `ssh-audit`, or `nmap` |
+| `internal_scan` | active, inside | TLS, STARTTLS and cleartext on named internal services, one host and port at a time | `scan_targets.internal_services` and `authorisation.internal_services` | `nmap`, `openssl`, `curl` |
+| `intel_amt` | active, inside | whether Intel AMT firmware answers on 16992 and 16993, and over what | `scan_targets.intel_amt` and `authorisation.intel_amt` | `curl`; `nmap` and `openssl` for the TLS row |
 | `ssh_audit_inbox` | ingest | `ssh-audit` JSON files someone ran and supplied | optional `ssh_inbox.dir` | none |
+| `winrm_config` | ingest | a WinRM configuration export: whether each Windows host requires encrypted remote administration | optional `winrm_inbox.export` | none |
+| `netdev` | ingest | a network device export: cryptographic controls on switches, routers, firewalls and management equipment | optional `netdev_inbox.devices` and `netdev_inbox.expect` | none |
 
 **Inside** probes run inside the organisation's network. Each needs its own
 named, dated authorisation record as well as the profile's general one, and
@@ -86,13 +90,18 @@ Active probes read host lists from `scan_targets:` in the target profile:
 | `mail_self` | The organisation's own published mail hosts | `tls_scan`, `hsts`, `plaintext_scan` |
 | `saas_443` | Services an outside provider runs for the organisation: `{host, port, vendor, ...}` | `tls_scan`, `hsts` |
 | `smtp_25` | Inbound mail gateways: `{host, vendor, ...}` | `smtp_starttls` |
-| `ssh_22` | Internet-facing SSH listeners: a host, `host:port`, or `{host, ip}` | `ssh_audit`, `plaintext_scan` |
+| `ssh_22` | Internet-facing SSH listeners: a host, or `{host, ip, port}` | `ssh_audit`, `plaintext_scan` |
 | `ssh_inside` | Internal SSH hosts: `{host, batch, port}` | `ssh_audit_inside` |
 | `smb_445` | Internal file servers: a host or `{host, ip}` | `smb_scan` |
 | `rdp_3389` | Internal remote-desktop hosts: a host or `{host, ip, port}` | `rdp_scan` |
+| `internal_services` | Internal services: `{host, port, role}`, from a fixed list of ports | `internal_scan` |
+| `intel_amt` | Internal machines whose management firmware to check: a host or `{host, ip}` | `intel_amt` |
 
 Where an entry gives both `host` and `ip`, the address is probed and the name
-reported.
+reported (in `ssh_22`, the address is reported too).
+
+Every key the profile can carry is listed in
+[`TARGET-PROFILE.md`](TARGET-PROFILE.md).
 
 ## The passive collectors
 
