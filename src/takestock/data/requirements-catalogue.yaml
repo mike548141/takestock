@@ -1,0 +1,986 @@
+# Requirement templates, each raised only when an observation's findings trigger it.
+#
+# A requirement here is written for any organisation to hand to any supplier
+# or delivery programme. takestock emits one only when at least one finding in
+# the observation matches its `triggered_by` rule, and writes the evidence
+# sentence from that observation's own counts and hosts at run time.
+#
+# Fields:
+#   id                 stable identifier, `<AREA>.<n>`.
+#   level              MUST, SHOULD or COULD, read as the New Zealand Protective
+#                      Security Requirements read them (INFOSEC policy framework
+#                      v2.0, paragraphs 11-15): MUST is mandatory; SHOULD is
+#                      recommended for moderate risk and above; COULD for high risk
+#                      and above. An organisation adjusting a level for its own
+#                      risk appetite does so in its own copy.
+#   area               a short grouping label for the register.
+#   name               one line, used as the heading.
+#   statement          the requirement in full, as a supplier would answer it.
+#   standards          what it rests on. Each entry names the document and the
+#                      section or control, the force that source itself gives it
+#                      (`level`), and what it says. A source's own level can
+#                      differ from the requirement's: the reader sees both, and
+#                      which bar was chosen. A New Zealand control binds only an
+#                      organisation mandated to apply it, or one that adopts it
+#                      by choice or contract (see docs/STANDARDS.md).
+#   selection_test     how a bid is tested before a supplier is chosen.
+#   acceptance_test    how the delivered work is tested before it is accepted.
+#   triggered_by       a list of clauses; the requirement is raised when any
+#                      clause matches at least one finding. Each clause has a
+#                      `finding` phrase, which completes "<n> assets where ...",
+#                      "<n> domains where ..." or "<n> coverage gaps where ...".
+#
+# Clause kinds (every key inside one clause must hold for the same asset):
+#   asset clause   any of: verdict, data_state, protocol, source, disposition
+#                  (each a value or a list), internet_facing (true/false),
+#                  flags_any, flags_all, flags_none (exact flags),
+#                  flags_prefix_any, flags_prefix_none (flag prefixes),
+#                  extra_true (a key in the asset's `extra` that must be
+#                  truthy), versions_none (TLS versions the asset must offer
+#                  none of; it must offer some).
+#   absent clause  `absent: {anchor: <protocol>, missing: <protocol>}`: a host
+#                  that has a row of the anchor protocol and none of the missing one.
+#   gap clause     `gap_kinds: [...]`: coverage gaps of those kinds in the
+#                  observation's summary.
+
+version: 1
+
+requirements:
+
+  # ── TLS ──
+
+  - id: TLS.1
+    level: MUST
+    area: Transport encryption
+    name: Refuse SSL and every TLS version below 1.2
+    statement: >
+      Every service that offers TLS MUST refuse SSL 2.0, SSL 3.0, TLS 1.0 and
+      TLS 1.1, by configuration that the supplier documents and that survives an
+      upgrade or a restore. Where a dependent client cannot negotiate TLS 1.2,
+      the supplier names it, and the organisation decides on a time-limited
+      exception rather than the service keeping the old versions for everyone.
+    standards:
+      - ref: IETF RFC 8996, sections 4 and 5
+        level: MUST NOT
+        says: TLS 1.0 and TLS 1.1 "MUST NOT be used"; servers must not negotiate either.
+      - ref: IETF RFC 9325 (BCP 195), section 3.1.1
+        level: MUST NOT
+        says: Implementations must not negotiate SSL 2.0, SSL 3.0, TLS 1.0 or TLS 1.1, and must support TLS 1.2.
+      - ref: NIST SP 800-52 Rev. 2, section 3.1
+        level: SHALL
+        says: Servers shall be configured to use TLS 1.2 and shall not use SSL 2.0 or SSL 3.0; TLS 1.0 and 1.1 are discouraged.
+      - ref: NZISM v3.9, control 17.4.16.C.02
+        level: SHOULD NOT
+        says: Agencies should not use any version of SSL.
+    selection_test: >
+      The bidder states, for each component that terminates TLS, the lowest
+      version it can be configured to accept and the setting that fixes it, and
+      shows that setting in product documentation or a configuration export.
+    acceptance_test: >
+      A version scan of every delivered TLS endpoint (each version offered on
+      its own) shows no handshake completing below TLS 1.2.
+    triggered_by:
+      - protocol: tls
+        flags_prefix_any: ["deprecated-protocol:"]
+        finding: SSL or a TLS version below 1.2 is accepted
+
+  - id: TLS.2
+    level: SHOULD
+    area: Transport encryption
+    name: Offer TLS 1.3 on every TLS service
+    statement: >
+      Every service that offers TLS SHOULD offer TLS 1.3, alongside TLS 1.2 only
+      where a dependent client still needs it. The supplier states which
+      components cannot offer TLS 1.3 today and when they will.
+    standards:
+      - ref: NZISM v3.9, control 17.4.16.C.01
+        level: SHOULD
+        says: Agencies should use the current version of TLS (version 1.3).
+      - ref: IETF RFC 9325 (BCP 195), section 3.1.1
+        level: SHOULD
+        says: Implementations should support TLS 1.3 and, if they do, prefer to negotiate it.
+      - ref: NIST SP 800-52 Rev. 2, section 3.1
+        level: SHALL (US federal systems)
+        says: Servers shall support TLS 1.3, a requirement on US agencies from 1 January 2024.
+    selection_test: >
+      The bidder confirms TLS 1.3 support for each component that terminates
+      TLS, naming the software version that provides it.
+    acceptance_test: >
+      A version scan of every delivered TLS endpoint completes a TLS 1.3
+      handshake.
+    triggered_by:
+      - protocol: tls
+        data_state: in-transit
+        versions_none: ["TLSv1.3"]
+        finding: TLS versions were read and TLS 1.3 was not among them
+
+  - id: TLS.3
+    level: MUST
+    area: Transport encryption
+    name: Refuse NULL, anonymous, export-grade and broken cipher suites
+    statement: >
+      TLS services MUST NOT accept a cipher suite that sends data unencrypted
+      (NULL), authenticates no one (anonymous key exchange), is export-grade, or
+      uses a broken or below-strength cipher (RC4, DES, 3DES and the like). The
+      accepted suite list is set explicitly, not left to a library default.
+    standards:
+      - ref: IETF RFC 9325 (BCP 195), section 4.1
+        level: MUST NOT
+        says: Implementations must not negotiate NULL or RC4 suites, or suites offering less than 112 bits of security.
+      - ref: NIST SP 800-52 Rev. 2, section 3.3.1
+        level: SHALL
+        says: The server shall be configured to use only cipher suites composed entirely of NIST-approved algorithms.
+      - ref: NZISM v3.9, control 17.2.17.C.01
+        level: MUST
+        says: Only approved algorithms can be used in an unevaluated product that implements both approved and non-approved ones.
+    selection_test: >
+      The bidder supplies the default and the configurable cipher-suite list
+      for each component that terminates TLS.
+    acceptance_test: >
+      A cipher enumeration of every delivered TLS endpoint finds no NULL,
+      anonymous, export-grade, RC4, DES or 3DES suite accepted.
+    triggered_by:
+      - protocol: tls
+        flags_any: [null-cipher, anonymous-kex, export-grade]
+        finding: a NULL, anonymous or export-grade cipher suite is accepted
+      - protocol: tls
+        flags_prefix_any: ["weak-symmetric:"]
+        finding: a cipher graded weak by the baseline is accepted
+
+  - id: TLS.4
+    level: SHOULD
+    area: Transport encryption
+    name: Negotiate only forward-secret, authenticated-encryption suites
+    statement: >
+      TLS services SHOULD accept only cipher suites with ephemeral key exchange
+      (forward secrecy) and authenticated encryption (AES-GCM, ChaCha20-Poly1305
+      or AES-CCM), so that a stolen server key cannot decrypt recorded traffic
+      and CBC padding attacks do not apply.
+    standards:
+      - ref: IETF RFC 9325 (BCP 195), section 4.1
+        level: SHOULD NOT / MUST
+        says: Implementations should not negotiate suites based on RSA key transport, and must support and prefer suites offering forward secrecy.
+      - ref: IETF RFC 9325 (BCP 195), section 4.2
+        level: SHOULD NOT
+        says: Suites using CBC mode (for example TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256) should not be used.
+    selection_test: >
+      The bidder confirms each component can be configured to accept only
+      ephemeral, authenticated-encryption suites, and names any client it
+      expects to break.
+    acceptance_test: >
+      A cipher enumeration of every delivered TLS endpoint finds no static-RSA
+      or other non-ephemeral key exchange, and no CBC-mode suite.
+    triggered_by:
+      - protocol: tls
+        flags_any: [no-forward-secrecy]
+        finding: a key exchange without forward secrecy is accepted
+      - protocol: tls
+        flags_any: [cbc-mode]
+        finding: a CBC-mode cipher suite is accepted
+
+  - id: TLS.5
+    level: MUST
+    area: Transport encryption
+    name: Meet the minimum key-exchange, key and hash strengths
+    statement: >
+      Key-exchange groups, public keys and hashes used by TLS services MUST meet
+      the minimums of the standard the organisation grades against: no
+      Diffie-Hellman group, RSA key or curve below that floor, and no SHA-1 or
+      MD5 in signatures. The supplier states the strongest setting each
+      component supports.
+    standards:
+      - ref: NZISM v3.9, control 17.2.19.C.01
+        level: MUST
+        says: A Diffie-Hellman modulus of at least 3072 bits.
+      - ref: NZISM v3.9, control 17.2.25.C.01
+        level: MUST
+        says: RSA keys within internet X.509 certificates use a modulus of at least 2048 bits.
+      - ref: NZISM v3.9, control 17.2.26.C.01
+        level: MUST
+        says: SHA-2 for new systems; SHA-1 only for legacy systems.
+      - ref: IETF RFC 9325 (BCP 195), section 4.5
+        level: MUST
+        says: RSA server certificates of at least 2048 bits; curves below 224 bits must not be used; SHA-1 and MD5 must not be used for signatures.
+    selection_test: >
+      The bidder lists the key-exchange groups, certificate key types and
+      signature hashes each component supports, and which it uses by default.
+    acceptance_test: >
+      A scan of every delivered TLS endpoint shows no group, key or signature
+      hash below the floor.
+    triggered_by:
+      - protocol: tls
+        flags_any: [weak-dh]
+        finding: a Diffie-Hellman group below the floor is accepted
+      - protocol: tls
+        flags_prefix_any: ["weak-kex:", "weak-signature:", "weak-hash:"]
+        finding: a key exchange, signature or hash graded weak by the baseline is in use
+
+  # ── Certificates ──
+
+  - id: CERT.1
+    level: MUST
+    area: Certificates
+    name: Renew certificates before they expire, automatically where the issuer allows it
+    statement: >
+      Every certificate a service presents MUST be within its validity period.
+      The supplier renews certificates automatically (for example with the ACME
+      protocol) wherever the issuing authority supports it, monitors expiry for
+      the rest, and alerts a named owner well before any certificate lapses.
+    standards:
+      - ref: IETF RFC 5280, section 6.1.3 (a)(2)
+        level: Path validation step
+        says: A certificate passes validation only if its validity period includes the current time.
+      - ref: IETF RFC 8555, section 1
+        level: Informative
+        says: ACME is a protocol for automating certificate issuance and renewal.
+    selection_test: >
+      The bidder describes how certificates are renewed and who is alerted, and
+      names any certificate that cannot be renewed automatically.
+    acceptance_test: >
+      Every delivered endpoint presents a certificate valid for more than the
+      agreed warning window, and the renewal mechanism is shown to have run.
+    triggered_by:
+      - flags_any: [expired]
+        finding: the certificate has expired
+      - flags_any: [renewal-overdue]
+        finding: a short-lived certificate is close to expiry and its automated renewal appears to have failed
+      - flags_any: [expiry-soon]
+        finding: the certificate expires within the warning window
+
+  - id: CERT.2
+    level: MUST
+    area: Certificates
+    name: Present a certificate that names the service
+    statement: >
+      Every TLS service MUST present a certificate whose subject alternative
+      names include the name clients use to reach it, so that a client
+      checking the name, as it must, does not fail or get configured to stop
+      checking.
+    standards:
+      - ref: IETF RFC 9525, section 6
+        level: MUST
+        says: A client must construct its reference identifiers and match them against the identifiers in the certificate.
+    selection_test: >
+      The bidder lists the names each component will answer on and confirms its
+      certificates will carry all of them.
+    acceptance_test: >
+      Each delivered endpoint, reached by every name it is published under,
+      presents a certificate that matches that name.
+    triggered_by:
+      - flags_any: [cert-name-mismatch]
+        finding: the certificate presented does not name the host it was reached on
+
+  - id: CERT.3
+    level: SHOULD
+    area: Certificates
+    name: Monitor certificate transparency logs for the organisation's domains
+    statement: >
+      The organisation, or a supplier on its behalf, SHOULD watch the public
+      certificate transparency logs for every certificate issued under its
+      domains, and investigate any from an issuer it has not authorised.
+    standards:
+      - ref: IETF RFC 6962, section 5.3
+        level: Informative
+        says: Monitors watch logs and "watch for certificates of interest".
+      - ref: IETF RFC 9162, section 8.2
+        level: Informative
+        says: Describes the monitor role for Certificate Transparency version 2.0.
+    selection_test: >
+      The bidder describes the monitoring it provides or relies on, how quickly
+      a new certificate is noticed, and who receives the alert.
+    acceptance_test: >
+      A test certificate issued for a name in scope is reported by the
+      monitoring within the agreed time.
+    triggered_by:
+      - flags_prefix_any: ["caa-issuer-not-authorised:"]
+        finding: certificates are logged from an issuer the domain's CAA record does not authorise
+      - flags_any: [caa-absent]
+        finding: no CAA record restricts which authorities may issue, so detection is the remaining control
+
+  # ── Web ──
+
+  - id: WEB.1
+    level: SHOULD
+    area: Web
+    name: Publish an HTTP Strict Transport Security policy
+    statement: >
+      Every HTTPS service a browser reaches SHOULD send a well-formed
+      Strict-Transport-Security header with a max-age of at least one year,
+      introduced with a short max-age first so that nothing under the domain
+      that still needs plain HTTP is cut off.
+    standards:
+      - ref: IETF RFC 6797, section 7.1
+        level: SHOULD
+        says: An HSTS host should include the STS header field in its responses over secure transport.
+      - ref: IETF RFC 6797, section 6.1.1
+        level: REQUIRED directive
+        says: max-age is required; a value of zero tells the browser to forget the policy.
+      - ref: IETF RFC 9325 (BCP 195), section 3.2
+        level: SHOULD
+        says: Web servers should use HSTS to indicate that they are willing to accept TLS-only clients.
+    selection_test: >
+      The bidder confirms the header can be set on every component that serves
+      HTTPS, including any the supplier hosts.
+    acceptance_test: >
+      Each delivered HTTPS endpoint returns the header with a max-age of at
+      least 31536000 seconds.
+    triggered_by:
+      - protocol: hsts
+        flags_prefix_any: ["hsts-absent", "hsts-malformed", "hsts-max-age"]
+        finding: no Strict-Transport-Security policy a browser would honour is published
+
+  # ── Mail ──
+
+  - id: MAIL.1
+    level: MUST
+    area: Mail
+    name: Offer TLS on every mail server that exchanges mail over the internet
+    statement: >
+      Every mail server that sends or receives mail over public networks MUST
+      offer TLS (STARTTLS) at version 1.2 or above, with a certificate that
+      validates and names the server.
+    standards:
+      - ref: NZISM v3.9, control 15.2.47.C.01
+        level: MUST
+        says: Enable opportunistic TLS, as defined in RFC 3207, on email servers making connections over public infrastructure.
+      - ref: NZISM v3.9, control 15.2.48.C.02
+        level: MUST
+        says: Use TLS 1.2 or above when implementing MTA-STS.
+    selection_test: >
+      The bidder confirms STARTTLS at TLS 1.2 or above on every inbound and
+      outbound mail hop it operates.
+    acceptance_test: >
+      Each delivered mail exchanger advertises STARTTLS and completes a TLS 1.2
+      or later handshake.
+    triggered_by:
+      - flags_any: ["plaintext:smtp"]
+        finding: a mail server accepts mail without offering TLS
+
+  - id: MAIL.2
+    level: SHOULD
+    area: Mail
+    name: Publish an MTA-STS policy in enforce mode
+    statement: >
+      Every domain that receives mail SHOULD publish an MTA-STS policy in
+      enforce mode, listing every mail exchanger, so that sending servers that
+      honour it refuse to deliver without valid TLS.
+    standards:
+      - ref: NZISM v3.9, control 15.2.48.C.01
+        level: SHOULD
+        says: Enable MTA-STS to prevent the unencrypted transfer of email between complying servers.
+      - ref: IETF RFC 8461, section 5
+        level: MUST NOT (for senders)
+        says: Under an "enforce" policy, sending servers must not deliver to a receiver that fails validation.
+    selection_test: >
+      The bidder confirms it can host or support an MTA-STS policy for each mail
+      domain and keep it in step with the mail exchangers.
+    acceptance_test: >
+      For each receiving domain the `_mta-sts` record is published and the
+      policy file is served over HTTPS in enforce mode, listing every MX host.
+    triggered_by:
+      - protocol: mta-sts
+        flags_any: [no-mta-sts-record]
+        finding: no MTA-STS record is published
+      - protocol: mta-sts
+        flags_none: [enforce, no-mta-sts-record]
+        finding: an MTA-STS policy is published but not in enforce mode
+
+  - id: MAIL.3
+    level: SHOULD
+    area: Mail
+    name: Publish a TLS reporting record
+    statement: >
+      Every domain that receives mail SHOULD publish an SMTP TLS reporting
+      (TLS-RPT) record with a reporting address someone reads, so that failed
+      or downgraded deliveries are seen.
+    standards:
+      - ref: NZISM v3.9, control 15.2.48.C.03
+        level: SHOULD
+        says: Enable TLS reporting when implementing MTA-STS.
+      - ref: IETF RFC 8460, section 3
+        level: Specification
+        says: Defines the `_smtp._tls` record, whose version must be "TLSRPTv1", and its reporting address.
+      - ref: Secure Government Email Common Implementation Framework, section 8
+        level: MUST (New Zealand government agencies)
+        says: All email sending domains must have TLS reporting enabled.
+    selection_test: >
+      The bidder states who will receive and act on TLS reports.
+    acceptance_test: >
+      The record is published for each receiving domain and a report has been
+      received at the address.
+    triggered_by:
+      - protocol: tls-rpt
+        flags_any: [no-tls-reporting]
+        finding: no TLS-RPT record is published
+
+  - id: MAIL.4
+    level: MUST
+    area: Mail
+    name: Publish one SPF record per domain, ending in a hard fail
+    statement: >
+      Every domain in scope MUST publish exactly one SPF record that lists its
+      legitimate senders, stays within SPF's DNS lookup limits and ends in
+      "-all". A domain that sends no mail publishes "v=spf1 -all".
+    standards:
+      - ref: NZISM v3.9, control 15.2.49.C.02
+        level: MUST
+        says: Use a fail SPF record when specifying email servers.
+      - ref: IETF RFC 7208, sections 4.5, 4.6.4 and 5.1
+        level: Specification
+        says: More than one record is a permanent error; lookups are limited; "-all" is the mechanism that fails everything not listed.
+    selection_test: >
+      The bidder lists every service that will send mail as the organisation,
+      and the SPF mechanism each needs.
+    acceptance_test: >
+      Each domain returns one SPF record ending in "-all" that evaluates within
+      the lookup limits.
+    triggered_by:
+      - protocol: spf
+        flags_any: [softfail-all, neutral-all]
+        finding: the SPF record ends in a soft fail or a neutral result rather than "-all"
+      - protocol: spf
+        flags_any: [duplicate-spf]
+        finding: more than one SPF record is published
+      - protocol: spf-senders
+        flags_any: [spf-lookup-limit-exceeded, spf-void-lookup-limit-exceeded]
+        finding: the SPF record exceeds a DNS lookup limit, so it evaluates to an error
+      - absent: {anchor: mx, missing: spf}
+        finding: MX records are published and no SPF record is
+
+  - id: MAIL.5
+    level: SHOULD
+    area: Mail
+    name: Sign outbound mail with DKIM keys of at least 2048 bits
+    statement: >
+      DKIM signing keys SHOULD be RSA of at least 2048 bits (or Ed25519 where
+      receivers support it), rotated on a stated schedule, on every service that
+      signs outbound mail for the organisation's domains.
+    standards:
+      - ref: NZISM v3.9, control 15.2.50.C.01
+        level: MUST
+        says: Enable DKIM signing on all email originating from the domain.
+      - ref: IETF RFC 8301, section 3.2
+        level: SHOULD
+        says: Signers must use RSA keys of at least 1024 bits and should use keys of at least 2048 bits.
+      - ref: NZISM v3.9, control 17.2.24.C.01
+        level: MUST (a reading)
+        says: RSA for digital signatures with a modulus of at least 3072 bits; read here as reaching a DKIM key, which neither the manual nor the mail guidance says in terms.
+    selection_test: >
+      The bidder confirms DKIM signing on every service that sends as the
+      organisation, and the key sizes it supports.
+    acceptance_test: >
+      Each published DKIM key is at least 2048 bits and a test message from
+      each sending service carries a valid signature.
+    triggered_by:
+      - protocol: dkim
+        flags_any: [weak-key-1024]
+        finding: the published DKIM key is 1024 bits or shorter
+
+  - id: MAIL.6
+    level: MUST
+    area: Mail
+    name: Enforce DMARC with a reject policy, including subdomains
+    statement: >
+      Every domain in scope MUST publish a DMARC record with p=reject, and a
+      subdomain policy no weaker, after aggregate reports have confirmed every
+      legitimate sender aligns, and MUST DKIM-sign its mail rather than rely on
+      SPF alone. Reports go to an address that is read. The two sources pull
+      opposite ways here: the DMARC standard itself (RFC 9989 section 7.4) says
+      a domain whose users might post to internet mailing lists SHOULD NOT
+      publish p=reject, because their list mail will then be rejected or
+      cause subscribers to be unsubscribed. This requirement asks for p=reject
+      because the NZISM makes it a MUST; an organisation not bound by that
+      control weighs the two. A domain with such users that does publish
+      p=reject steps through p=none and then p=quarantine for at least a month
+      each, reading the aggregate reports, and tells its users that mailing
+      list participation may be hindered, as RFC 9989 section 7.4 advises.
+    standards:
+      - ref: NZISM v3.9, control 15.2.36.C.02
+        level: MUST
+        says: Enable DMARC with a policy of p=reject for all email originating from or received by the domain.
+      - ref: NZISM v3.9, control 15.2.36.C.04
+        level: MUST
+        says: Review DMARC reports regularly and address anomalies.
+      - ref: IETF RFC 9989 (obsoletes RFC 7489 and RFC 9091), section 4.7
+        level: Specification
+        says: Defines the p= (domain) and sp= (subdomain) policy tags.
+      - ref: IETF RFC 9989, section 7.4
+        level: SHOULD NOT / MUST
+        says: Domains that host users who might post to mailing lists should not publish p=reject; domains that publish p=reject must not rely solely on SPF and must apply valid DKIM signatures.
+    selection_test: >
+      The bidder states how its sending services align with the organisation's
+      domains under DMARC, and who reads the reports.
+    acceptance_test: >
+      Each domain returns a DMARC record with p=reject and no sp=none, and the
+      aggregate reports show the bidder's services passing.
+    triggered_by:
+      - protocol: dmarc
+        flags_none: [dmarc-reject]
+        finding: the DMARC policy is not p=reject
+      - protocol: dmarc
+        flags_any: [subdomains-unprotected]
+        finding: the DMARC subdomain policy is sp=none
+      - absent: {anchor: mx, missing: dmarc}
+        finding: MX records are published and no DMARC record is
+
+  - id: MAIL.7
+    level: COULD
+    area: Mail
+    name: Publish DANE records for inbound mail servers
+    statement: >
+      Where the domain's zone is signed with DNSSEC, the organisation COULD
+      publish TLSA records for its mail exchangers so that sending servers that
+      support DANE authenticate them without relying on public certificate
+      authorities.
+    standards:
+      - ref: IETF RFC 7672, sections 1.3 and 2.2
+        level: Specification
+        says: Explains the STARTTLS downgrade risk DANE removes, and how senders discover TLSA records for MX hosts.
+    selection_test: >
+      The bidder states whether its mail exchangers can carry TLSA records and
+      how keys are rolled without breaking them.
+    acceptance_test: >
+      TLSA records are published and validate against each mail exchanger's
+      certificate.
+    triggered_by:
+      - flags_any: [dane-absent]
+        finding: no TLSA record is published for the mail exchangers
+
+  # ── SSH ──
+
+  - id: SSH.1
+    level: MUST
+    area: Remote administration
+    name: Offer only current SSH algorithms
+    statement: >
+      Every SSH service MUST offer only key exchange, host key, cipher and MAC
+      algorithms that are not disallowed or deprecated by the IETF, run a
+      supported SSH implementation, and use protocol version 2 only.
+    standards:
+      - ref: IETF RFC 9142, sections 3.2 and 3.3
+        level: MUST NOT / SHOULD NOT
+        says: SHA-1 and 1024-bit key exchange methods are disallowed or deprecated; diffie-hellman-group14-sha256 is required.
+      - ref: IETF RFC 8758
+        level: MUST NOT
+        says: Deprecates RC4 ciphers in SSH.
+      - ref: IETF RFC 8332
+        level: Specification
+        says: Defines RSA host keys signed with SHA-256 and SHA-512 in place of SHA-1.
+      - ref: NZISM v3.9, controls 17.5.6.C.01 and 17.5.10.C.01
+        level: SHOULD
+        says: Apply the listed SSH settings (protocol 2 only among them) and use the latest SSH implementation.
+    selection_test: >
+      The bidder supplies the default and configurable algorithm lists for every
+      SSH service it delivers or manages.
+    acceptance_test: >
+      An SSH algorithm audit of every delivered SSH service finds nothing graded
+      weak.
+    triggered_by:
+      - protocol: ssh
+        flags_prefix_any: ["weak-ssh-kex:", "weak-hostkey:", "weak-ssh-mac:", "weak-symmetric:"]
+        finding: an SSH algorithm graded weak by the baseline is offered
+
+  # ── VPN ──
+
+  - id: VPN.1
+    level: MUST
+    area: Remote access
+    name: Accept only strong IKE and IPsec proposals
+    statement: >
+      Every IPsec gateway MUST accept only encryption, integrity, PRF and
+      Diffie-Hellman proposals at or above the floor, with perfect forward
+      secrecy, and MUST NOT accept a weaker proposal than the one it prefers,
+      so that an attacker on the path cannot force a downgrade.
+    standards:
+      - ref: IETF RFC 8247, sections 2.1, 2.2 and 2.4
+        level: MUST NOT / SHOULD NOT
+        says: DES and NULL encryption, HMAC-MD5 PRF and the 768-bit group must not be used; the 1024- and 1536-bit groups should not.
+      - ref: NZISM v3.9, control 17.2.19.C.01
+        level: MUST
+        says: A Diffie-Hellman modulus of at least 3072 bits.
+      - ref: NZISM v3.9, controls 17.8.14.C.01, 17.8.15.C.01 and 17.8.16.C.01
+        level: SHOULD
+        says: Use HMAC-SHA256 or stronger, the largest available DH modulus, and perfect forward secrecy for IPsec.
+    selection_test: >
+      The bidder supplies the IKE and IPsec proposal sets each gateway will
+      accept, initiator and responder.
+    acceptance_test: >
+      A transform sweep of every delivered gateway finds no accepted proposal
+      graded weak and no downgrade surface.
+    triggered_by:
+      - protocol: ike
+        flags_prefix_any: ["weak-dh-group:", "weak-ike-prf:", "weak-symmetric:", "weak-hash:"]
+        finding: a proposal graded weak by the baseline is accepted
+      - protocol: ike
+        flags_prefix_any: ["downgrade-surface:"]
+        finding: a weaker proposal than the preferred one is accepted
+
+  - id: VPN.2
+    level: SHOULD
+    area: Remote access
+    name: Use IKEv2 and retire IKEv1
+    statement: >
+      IPsec gateways SHOULD negotiate IKEv2 only. The supplier names any peer
+      that still needs IKEv1 and the date it moves.
+    standards:
+      - ref: IETF RFC 9395, section 3
+        level: Informative (lower-case "should")
+        says: As IKEv1 is deprecated, systems running IKEv1 should be upgraded.
+    selection_test: >
+      The bidder confirms IKEv2 support on every gateway and peer it delivers.
+    acceptance_test: >
+      Each delivered gateway refuses an IKEv1 Main Mode proposal.
+    triggered_by:
+      - protocol: ike
+        extra_true: responded
+        finding: the gateway answered an IKEv1 proposal
+
+  # ── Cleartext ──
+
+  - id: CLR.1
+    level: SHOULD
+    area: Cleartext services
+    name: Encrypt or retire services that carry traffic in clear
+    statement: >
+      Services SHOULD NOT carry credentials, management commands or content in
+      clear on any network, internal networks included. Each cleartext service
+      is replaced by its encrypted form, moved behind an encrypting edge that is
+      its only way in, or turned off.
+    standards:
+      - ref: NZISM v3.9, control 17.1.55.C.04
+        level: SHOULD
+        says: Encrypt agency data using an approved algorithm and protocol to communicate over insecure or unprotected networks.
+      - ref: NIST SP 800-207, section 2.1, tenet 2
+        level: Principle
+        says: All communication is secured regardless of network location.
+      - ref: IETF RFC 8314, sections 4 and 4.1
+        level: SHOULD
+        says: Mail providers should deprecate cleartext mail access and submission servers, which should eventually be disabled or limited to legacy systems.
+    selection_test: >
+      The bidder lists every protocol its delivered components listen on and
+      which are encrypted.
+    acceptance_test: >
+      A port and service scan of every delivered host finds no cleartext
+      listener outside the agreed exceptions.
+    triggered_by:
+      - flags_prefix_any: ["plaintext:"]
+        flags_none: ["cleartext-exposure:metadata"]
+        finding: a service carries traffic with no encryption
+
+  - id: CLR.2
+    level: SHOULD
+    area: Cleartext services
+    name: Isolate cleartext services that have no encrypted alternative
+    statement: >
+      Where a cleartext service has no encrypted form the organisation can
+      adopt, it SHOULD sit on a segment that only named systems can reach, its
+      management traffic SHOULD be separated, and the acceptance SHOULD be
+      reviewed when the platform gains an encrypted option.
+    standards:
+      - ref: NZISM v3.9, control 18.1.13.C.02
+        level: SHOULD
+        says: Implement network access controls on all networks.
+      - ref: NZISM v3.9, control 18.1.14.C.01
+        level: SHOULD
+        says: Protect network management traffic against unauthorised access.
+    selection_test: >
+      The bidder states how each cleartext service it relies on will be
+      isolated.
+    acceptance_test: >
+      From a segment outside the agreed set, each such service does not answer.
+    triggered_by:
+      - flags_prefix_any: ["no-encrypted-alternative:"]
+        finding: a cleartext service has no encrypted alternative
+      - disposition: accept-no-alternative
+        flags_prefix_any: ["plaintext:"]
+        finding: a cleartext service is accepted because no alternative exists
+
+  - id: CLR.3
+    level: COULD
+    area: Cleartext services
+    name: Turn off device-discovery protocols where nothing depends on them
+    statement: >
+      Device-discovery services that broadcast names and capabilities in clear
+      (SSDP, UPnP, mDNS, LLMNR, WS-Discovery and the like) COULD be turned off
+      across the fleet wherever nothing depends on them.
+    standards:
+      - ref: NIST SP 800-207, section 2.1, tenet 2
+        level: Principle
+        says: All communication is secured regardless of network location.
+    selection_test: >
+      The bidder states which discovery protocols its components need.
+    acceptance_test: >
+      A scan of delivered hosts finds the unneeded discovery listeners closed.
+    triggered_by:
+      - flags_all: ["cleartext-exposure:metadata"]
+        finding: a discovery service broadcasts device metadata in clear
+
+  - id: REM.1
+    level: MUST
+    area: Remote administration
+    name: Require authentication before a remote desktop session starts
+    statement: >
+      Every remote desktop service MUST require network-level authentication,
+      so that no session, login screen or protocol negotiation is offered to an
+      unauthenticated caller, and MUST NOT accept the protocol's legacy native
+      security layer.
+    standards:
+      - ref: NZISM v3.9, control 16.5.10.C.01
+        level: MUST
+        says: Authenticate each remote connection and user prior to permitting access to an agency system.
+    selection_test: >
+      The bidder confirms network-level authentication is enforced on every
+      remote desktop service it delivers or manages.
+    acceptance_test: >
+      An encryption-layer probe of each delivered remote desktop service shows
+      only the network-level authentication layer accepted.
+    triggered_by:
+      - flags_any: [rdp-nla-not-enforced, rdp-standard-security-accepted]
+        finding: a remote desktop service accepts a session before authenticating the caller
+
+  # ── DNS ──
+
+  - id: DNS.1
+    level: SHOULD
+    area: DNS
+    name: Sign the organisation's zones with DNSSEC
+    statement: >
+      Every zone in scope SHOULD be signed with DNSSEC, with its DS record lodged
+      at the parent, so that resolvers can detect a forged or altered answer.
+      The DNS host and registrar state how keys are rolled and how a change of
+      provider is handed over without breaking validation.
+    standards:
+      - ref: IETF RFC 4033, section 3
+        level: Specification
+        says: DNSSEC provides data origin authentication and integrity assurance for DNS data.
+      - ref: NZISM v3.9, control 18.5.9.C.03
+        level: SHOULD
+        says: Agencies should consider the use of DNSSEC (a control in the manual's IPv6 section).
+    selection_test: >
+      The bidder confirms its DNS hosting supports DNSSEC signing and automated
+      key rollover.
+    acceptance_test: >
+      Each zone validates from at least two independent validating resolvers.
+    triggered_by:
+      - flags_any: [dnssec-unsigned, dnssec-no-ds-at-parent]
+        finding: the zone's answers carry no signature a resolver can validate
+
+  - id: DNS.2
+    level: MUST
+    area: DNS
+    name: Use current DNSSEC algorithms and keep signatures valid
+    statement: >
+      Signed zones MUST use signing and DS digest algorithms the IETF has not
+      prohibited, MUST keep their signatures within their validity periods, and
+      SHOULD use NSEC, or NSEC3 with zero additional iterations.
+    standards:
+      - ref: IETF RFC 8624, sections 3.1 and 3.3
+        level: MUST NOT
+        says: Lists the DNSSEC signing algorithms and DS digest types that must not be used, SHA-1 DS digests among them.
+      - ref: IETF RFC 9905, section 2
+        level: MUST NOT
+        says: SHA-1-based signature algorithms must not be used when creating DNSKEY and RRSIG records.
+      - ref: IETF RFC 9276, section 3.1
+        level: MUST
+        says: Where NSEC3 is used, an iterations count of 0 must be used.
+    selection_test: >
+      The bidder states the algorithms its DNS hosting signs with and how an
+      algorithm rollover is performed.
+    acceptance_test: >
+      Each zone validates, uses no prohibited algorithm or digest, and has no
+      expired signature.
+    triggered_by:
+      - flags_prefix_any: ["dnssec-algorithm-must-not:"]
+        finding: the zone is signed with a prohibited algorithm
+      - flags_any: [dnssec-ds-digest-sha1]
+        finding: a DS record uses a SHA-1 digest
+      - flags_any: [dnssec-signature-expired, dnssec-validation-fails]
+        finding: the zone's signatures are expired or fail validation
+      - flags_prefix_any: ["nsec3-iterations:"]
+        finding: NSEC3 uses additional hash iterations
+
+  - id: DNS.3
+    level: SHOULD
+    area: DNS
+    name: Publish CAA records naming the authorised certificate issuers
+    statement: >
+      Every domain in scope SHOULD publish CAA records naming only the
+      certificate authorities the organisation uses, with no critical tag a
+      public authority would not understand.
+    standards:
+      - ref: IETF RFC 8659, sections 1, 4.2 and 4.5
+        level: Specification
+        says: CAA lets a domain holder specify the authorities authorised to issue for it; an unknown tag marked critical stops issuance.
+    selection_test: >
+      The bidder names the certificate authorities its services need.
+    acceptance_test: >
+      Each domain returns CAA records naming exactly the agreed authorities.
+    triggered_by:
+      - flags_any: [caa-absent]
+        finding: no CAA record is published
+      - flags_any: [caa-critical-unknown-tag]
+        finding: a CAA record carries a critical tag issuers do not understand
+
+  # ── Key management and agility ──
+
+  - id: KEY.1
+    level: SHOULD
+    area: Key management
+    name: Keep a cryptographic inventory and change algorithms by configuration
+    statement: >
+      The supplier SHOULD keep an inventory of every algorithm, key and
+      certificate its delivered components use, with an owner and a
+      cryptoperiod for each key, and SHOULD be able to replace an algorithm by
+      configuration rather than by re-engineering, demonstrated on request.
+    standards:
+      - ref: NZISM v3.9, controls 17.1.58.C.01 and 17.1.58.C.02
+        level: SHOULD
+        says: Establish cryptoperiods for all keys and cryptographic implementations, using risk assessment.
+      - ref: NZISM v3.9, control 17.9.30.C.02
+        level: SHOULD
+        says: Develop a key management plan for cryptographic systems using commercial grade equipment.
+      - ref: NZISM v3.9, control 2.4.13.C.03
+        level: SHOULD
+        says: Conduct an inventory of systems using cryptographic technologies.
+      - ref: NIST SP 800-57 Part 1 Rev. 5, section 5.3
+        level: Guidance
+        says: Sets out cryptoperiods and the factors that determine them.
+    selection_test: >
+      The bidder supplies a sample inventory and describes how an algorithm is
+      withdrawn from its products.
+    acceptance_test: >
+      The inventory for the delivered components is handed over and matches a
+      scan; an algorithm is withdrawn by configuration in a test environment.
+    triggered_by:
+      - verdict: weak
+        flags_prefix_none: ["plaintext:", "dnssec-unsigned", "dnssec-no-ds-at-parent",
+                            "dnssec-validation-fails"]
+        finding: the weakest accepted cryptography is graded weak
+      - disposition: retire-planned
+        finding: a primitive still accepted is planned for retirement
+
+  # ── Post-quantum readiness ──
+
+  - id: PQC.1
+    level: SHOULD
+    area: Post-quantum readiness
+    name: Offer hybrid post-quantum key establishment
+    statement: >
+      Services that establish keys over a network SHOULD offer a hybrid key
+      exchange combining a classical group with ML-KEM wherever the software
+      supports it, and the supplier SHOULD state when each remaining component
+      will, because traffic recorded today can be decrypted later.
+    standards:
+      - ref: NZISM v3.9, controls 2.4.13.C.04 and 2.4.13.C.07
+        level: SHOULD
+        says: Note public-key systems as quantum vulnerable in risk assessments, and plan their transition.
+      - ref: NIST FIPS 203
+        level: Standard
+        says: Specifies ML-KEM, the post-quantum key-encapsulation mechanism.
+      - ref: NIST IR 8547 (initial public draft), section 3.2 and Table 4
+        level: Draft
+        says: Describes hybrid key establishment as a transition measure, and lists the quantum-vulnerable key-establishment schemes.
+      - ref: NSA CNSA 2.0 advisory (Ver. 1.0, September 2022), transition timetable
+        level: Calibration only (US National Security Systems)
+        says: Web servers and cloud services to support and prefer CNSA 2.0 by 2025; traditional networking equipment by 2026.
+    selection_test: >
+      The bidder states, per component, whether a hybrid ML-KEM key exchange is
+      available now, and if not, on what roadmap.
+    acceptance_test: >
+      A handshake from a client offering a hybrid group negotiates it on each
+      delivered endpoint that the bid said supports it.
+    triggered_by:
+      - data_state: in-transit
+        flags_any: [quantum-vulnerable-kex]
+        finding: key establishment is classical only
+      - disposition: pqc-migrate
+        flags_any: [quantum-vulnerable-kex]
+        finding: key establishment is tracked for post-quantum migration
+
+  - id: PQC.2
+    level: SHOULD
+    area: Post-quantum readiness
+    name: Commit to post-quantum signatures and certificates
+    statement: >
+      The supplier SHOULD state its roadmap for post-quantum signatures (ML-DSA
+      or SLH-DSA) in certificates, host keys and signing keys, and SHOULD make
+      them available to the organisation when public issuers offer them.
+    standards:
+      - ref: NZISM v3.9, control 2.4.13.C.07
+        level: SHOULD
+        says: Develop a plan for system transitions upon publication of the new post-quantum standard.
+      - ref: NIST FIPS 204 and FIPS 205
+        level: Standard
+        says: Specify ML-DSA and SLH-DSA, the post-quantum signature schemes.
+      - ref: NIST IR 8547 (initial public draft), Table 2
+        level: Draft
+        says: Lists the quantum-vulnerable digital signature algorithms.
+    selection_test: >
+      The bidder supplies its post-quantum signature roadmap with dates.
+    acceptance_test: >
+      The roadmap is incorporated in the contract and reviewed at each renewal.
+    triggered_by:
+      - flags_any: [quantum-vulnerable-signature]
+        finding: signatures are classical only
+
+  # ── Coverage gaps ──
+
+  - id: GAP.1
+    level: SHOULD
+    area: Evidence
+    name: Supply the configuration evidence the assessment could not collect
+    statement: >
+      For every component the assessment could not see, or saw only in part,
+      the supplier SHOULD provide configuration exports or attested settings
+      sufficient to grade it, so that an unmeasured component is not read as a
+      sound one.
+    standards:
+      - ref: NZISM v3.9, control 12.7.15.C.02
+        level: SHOULD
+        says: Request information from contractors and subcontractors to assess their ability to protect information.
+      - ref: NZISM v3.9, control 2.4.13.C.03
+        level: SHOULD
+        says: Conduct an inventory of systems using cryptographic technologies.
+    selection_test: >
+      The bidder confirms which configuration exports it can supply and in what
+      format.
+    acceptance_test: >
+      The exports are supplied and the assessment re-run closes the named gaps.
+    triggered_by:
+      - gap_kinds: [not-collected, extent-unknown]
+        finding: an input was not collected or is known to be incomplete
+
+  - id: GAP.2
+    level: SHOULD
+    area: Evidence
+    name: Allow the organisation to measure what it is buying
+    statement: >
+      The supplier SHOULD allow the organisation, or its agent, to probe the
+      delivered services from an agreed network position, so that each
+      security setting can be measured rather than taken on trust.
+    standards:
+      - ref: NZISM v3.9, control 12.7.19.C.01
+        level: SHOULD
+        says: Validate the security of the equipment against security performance, capability and functionality requirements.
+      - ref: NZISM v3.9, control 18.1.10.C.03
+        level: SHOULD
+        says: Regularly review network configuration against the documented configuration.
+    selection_test: >
+      The bidder agrees to measurement access and names any service it cannot
+      expose to a probe.
+    acceptance_test: >
+      Each delivered service answers the agreed probes.
+    triggered_by:
+      - gap_kinds: [could-not-test, not-measured]
+        finding: a probe could not run or returned an incomplete answer
+      - flags_prefix_any:
+          - "unverified-encryption:"
+          - "plaintext-scan-inconclusive:"
+          - "plaintext-scan-unreached:"
+          - "implicit-tls-unreached:"
+          - "ike-sweep-inconclusive:"
+          - "rdp-scan-inconclusive:"
+          - "smb-unreached"
+          - "hsts-unreadable"
+          - "ungraded:"
+        finding: what was measured could not be settled or graded
