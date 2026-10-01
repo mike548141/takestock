@@ -1,0 +1,4 @@
+# Captured with curl from a loopback stub HTTP server.
+curl: (7) Failed to connect to 127.0.0.1 port 18999 after 0 ms: Couldn't connect to server
+
+__takestock_probe__ exit=7 connected=

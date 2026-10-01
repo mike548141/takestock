@@ -1,0 +1,9 @@
+# Captured with nmap 7.91 from a loopback stub server (synthetic example.test names); the banner line is removed.
+Host discovery disabled (-Pn). All addresses will be marked 'up' and scan times will be slower.
+Nmap scan report for localhost (127.0.0.1)
+Host is up (0.00024s latency).
+
+PORT      STATE SERVICE
+18080/tcp open  unknown
+
+Nmap done: 1 IP address (1 host up) scanned in 0.66 seconds

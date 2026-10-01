@@ -1,0 +1,4 @@
+# Captured with curl from a loopback stub HTTP server.
+curl: (1) Received HTTP/0.9 when not allowed
+
+__takestock_probe__ exit=1 connected=127.0.0.1

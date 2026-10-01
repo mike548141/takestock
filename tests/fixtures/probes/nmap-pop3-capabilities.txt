@@ -1,0 +1,10 @@
+# Captured with nmap 7.91 from a loopback stub server (synthetic example.test names); the banner line is removed.
+Host discovery disabled (-Pn). All addresses will be marked 'up' and scan times will be slower.
+Nmap scan report for localhost (127.0.0.1)
+Host is up (0.00013s latency).
+
+PORT      STATE SERVICE
+11000/tcp open  irisa
+|_pop3-capabilities: SASL(PLAIN LOGIN) TOP USER UIDL STLS
+
+Nmap done: 1 IP address (1 host up) scanned in 0.35 seconds

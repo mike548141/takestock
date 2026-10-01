@@ -10,7 +10,9 @@ from takestock import collectors
 from takestock.model import is_informational_flag
 
 PROBES = ("tls_scan", "ike_scan", "ssh_audit", "plaintext_scan", "hsts", "smtp_starttls",
-          "implicit_tls", "smb_scan", "rdp_scan", "ssh_audit_inside")
+          "implicit_tls", "smb_scan", "rdp_scan", "ssh_audit_inside", "internal_scan",
+          "intel_amt")
+INGEST = ("ssh_audit_inbox", "winrm_config", "netdev")
 
 
 @pytest.mark.parametrize("name", PROBES)
@@ -21,8 +23,9 @@ def test_every_probe_is_registered_as_active_and_loads(name):
     assert list(inspect.signature(fn).parameters)[:3] == ["target", "raw_dir", "ref_time"]
 
 
-def test_the_export_reader_is_registered_as_ingest():
-    assert collectors.REGISTRY["ssh_audit_inbox"].kind == "ingest"
+@pytest.mark.parametrize("name", INGEST)
+def test_the_export_readers_are_registered_as_ingest(name):
+    assert collectors.REGISTRY[name].kind == "ingest"
 
 
 def test_a_name_cannot_be_registered_twice_and_kinds_are_checked():
@@ -35,25 +38,28 @@ def test_a_name_cannot_be_registered_twice_and_kinds_are_checked():
 
 def test_names_can_be_filtered_by_kind():
     assert set(PROBES) <= set(collectors.names("active"))
-    assert "ssh_audit_inbox" not in collectors.names("active")
+    assert not set(INGEST) & set(collectors.names("active"))
 
 
 @pytest.mark.parametrize("flag", [
     "tls-version-probe-unavailable", "implicit-tls-unreached:smtps", "hsts-unreadable",
     "hsts-preload", "plaintext-scan-unreached:http", "plaintext-scan-inconclusive:80",
     "http-redirect:https", "smb-unreached", "smb-signing-not-read", "rdp-scan-inconclusive:x",
-    "ike-sweep-inconclusive:2"])
+    "ike-sweep-inconclusive:2", "winrm-https-listener", "not-assessed:basic_service",
+    "algorithms-not-recorded", "netdev-classes-missing:router", "hardware-key-store:present"])
 def test_measurement_limits_register_as_informational(flag):
-    for name in PROBES:
+    for name in PROBES + INGEST:
         collectors.load(name)
     assert is_informational_flag(flag)
 
 
 @pytest.mark.parametrize("flag", [
     "implicit-tls-no-handshake:smtps", "hsts-absent", "smb-signing-disabled",
-    "rdp-nla-not-enforced", "ike-no-responder-preference", "cert-name-mismatch"])
+    "rdp-nla-not-enforced", "ike-no-responder-preference", "cert-name-mismatch",
+    "cleartext-auth-offered:imap", "winrm-allows-unencrypted", "winrm-credssp-service",
+    "encryption-off", "hardware-key-store:absent"])
 def test_findings_do_not(flag):
-    for name in PROBES:
+    for name in PROBES + INGEST:
         collectors.load(name)
     assert not is_informational_flag(flag)
 

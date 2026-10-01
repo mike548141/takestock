@@ -1,0 +1,10 @@
+# Captured with curl from a loopback stub HTTP server.
+HTTP/1.0 501 Unsupported method ('POST')
+Server: ExampleHTTP/1.0 
+Date: Tue, 15 Jan 2030 00:00:00 GMT
+Connection: close
+Content-Type: text/html;charset=utf-8
+Content-Length: 482
+
+
+__takestock_connected_to__ 127.0.0.1

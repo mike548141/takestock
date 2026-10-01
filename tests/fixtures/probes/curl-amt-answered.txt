@@ -1,0 +1,9 @@
+# Captured with curl from a loopback stub HTTP server; the stub sends the Server header nmap's service database matches for Intel AMT.
+HTTP/1.0 303 See Other
+Server: Intel(R) Active Management Technology 12.0.0 
+Date: Tue, 15 Jan 2030 00:00:00 GMT
+Location: /logon.htm
+Content-Length: 0
+
+
+__takestock_probe__ exit=0 connected=127.0.0.1
