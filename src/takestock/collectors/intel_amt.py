@@ -51,6 +51,7 @@ from pathlib import Path
 
 from .. import __version__, inside_scope, tls_session
 from ..config import load_port_encryption
+from ..identity import names_by_address, report_as
 from ..inside_scope import MAX_HOSTS
 from ..model import CryptoAsset
 from ..plaintext import CLEARTEXT, PortTable, apply_posture, lookup
@@ -353,4 +354,5 @@ def collect(target: dict, raw_dir: Path | None = None, ref_time: datetime | None
             assets.append(asset_for(host, port, out, table, ref_time))
             if port == TLS_PORT and not tls_missing and _reached(parse_curl(out)):
                 assets.append(measure_tls(host, raw_dir, ref_time))
-    return assets, failures
+    names = names_by_address(target)
+    return [report_as(a, names) for a in assets], failures

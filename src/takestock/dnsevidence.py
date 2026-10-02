@@ -29,6 +29,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from . import config, tls_session
+from .exits import guarded
 from .util import ERROR_PREFIX, USER_AGENT, run
 
 #: The data file naming the public services DNS collectors use by default.
@@ -80,6 +81,27 @@ def resolvers(target: dict | None = None) -> tuple[str, ...]:
 def resolver_label(resolver: str) -> str:
     """A resolver address for display; the empty string reads as the system resolver."""
     return resolver or SYSTEM_RESOLVER_LABEL
+
+
+def _domain_name(value: object) -> str:
+    return str(value or "").strip().lower().rstrip(".")
+
+
+def parked_domains(target: dict | None = None) -> list[str]:
+    """Domains the profile lists under ``discovery.domains`` and not ``discovery.email_domains``.
+
+    Such a domain is *parked*: it neither sends nor receives mail. Names are
+    compared without case or a trailing dot, and returned lower-case, in the
+    profile's order.
+    """
+    disc = (target or {}).get("discovery") or {}
+    mail = {_domain_name(d) for d in disc.get("email_domains") or []}
+    out: list[str] = []
+    for d in disc.get("domains") or []:
+        name = _domain_name(d)
+        if name and name not in mail and name not in out:
+            out.append(name)
+    return out
 
 
 def dkim_selectors(target: dict | None = None) -> list[str]:
@@ -706,7 +728,15 @@ def _authorisation_problems(target: dict) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Print (or emit as JSON) a capture for the target profile's email domains."""
+    """Print (or emit as JSON) a capture for the target profile's email domains.
+
+    Exits 1 when the resolvers disagreed, 0 when they agreed, and 2 for wrong
+    arguments, an unreadable input or a refused probe (see :mod:`takestock.exits`).
+    """
+    return guarded("takestock.dnsevidence", _main, argv)
+
+
+def _main(argv: list[str] | None) -> int:
     import argparse
 
     ap = argparse.ArgumentParser(

@@ -14,14 +14,12 @@ import argparse
 import json
 import sys
 import textwrap
-import traceback
 from importlib import import_module
 from pathlib import Path
 
-import yaml
-
 from . import __version__, config
-from .observe import EXIT_CLEAN, EXIT_ERROR, EXIT_FINDINGS, ObserveRefused, Options, observe
+from .exits import EXIT_CLEAN, EXIT_ERROR, EXIT_FINDINGS, guarded
+from .observe import ObserveRefused, Options, observe
 
 EXIT_CODES = f"""\
 exit codes:
@@ -172,11 +170,13 @@ def _ipam(args: argparse.Namespace) -> int:
 
 def _sge_inputs(args: argparse.Namespace) -> tuple[dict, list[str], list] | None:
     """(target, email domains, assets) for the sge commands; None when there are no domains."""
+    from . import sge
     target = config.load_target(args.target)
     domains = [str(d) for d in (target.get("discovery") or {}).get("email_domains") or []]
-    if not domains:
-        print("takestock: the target profile names no `discovery.email_domains`, so there "
-              "is nothing to read against the framework", file=sys.stderr)
+    if not domains and not sge.parked_domains(target):
+        print("takestock: the target profile names no `discovery.email_domains` and no "
+              "parked domain, so there is nothing to read against the framework",
+              file=sys.stderr)
         return None
     path = args.observation / "assets.json"
     assets = json.loads(path.read_text(encoding="utf-8"))
@@ -191,7 +191,8 @@ def _sge(args: argparse.Namespace) -> int:
     if inputs is None:
         return EXIT_ERROR
     target, domains, assets = inputs
-    report = sge.evaluate(assets, domains, bulk_mail_domains=sge.bulk_mail_domains(target))
+    report = sge.evaluate(assets, domains, bulk_mail_domains=sge.bulk_mail_domains(target),
+                          parked=sge.parked_domains(target))
     # The same text ``python -m takestock.sge`` prints.
     print(sge._format(report, domains))
     return EXIT_FINDINGS if report.breaches() else EXIT_CLEAN
@@ -205,7 +206,8 @@ def _sge_note(args: argparse.Namespace) -> int:
     target, domains, assets = inputs
     obs = args.observation
     results = sge.evaluate(assets, domains,
-                           bulk_mail_domains=sge.bulk_mail_domains(target))
+                           bulk_mail_domains=sge.bulk_mail_domains(target),
+                           parked=sge.parked_domains(target))
     theme = htmlpage.theme_from_target(target)
     for problem in theme.contrast_failures():
         print(f"warning: branding contrast: {problem}", file=sys.stderr)
@@ -253,12 +255,4 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_CLEAN
     if getattr(args, "workspace", None):
         config.set_workspace(args.workspace)
-    try:
-        return _COMMANDS[args.command](args)
-    except (OSError, ValueError, KeyError, yaml.YAMLError) as exc:
-        print(f"takestock {args.command}: {exc}", file=sys.stderr)
-        return EXIT_ERROR
-    except Exception:  # noqa: BLE001 - the exit-code contract holds even for a defect
-        print(f"takestock {args.command}: internal error", file=sys.stderr)
-        traceback.print_exc()
-        return EXIT_ERROR
+    return guarded(f"takestock {args.command}", _COMMANDS[args.command], args)

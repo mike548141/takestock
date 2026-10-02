@@ -226,7 +226,7 @@ def test_the_command_reads_an_observation_and_writes_the_note(tmp_path):
         "branding": {"palette": {"accent": "#7a1f4d"}},
     }))
     out_path = tmp_path / "out" / "note.html"
-    assert sge_note.main([str(obs), str(target_path), str(out_path)]) == 0
+    assert sge_note.main([str(obs), str(target_path), str(out_path)]) == 1   # DMARC unmet
     out = out_path.read_text()
     assert f"conformance for {ORG}</h1>" in out
     assert "--accent: #7a1f4d;" in out

@@ -26,7 +26,7 @@ from .plaintext import PLAINTEXT_FLAG, UNVERIFIED_FLAG
 
 # Rows that carry no cryptographic primitive by nature: mail and certificate
 # policy records, discovered names, identities, inventory rows, suppliers.
-NON_CRYPTO_PROTOCOLS = {"mx", "spf", "spf-senders", "dmarc", "mta-sts", "caa", "dane"}
+NON_CRYPTO_PROTOCOLS = {"mx", "null-mx", "spf", "spf-senders", "dmarc", "mta-sts", "caa", "dane"}
 NON_CRYPTO_STATES = {"discovery", "identity"}
 NON_CRYPTO_ROW_STATES = {"estate", "third-party"}
 

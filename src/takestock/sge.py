@@ -20,6 +20,15 @@ conformance it cannot show.
 :func:`apply_conformance` marks the rows behind each unmet *must* with the
 requirement, so a reader of the asset sees the standard beside the grade.
 
+**Parked domains.** A domain the profile lists under ``discovery.domains``
+and not ``discovery.email_domains`` sends and receives no mail
+(:func:`parked_domains`). The framework's rules for domains that send no mail
+apply to it: the blank SPF record ``v=spf1 -all`` and a ``p=reject`` DMARC
+policy, both stated as must. :func:`evaluate` reads each parked domain against
+those requirements, on its own records, in rows marked ``parked``. Whether it
+publishes a null MX (RFC 7505) is not a framework requirement; it is reported
+beside them in :attr:`Report.parked`, with the guidance that recommends it.
+
 Run as ``python -m takestock.sge <target>`` for a text report.
 """
 
@@ -32,7 +41,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import config
+from . import config, dnsevidence
+from .exits import guarded
 from .plaintext import PLAINTEXT_FLAG
 
 PASS = "pass"
@@ -68,11 +78,51 @@ class Conformance:
     citation: str = ""
     record: str = ""
     subject_note: str = ""
+    #: True for a reading of a parked domain (see :func:`parked_domains`).
+    parked: bool = False
 
     @property
     def breaches_must(self) -> bool:
         """True for a failed requirement the standard states as must."""
         return self.status == FAIL and self.level == "must"
+
+
+#: Why a parked domain's null MX is read, and at what force. It is not a
+#: framework requirement, so it never counts as a breach.
+NULL_MX_GUIDANCE = (
+    "Not a Secure Government Email requirement. RFC 7505 §3 defines the null MX "
+    "(an MX record of \"0 .\") as the way a domain says it accepts no mail. The M3AAWG "
+    "Protecting Parked Domains Best Common Practices (December 2015) call it \"the "
+    "recommended way to indicate that a domain is not meant to receive email\", and the "
+    "UK NCSC's Protecting parked domains guidance says a domain with an address record "
+    "but no MX records \"should create a null MX record\"."
+)
+
+#: Null MX states, as read by :func:`takestock.collectors.ct_dns.parked_assets`.
+NULL_MX_STATES = {
+    "published": "null MX published",
+    "alongside-other-mx": "null MX published beside other MX records",
+    "mail-exchangers": "MX records naming mail servers; no null MX",
+    "no-mx": "no MX record and no null MX",
+}
+
+PARKED_NOTE = ("parked domain: listed under discovery.domains and not under "
+               "discovery.email_domains, so read as a domain that sends and receives no mail")
+
+
+@dataclass
+class ParkedDomain:
+    """One parked domain's null MX reading, which no framework requirement grades."""
+
+    domain: str
+    null_mx: str = ""
+    observed: str = ""
+    records: list[str] = field(default_factory=list)
+    evidence: str = ""
+
+    @property
+    def published(self) -> bool:
+        return self.null_mx == "published"
 
 
 @dataclass
@@ -81,6 +131,8 @@ class Report:
 
     rows: list[Conformance] = field(default_factory=list)
     standard: dict[str, Any] = field(default_factory=dict)
+    #: Each parked domain read, with its null MX reading.
+    parked: list[ParkedDomain] = field(default_factory=list)
 
     def counts(self) -> dict[str, int]:
         out = {PASS: 0, FAIL: 0, NOT_MEASURED: 0}
@@ -1577,6 +1629,143 @@ def _unmeasured(req: dict, subject: str, reason_kind: str, detail: str) -> Confo
                        evidence=detail, source=req["source"])
 
 
+# ── Parked domains ───────────────────────────────────────────────────────
+
+def parked_domains(target: dict) -> list[str]:
+    """Domains in ``discovery.domains`` and not ``discovery.email_domains``: no mail either way."""
+    return dnsevidence.parked_domains(target)
+
+
+def _parked_rows(assets: list[Any], protocol: str, domain: str) -> list[Any]:
+    return [a for a in _by(assets, protocol, domain) if (_get(a, "extra") or {}).get("parked")]
+
+
+def _as_parked(rows: list[Conformance]) -> list[Conformance]:
+    for row in rows:
+        row.parked = True
+        row.subject_note = "; ".join(x for x in (PARKED_NOTE, row.subject_note) if x)
+    return rows
+
+
+def _parked_unread(req: dict, domain: str, record: str) -> Conformance:
+    return _unmeasured(req, domain, INCONCLUSIVE,
+                       f"no {record} reading of this parked domain is in the observation: "
+                       "the lookup did not settle, or the DNS collector did not run")
+
+
+def _eval_parked_spf(req: dict, assets: list[Any], parked: list[str]) -> list[Conformance]:
+    rows = []
+    for d in parked:
+        found = _parked_rows(assets, "spf", d)
+        if not found:
+            rows.append(_parked_unread(req, d, "SPF"))
+            continue
+        a = found[0]
+        record = str((_get(a, "extra") or {}).get("record") or "").strip('"')
+        flags = list(_get(a, "flags") or [])
+        common = {"evidence": str(_get(a, "name") or ""), "source": req["source"]}
+        if _absent(a):
+            rows.append(Conformance(
+                req["id"], req["title"], req["level"], req["scope"], d, FAIL,
+                observed="no SPF record",
+                reason=("the domain publishes no v=spf1 record, so nothing denies mail that "
+                        "claims to come from it; the framework asks a domain that sends no "
+                        "mail for the blank record v=spf1 -all. " + _settled_by(a)),
+                **common))
+        elif dnsevidence.is_denying_spf(record):
+            rows.append(Conformance(req["id"], req["title"], req["level"], req["scope"], d,
+                                    PASS, observed="v=spf1 -all", record=record, **common))
+        else:
+            qualifier = ("-all" if "hardfail-all" in flags else
+                         "~all" if "softfail-all" in flags else "no -all")
+            rows.append(Conformance(
+                req["id"], req["title"], req["level"], req["scope"], d, FAIL,
+                observed=f"not blank; ends {qualifier}",
+                reason=("the record is not the blank v=spf1 -all: "
+                        + ("it ends -all but still permits senders, so it says the domain "
+                           "sends mail" if qualifier == "-all" else
+                           f"it ends {qualifier}, so mail claiming the domain is not denied")),
+                record=record, **common))
+    return _as_parked(rows)
+
+
+def _eval_parked_dmarc(req: dict, assets: list[Any], parked: list[str]) -> list[Conformance]:
+    own = [a for d in parked for a in _parked_rows(assets, "dmarc", d)]
+    rows = []
+    for d in parked:
+        if not _parked_rows(assets, "dmarc", d):
+            rows.append(_parked_unread(req, d, "DMARC"))
+        else:
+            rows += _eval_dmarc(req, own, [d])
+    return _as_parked(rows)
+
+
+def _eval_parked_dmarc_alignment(req: dict, assets: list[Any],
+                                 parked: list[str]) -> list[Conformance]:
+    rows = []
+    for d in parked:
+        found = _parked_rows(assets, "dmarc", d)
+        if not found:
+            rows.append(_parked_unread(req, d, "DMARC"))
+            continue
+        a = found[0]
+        if _absent(a):
+            rows.append(_graded_elsewhere(req, d, "DMARC", "SGE-NED-DMARC-01"))
+            continue
+        record = _dmarc_record(a)
+        tags = _dmarc_tags(record)
+        short = [f"{k}={tags.get(k, 'r (by default)')}" for k in ("adkim", "aspf")
+                 if tags.get(k, "r").lower() != "s"]
+        if not tags.get("rua"):
+            short.append("no rua=")
+        rows.append(Conformance(
+            req["id"], req["title"], req["level"], req["scope"], d,
+            FAIL if short else PASS,
+            observed=", ".join(short) or "adkim=s, aspf=s, rua= present",
+            reason=("the framework's record for a domain that sends no mail sets strict SPF "
+                    "and DKIM alignment and a reporting address; this one reads "
+                    + ", ".join(short) + " — a recommendation unmet, not a breach"
+                    if short else ""),
+            evidence=str(_get(a, "name") or ""), source=req["source"], record=record))
+    return _as_parked(rows)
+
+
+def _eval_parked_dkim(req: dict, assets: list[Any], parked: list[str]) -> list[Conformance]:
+    return _as_parked([_unmeasured(
+        req, d, NOT_COLLECTED,
+        f"the empty DKIM key at {dnsevidence.dkim_wildcard_name(d)} is not read for parked "
+        "domains yet") for d in parked])
+
+
+#: The evaluator for each requirement that reads parked domains.
+_PARKED_EVALUATORS: dict[str, Callable[..., list[Conformance]]] = {
+    "SGE-NED-SPF-01": _eval_parked_spf,
+    "SGE-NED-DKIM-01": _eval_parked_dkim,
+    "SGE-NED-DMARC-01": _eval_parked_dmarc,
+    "SGE-NED-DMARC-R01": _eval_parked_dmarc_alignment,
+}
+
+
+#: The requirements a parked domain is read against, in the order they are listed.
+PARKED_REQUIREMENTS: tuple[str, ...] = tuple(_PARKED_EVALUATORS)
+
+
+def _parked_readings(assets: list[Any], parked: list[str]) -> list[ParkedDomain]:
+    out = []
+    for d in parked:
+        found = _parked_rows(assets, "null-mx", d)
+        if not found:
+            out.append(ParkedDomain(d, observed="not read: the MX lookup did not settle, or "
+                                                "the DNS collector did not run"))
+            continue
+        extra = _get(found[0], "extra") or {}
+        state = str(extra.get("null_mx") or "")
+        out.append(ParkedDomain(d, null_mx=state, observed=NULL_MX_STATES.get(state, state),
+                                records=[str(r) for r in extra.get("records") or []],
+                                evidence=str(_get(found[0], "name") or "")))
+    return out
+
+
 #: The evaluator for each observable requirement.
 _EVALUATORS: dict[str, Callable[..., list[Conformance]]] = {
     "SGE-SPF-01": _eval_spf,
@@ -1627,15 +1816,24 @@ def citation(std: dict, req: dict) -> str:
 
 
 def evaluate(assets: list[Any], domains: list[str], standard: dict | None = None,
-             bulk_mail_domains: tuple[str, ...] = ()) -> Report:
+             bulk_mail_domains: tuple[str, ...] = (),
+             parked: list[str] | tuple[str, ...] = ()) -> Report:
     """Read every requirement against ``assets`` for the email ``domains``.
 
     ``bulk_mail_domains`` are SPF policy domains of bulk-mail providers; a
     sender policy that includes one is noted beside the strict-alignment row.
+    ``parked`` are domains that send and receive no mail (:func:`parked_domains`):
+    each is read against the requirements for such domains, in rows marked
+    ``parked``, and its null MX reading goes in :attr:`Report.parked`.
     """
     std = standard or load_standard()
+    parked = list(parked)
     rows: list[Conformance] = []
     for req in std.get("requirements", []):
+        if parked and req["id"] in _PARKED_EVALUATORS and req.get("measurable") == "observed":
+            parked_rows = _PARKED_EVALUATORS[req["id"]](req, assets, parked)
+        else:
+            parked_rows = []
         measurable = req.get("measurable")
         if measurable == "no-instrument":
             rows.append(_unmeasured(
@@ -1658,10 +1856,12 @@ def evaluate(assets: list[Any], domains: list[str], standard: dict | None = None
             rows.extend(fn(req, assets, domains, bulk_mail_domains))
         else:
             rows.extend(fn(req, assets, domains))
+        rows.extend(parked_rows)
     cites = {r["id"]: citation(std, r) for r in std.get("requirements", [])}
     for row in rows:
         row.citation = cites.get(row.requirement, "")
-    return Report(rows=rows, standard=std.get("standard", {}))
+    return Report(rows=rows, standard=std.get("standard", {}),
+                  parked=_parked_readings(assets, parked))
 
 
 #: The ``standards_verdict`` a row behind an unmet must receives.
@@ -1674,11 +1874,12 @@ SAME_FACT = ("This is the same finding as the conformance table's row for the "
 
 def apply_conformance(assets: list[Any], domains: list[str],
                       standard: dict | None = None,
-                      bulk_mail_domains: tuple[str, ...] = ()) -> int:
+                      bulk_mail_domains: tuple[str, ...] = (),
+                      parked: list[str] | tuple[str, ...] = ()) -> int:
     """Evaluate, then mark the rows behind each unmet must; returns how many were marked."""
-    if not domains:
+    if not domains and not parked:
         return 0
-    return _mark(assets, evaluate(assets, domains, standard, bulk_mail_domains))
+    return _mark(assets, evaluate(assets, domains, standard, bulk_mail_domains, parked))
 
 
 #: Joins several asset names in one conformance row's ``evidence``.
@@ -1720,13 +1921,19 @@ def _format(report: Report, domains: list[str]) -> str:
     ]
     mark = {PASS: "PASS", FAIL: "FAIL", NOT_MEASURED: "----"}
     for row in report.rows:
-        subject = row.subject or "(organisation)"
+        subject = (row.subject or "(organisation)") + (" (parked)" if row.parked else "")
         line = f"{mark[row.status]}  {row.requirement:<16} {subject:<26} {row.observed[:44]}"
         out.append(line.rstrip())
         if row.status == NOT_MEASURED:
             out.append(f"      {row.reason}: {row.evidence}")
         elif row.reason:
             out.append(f"      {row.reason}")
+    if report.parked:
+        out += ["", f"Parked domains ({len(report.parked)}): read against the rules for "
+                    "domains that send no mail, in the rows above marked (parked)."]
+        for p in report.parked:
+            out.append(f"  {p.domain:<26} null MX: {p.observed}")
+        out.append("  " + NULL_MX_GUIDANCE)
     breaches = report.breaches()
     out += ["", f"{len(breaches)} unmet MUST requirement(s)."]
     if breaches:
@@ -1745,7 +1952,15 @@ def bulk_mail_domains(target: dict) -> tuple[str, ...]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Print the conformance report for a target's latest (or named) observation."""
+    """Print the conformance report for a target's latest (or named) observation.
+
+    Exits 1 when a MUST requirement is unmet, 0 when none is, and 2 for wrong
+    arguments or an unreadable input (see :mod:`takestock.exits`).
+    """
+    return guarded("takestock.sge", _main, argv)
+
+
+def _main(argv: list[str] | None) -> int:
     import argparse
     import json
 
@@ -1765,7 +1980,8 @@ def main(argv: list[str] | None = None) -> int:
     with path.open() as f:
         assets = json.load(f)
 
-    report = evaluate(assets, domains, bulk_mail_domains=bulk_mail_domains(cfg))
+    report = evaluate(assets, domains, bulk_mail_domains=bulk_mail_domains(cfg),
+                      parked=parked_domains(cfg))
     if args.json:
         print(json.dumps({"standard": report.standard,
                           "counts": report.counts(),

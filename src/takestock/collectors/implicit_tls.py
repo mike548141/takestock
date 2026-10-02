@@ -22,6 +22,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .. import inside_scope, roles, tls_session
+from ..identity import names_by_address, report_as
 from ..model import NA_VERDICT, CryptoAsset, register_informational_prefixes
 from ..tls_session import COULD_NOT_ASK, OFFERED
 from ..util import ERROR_PREFIX, now_date
@@ -185,6 +186,7 @@ def collect(target: dict, raw_dir: Path | None = None,
     if refused:
         return [], [refused]
     role_by_host = roles.scan_target_roles(target)
-    assets = [measure(host, port, raw_dir, ref_time, role_by_host.get(host, ""))
+    names = names_by_address(target)
+    assets = [report_as(measure(host, port, raw_dir, ref_time, role_by_host.get(host, "")), names)
               for host, port, _section in pairs]
     return assets, tls_scan.cert_not_read_failure(SOURCE, assets)

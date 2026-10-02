@@ -34,7 +34,7 @@ the others loading.
 
 | Collector | Kind | Reads or probes | Needs in the profile | Tools |
 |---|---|---|---|---|
-| `ct_dns` | passive | certificate-transparency logs; MX, SPF, DMARC, MTA-STS, TLS-RPT and DKIM records | `discovery.domains`, `discovery.email_domains` | `dig`, `curl` |
+| `ct_dns` | passive | certificate-transparency logs; MX, SPF, DMARC, MTA-STS, TLS-RPT and DKIM records; SPF, DMARC and null MX on parked domains | `discovery.domains`, `discovery.email_domains` | `dig`, `curl` |
 | `spf_senders` | passive | each email domain's SPF record, expanded | `discovery.email_domains` | `dig` |
 | `dnssec` | passive | DNSSEC signing and validation | `discovery.domains` or `email_domains` | `dig` |
 | `dane` | passive | TLSA records for each mail server | as `dnssec` | `dig` |
@@ -97,10 +97,21 @@ Active probes read host lists from `scan_targets:` in the target profile:
 | `internal_services` | Internal services: `{host, port, role}`, from a fixed list of ports | `internal_scan` |
 | `intel_amt` | Internal machines whose management firmware to check: a host or `{host, ip}` | `intel_amt` |
 
-Where an entry gives both `host` and `ip`, the address is probed. `tls_scan`,
-`ike_scan`, `ssh_audit` and `rdp_scan` name the row after the host and keep
-the address beside it; `plaintext_scan`, `smb_scan`, `ssh_audit_inside` and
-`intel_amt` report the address.
+Where an entry gives both `host` and `ip`, the address is probed. Every
+active collector names its rows by one rule:
+
+- a row's `host` is the host name when the profile gives one, and the address
+  only when it gives nothing else;
+- its `ip` is the probed address when the row is named by a host name, and is
+  blank otherwise. It never holds a host name;
+- its name reads `<label> <host>:<port>`.
+
+A collector that probes hosts drawn from several groups (`plaintext_scan`,
+`implicit_tls`) finds the name for an address in any `{host, ip}` entry in
+`scan_targets`. An address that two entries give two different names stays
+named by its address. The configuration register keys a machine by `host`
+and records its address from `ip`, so two collectors that probed one entry
+add to one item rather than making two.
 
 Every key the profile can carry is listed in
 [`TARGET-PROFILE.md`](TARGET-PROFILE.md).
@@ -123,6 +134,17 @@ hosts:
   DKIM records, then sweeps the sub-domain names the transparency read found
   for the denying SPF, empty DKIM and DMARC records a name that sends no mail
   should publish.
+- **Parked domains.** A domain under `discovery.domains` and not under
+  `discovery.email_domains` is *parked*: it sends and receives no mail. For
+  each one it reads SPF and DMARC the same way as for an email domain, and
+  MX, recording whether the domain publishes a **null MX** (an MX record of
+  `0 .`, RFC 7505) in a row of protocol `null-mx`, named `Null MX <domain>`.
+  Its flag is one of `null-mx:published`, `null-mx:no-mx`,
+  `null-mx:mail-exchangers` (real mail servers, so the domain receives mail)
+  and `null-mx:alongside-other-mx` (which RFC 7505 §3 forbids). Every row for
+  a parked domain carries `extra.parked: true`. The MX lookup settles or fails
+  as the SPF and DMARC lookups do, and a failure line names the domain as
+  parked.
 
 **Missing records.** The SPF, DMARC, MTA-STS and TLS-RPT records are each
 asked of every configured resolver, keeping each resolver's response code.
@@ -386,7 +408,9 @@ beside the observation) before anything is contacted.
 
 Applied this way, an `ssh_22` entry contributes its host only: the port in
 `host:port` or `[v6]:port` is dropped, and a `{host, ip}` entry contributes
-its address.
+its address (the rows are still named after the host). A derived section's
+`hosts_from` group is read the same way, and two entries for one host in a
+group are one host.
 
 **Refuses** (contacting nothing): ranges, comma lists or wildcards in a port;
 more than 12 ports on a host, 60 hosts, or 400 host-and-port pairs in all

@@ -31,6 +31,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .. import inside_scope, roles
+from ..identity import row_identity
 from ..inside_scope import MAX_HOSTS
 from ..model import NA_VERDICT, CryptoAsset, register_informational_prefixes
 from ..util import ERROR_PREFIX, is_ipv6_literal, now_date, run, scan_address
@@ -188,7 +189,7 @@ def _base(t: RdpTarget, ref_time: datetime | None, source_class: str,
     return CryptoAsset(
         name=f"RDP {t.ident}:{t.port}", role=roles.remote_desktop_service(t.ident),
         data_state="in-transit", protocol="rdp",
-        host=t.ident, ip=t.probe if t.probe != t.ident else "", port=str(t.port),
+        host=t.ident, ip=row_identity(t.ident, t.probe)[1], port=str(t.port),
         source=SOURCE, internet_facing=False, source_class=source_class,
         source_name=source_name, collected_at=now_date(ref_time))
 

@@ -164,6 +164,26 @@ def test_ssh_hosts_given_with_a_port_are_probed_by_host():
     assert ps.scan_hosts(t) == ["192.0.2.23", "2001:db8::23", "2001:db8::24"]
 
 
+def test_a_derived_section_drops_the_port_from_a_host_port_entry():
+    t = target(tls_443=["192.0.2.30:8443", "[2001:db8::30]:23", "2001:db8::31",
+                        "web-30.example.test:8080", {"host": "web-31.example.test"},
+                        {"ip": "198.51.100.30:2323"}])
+    plan = ps.build_plan(t, overlay(
+        {"web": {"hosts_from": "scan_targets.tls_443", "ports": ["80/tcp"], "basis": "b"}},
+        {"hosts": 6, "tcp_pairs": 6, "udp_pairs": 0}))
+    assert [s.host for s in plan.steps] == [
+        "192.0.2.30", "2001:db8::30", "2001:db8::31", "web-30.example.test",
+        "web-31.example.test", "198.51.100.30"]
+
+
+def test_two_entries_for_one_host_in_a_group_are_one_host():
+    t = target(tls_443=["192.0.2.32:443", "192.0.2.32:8443", "192.0.2.32"])
+    plan = ps.build_plan(t, overlay(
+        {"web": {"hosts_from": "scan_targets.tls_443", "ports": ["80/tcp"], "basis": "b"}},
+        {"hosts": 1, "tcp_pairs": 1, "udp_pairs": 0}))
+    assert [s.host for s in plan.steps] == ["192.0.2.32"]
+
+
 # ── parsing and classifying nmap ──
 
 def test_the_captured_http_title_run_is_read():
@@ -336,6 +356,21 @@ def test_a_host_that_answers_on_no_port_is_unreached_not_clean(monkeypatch, tabl
     assert all(f.startswith(ps.UNREACHED_FLAG) for a in assets for f in a.flags)
     assert is_informational_flag(assets[0].flags[0])
     assert any("UNREACHED" in line for line in said)
+
+
+def test_rows_are_named_by_the_host_the_probed_address_belongs_to(monkeypatch, table_with_8000):
+    monkeypatch.setattr(ps, "run", FakeRun([
+        (has("http-title"), fixture("nmap-http-title.txt")),
+        (has("http://127.0.0.1:8080/"), fixture("curl-plain-http.txt")),
+        (has("http://127.0.0.1:8000/"), fixture("curl-redirect-https.txt"))]))
+    monkeypatch.setattr(ps.shutil, "which", lambda name: f"/usr/bin/{name}")
+    t = target(vpn_gateways=[{"host": "vpn-01.example.test", "ip": LOCAL}])
+    t["plaintext_ports"] = ["23/tcp", "8000/tcp", "8080/tcp"]
+    assets, failures = ps.collect(t, ref_time=WHEN, announce=lambda _l: None)
+    assert failures == [] and assets
+    assert {(a.host, a.ip) for a in assets} == {("vpn-01.example.test", LOCAL)}
+    assert all(a.name.endswith(f" vpn-01.example.test:{a.port}") for a in assets)
+    assert next(a for a in assets if a.port == "8080").extra["cleartext_verified_by"]
 
 
 def test_a_planned_port_with_no_table_row_is_a_failure(monkeypatch, port_table):

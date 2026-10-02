@@ -60,6 +60,7 @@ from pathlib import Path
 from typing import Any
 
 from . import config, htmlpage, util, zonefile
+from .exits import EXIT_CLEAN, EXIT_ERROR, guarded
 
 SCHEMA_VERSION = 1
 
@@ -1091,7 +1092,15 @@ def refresh_asn(target_path: str | Path, exports_dir: str | Path | None = None,
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Build an IP address plan and write its JSON, CSV and HTML."""
+    """Build an IP address plan and write its JSON, CSV and HTML.
+
+    Exits 0 when the plan is written, and 2 for wrong arguments or an
+    unreadable input (see :mod:`takestock.exits`).
+    """
+    return guarded("takestock.ipam", _main, argv)
+
+
+def _main(argv: list[str] | None) -> int:
     ap = argparse.ArgumentParser(prog="takestock.ipam",
                                  description="Build an IP address plan from a .ipam.yaml file.")
     ap.add_argument("plan", help="the plan file, <stem>.ipam.yaml")
@@ -1113,10 +1122,10 @@ def main(argv: list[str] | None = None) -> int:
         paths = write_outputs(plan, args.out_dir, theme=theme)
     except IpamError as exc:
         print(f"error: {exc}", file=sys.stderr)
-        return 2
+        return EXIT_ERROR
     for p in paths.values():
         print(p)
-    return 0
+    return EXIT_CLEAN
 
 
 if __name__ == "__main__":       # pragma: no cover

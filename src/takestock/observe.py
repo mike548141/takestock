@@ -55,17 +55,13 @@ from . import (
 )
 from .collectors import ct_dns
 from .disposition import load_dispositions_for_target
+from .exits import EXIT_CLEAN, EXIT_ERROR, EXIT_FINDINGS
 from .model import CryptoAsset, dump_assets, to_cyclonedx, write_json
 from .policy import Policy
 from .util import ERROR_PREFIX
 
 STAMP_FORMAT = "%Y-%m-%dT%H%MZ"
 LATEST = "latest"
-
-#: Exit codes for ``takestock observe`` (and, where they apply, the other commands).
-EXIT_CLEAN = 0
-EXIT_FINDINGS = 1
-EXIT_ERROR = 2
 
 
 class ObserveRefused(Exception):
@@ -507,7 +503,8 @@ def observe(target: dict, options: Options | None = None) -> Result:
     run.gaps += normalise.not_measured_gaps(assets)
     email_domains = [str(d) for d in (target.get("discovery") or {}).get("email_domains") or []]
     marked = sge.apply_conformance(assets, email_domains,
-                                   bulk_mail_domains=sge.bulk_mail_domains(target))
+                                   bulk_mail_domains=sge.bulk_mail_domains(target),
+                                   parked=sge.parked_domains(target))
     found = normalise.findings(assets, rules.out_of_cycle)
     # The rules carry the ladder's out-of-cycle rungs and the profile's
     # outside-provider list, which a record's `third_party` match reads.

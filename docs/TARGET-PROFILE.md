@@ -182,8 +182,8 @@ discovery:
 
 | Field | Means |
 |---|---|
-| `domains` | Domains whose certificates (from certificate-transparency logs) and DNSSEC are read |
-| `email_domains` | Domains whose mail-authentication records (SPF, DKIM, DMARC, MTA-STS, TLS-RPT) are read and graded against Secure Government Email. `takestock sge-note` refuses a profile with none |
+| `domains` | Domains whose certificates (from certificate-transparency logs) and DNSSEC are read. A domain here and not under `email_domains` is a **parked domain**: one that sends and receives no mail. Its SPF, DMARC and MX are read and graded against Secure Government Email's rules for domains that send no mail |
+| `email_domains` | Domains whose mail-authentication records (SPF, DKIM, DMARC, MTA-STS, TLS-RPT) are read and graded against Secure Government Email. `takestock sge-note` refuses a profile with none and no parked domain |
 | `dkim_selectors` | The organisation's own DKIM selector names, tried before a short list of common defaults. DNS offers no way to list selectors |
 
 ### `dns`
@@ -251,8 +251,8 @@ even empty, must carry its record. See
 ### `scan_targets`
 
 The hosts each active probe may contact, by group. Where an entry gives both
-`host` and `ip`, the address is probed; which one names the row depends on
-the collector (see
+`host` and `ip`, the address is probed and every collector names the row
+after the host, with the address in the row's `ip` (see
 [`COLLECTORS.md`](COLLECTORS.md#where-active-probes-point)).
 
 | Group | Entry | Read by |
@@ -461,8 +461,9 @@ is `examples/example-widgets/targets/example-widgets.ipam.yaml`.
 keys above:
 
 - `name`, `organisation` and an empty `branding` block;
-- `discovery.domains` and `discovery.email_domains`, both `example.com` and
-  `example.net`;
+- `discovery.email_domains` with `example.com` and `example.net`, and
+  `discovery.domains` with those two and `example.org`, which is therefore a
+  parked domain;
 - a general `authorisation` record, and no inside groups, so no inside probe
   ever runs for it;
 - `scan_targets` with published web and mail hosts, one remote-access

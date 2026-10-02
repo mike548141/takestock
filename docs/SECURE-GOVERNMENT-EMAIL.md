@@ -175,6 +175,27 @@ An empty DKIM key is a defined state, not an error: RFC 6376 §3.6.1 says *"An
 empty value means that this public key has been revoked"*, so any signature
 claiming that domain fails.
 
+### Parked domains
+
+A **parked domain** is one an organisation holds that sends and receives no
+mail. takestock treats a domain listed under `discovery.domains` and not under
+`discovery.email_domains` as parked, because whether a domain sends mail
+cannot be seen in DNS. The framework's requirements for non-email-enabled
+domains apply to it directly, and takestock grades it on its own records:
+
+| Record | Level | Basis |
+|---|---|---|
+| SPF `v=spf1 -all`, with no other mechanism | MUST | SGE SPF guide §3 (the row above). The M3AAWG *Protecting Parked Domains Best Common Practices* (December 2015) say parked domains *"should publish a SPF TXT record in DNS that is referred to as a "naked" -all"* |
+| DMARC `p=reject` | MUST | SGE DMARC guide §3 (the row above). M3AAWG: parked domains *"should publish a DMARC TXT record in DNS which specifies "p=reject""* |
+| Strict alignment and a reporting address | Directive | Framework §10 checklist (the row above) |
+| Empty DKIM key at `*._domainkey.<domain>` | MUST | DKIM guide §3 (the row above). Not yet read for parked domains, so reported as not measured |
+| Null MX (`0 .`) | Not an SGE requirement | RFC 7505 §3 defines it: *"To indicate that a domain does not accept email, it advertises a single MX RR … with an RDATA section consisting of preference number 0 and a zero-length label"*, and *"A domain that advertises a null MX MUST NOT advertise any other MX RR."* M3AAWG calls it *"The recommended way to indicate that a domain is not meant to receive email"*. The UK NCSC's *Protecting parked domains* guidance says *"If you have an A record on your domain, but no MX records, you should create a null MX record"* |
+
+The null MX is reported beside the graded rows, never as a breach of the
+framework. A parked domain that publishes MX records naming mail servers
+receives mail, which contradicts the profile; takestock reports that reading
+rather than deciding which is right.
+
 ## What can be measured from outside, and what cannot
 
 takestock measures an organisation's domains from the public internet,
@@ -363,4 +384,6 @@ verdict depends on one, the verdict names the document it followed.
 |---|---|---|
 | Government Chief Digital Officer | SGE home page; Common Implementation Framework (web and PDF v1.1); SPF, DKIM, DMARC, TLS-RPT, MTA-STS, TLS and Keyword Blocking Deployment Guides; Keyword Blocking Scripts | <https://www.digital.govt.nz/products-and-services/products-and-services-a-z/secure-government-email> and the documents linked from it |
 | GCSB | NZISM v3.9, §15.2 *Email Infrastructure* | <https://nzism.gcsb.govt.nz/ism-document> |
-| IETF | RFC 2119, RFC 3207, RFC 6376, RFC 7208, RFC 7489, RFC 8301, RFC 8314, RFC 8460, RFC 8461, RFC 8996, RFC 9989 | <https://www.rfc-editor.org/rfc/> |
+| IETF | RFC 2119, RFC 3207, RFC 6376, RFC 7208, RFC 7489, RFC 7505, RFC 8301, RFC 8314, RFC 8460, RFC 8461, RFC 8996, RFC 9989 | <https://www.rfc-editor.org/rfc/> |
+| M3AAWG (Messaging, Malware and Mobile Anti-Abuse Working Group) | *Protecting Parked Domains Best Common Practices*, updated December 2015 | the M3AAWG website, published documents |
+| UK National Cyber Security Centre | *Protecting parked domains for the UK public sector* (blog post) | the UK NCSC website, blog posts |

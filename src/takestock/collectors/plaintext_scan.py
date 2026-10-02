@@ -50,6 +50,7 @@ from pathlib import Path
 
 from .. import inside_scope, roles
 from ..config import load_derived_ports, load_port_encryption
+from ..identity import names_by_address, report_as
 from ..inside_scope import MAX_HOSTS
 from ..model import NA_VERDICT, CryptoAsset, register_informational_prefixes
 from ..plaintext import CLEARTEXT, ENCRYPTED, OPPORTUNISTIC, PortTable, apply_posture, lookup
@@ -236,9 +237,12 @@ def _hosts_from(target: dict, path: object, where: str) -> list[str]:
         raise PortListRefused(f"{where}: `scan_targets.{group}:` is not a list")
     hosts: list[str] = []
     for entry in entries:
-        host = (str(entry.get("ip") or entry.get("host") or "").strip()
-                if isinstance(entry, dict) else str(entry or "").strip())
-        if host:
+        raw = (str(entry.get("ip") or entry.get("host") or "")
+               if isinstance(entry, dict) else str(entry or ""))
+        # The section's own `ports:` say what to probe, so a port on the entry
+        # (`host:port`, `[v6]:port`) is dropped; two entries for one host are one.
+        host = split_host_port(raw)[0].strip()
+        if host and host not in hosts:
             hosts.append(host)
     if not hosts:
         raise PortListRefused(
@@ -820,13 +824,14 @@ def collect(target: dict, raw_dir: Path | None = None,
                     "holds NO evidence about cleartext services."]
 
     role_by_host = roles.scan_target_roles(target)
+    names = names_by_address(target)
     assets: list[CryptoAsset] = []
     failures: list[str] = []
     for n, step in enumerate(plan.steps):
         if n:
             _settle()
         a, f = _scan_host(step, table, raw_dir, ref_time, role_by_host.get(step.host, ""))
-        assets += a
+        assets += [report_as(row, names) for row in a]
         failures += f
     for line in reach_summary(plan, assets):
         say(line)

@@ -246,6 +246,11 @@ standard can change without a code change. Each is read through
    authorisation record, and names each host one at a time
    (`entry_address`, `check_unique`, `check_ceiling`). Refuse, never
    truncate.
+   Name each row by the rule in `identity.py`: `host` is the host name when
+   the profile gives one and the address otherwise, and `ip` holds the probed
+   address when the row is named by a host name. A collector that probes at
+   an address passes its rows through `identity.report_as` with
+   `identity.names_by_address(target)`.
 3. **Run external programs through `util.run`**, so tests can replace it,
    and save each transcript under `raw_dir`.
 4. **Say what was not seen.** Return a `coverage.gap(...)` for every

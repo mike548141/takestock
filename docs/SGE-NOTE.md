@@ -23,6 +23,9 @@ evidence settles each kind of requirement.
   domain, a mail host, a mail path, or the organisation as a whole.
 - **Email domain**: a domain named under `discovery.email_domains` in the
   target profile.
+- **Parked domain**: a domain named under `discovery.domains` and not under
+  `discovery.email_domains`. It is read as a domain that sends and receives
+  no mail.
 - **Sweep**: the reading of each sub-domain name found in
   certificate-transparency logs, for the records a name that sends no mail
   should publish.
@@ -45,7 +48,7 @@ observations/latest/sge-note.html
 The note is written to `<observation_dir>/sge-note.html` unless `--out`
 names another file. The command exits 1 when any requirement stated as
 *must* is not met, 0 otherwise, and 2 on an error, including a profile that
-names no `discovery.email_domains`. (The sample's offline observation reads
+names neither `discovery.email_domains` nor a parked domain. (The sample's offline observation reads
 no mail records, so every requirement is *not measured* and it exits 0.)
 
 For the same reading as plain text on the terminal, one line per reading
@@ -67,15 +70,17 @@ its directory name under the workspace's `observations/` (default
 TAKESTOCK_HOME=<workspace> python -m takestock.sge <target-name> [--observation <name>] [--json]
 ```
 
-It exits 1 when a *must* requirement is not met and 0 otherwise. An input it
-cannot read stops it with Python's own error rather than exit code 2, so
-scripts should prefer the subcommand.
+It exits 1 when a *must* requirement is not met, 0 otherwise, and 2 when the
+arguments are wrong or an input cannot be read. `python -m takestock.sge_note
+<observation_dir> <target.yaml> <out.html>` writes the note and exits the
+same way.
 
 The target profile supplies:
 
 | Key | Used for |
 |---|---|
-| `discovery.email_domains` | The domains read |
+| `discovery.email_domains` | The email domains read |
+| `discovery.domains` | Any domain here and not under `email_domains` is read as a parked domain |
 | `organisation` | The name in the note's title |
 | `branding` | Colours, fonts and logo for the page |
 | `sge.bulk_mail_domains` | The SPF policy domains of bulk-mail providers, used to annotate one recommendation (see below) |
@@ -89,13 +94,20 @@ The target profile supplies:
    sentence, where that sentence was read, what it applies to, its source
    document, and a table of readings (subject, result, what was observed,
    and the explanation).
-3. **Not measured, and what would settle it**: every unsettled reading,
+3. **Parked domains**, when the profile has any: each parked domain against
+   the framework's requirements for domains that send no mail (the blank SPF
+   record `v=spf1 -all`, a `p=reject` DMARC policy, strict alignment with a
+   reporting address, and the empty DKIM key, which is not read for parked
+   domains yet), whether it publishes a null MX, and the record text read.
+   The same readings also appear, marked *(parked)*, in their requirements'
+   tables, so an unmet *must* on a parked domain counts like any other.
+4. **Not measured, and what would settle it**: every unsettled reading,
    with the evidence that would settle it.
-4. **DNS records read, per domain**: the record text as read, and which
-   requirements read it.
-5. **What this note cannot show**: the limits of reading a mail
+5. **DNS records read, per domain**: the record text as read for each email
+   domain, and which requirements read it.
+6. **What this note cannot show**: the limits of reading a mail
    configuration from outside.
-6. **Appendix: evidence files**: the observation's `assets.json` and every
+7. **Appendix: evidence files**: the observation's `assets.json` and every
    file under its `raw/` and `evidence/` directories, each with its size and
    SHA-256 digest, so a reader can confirm they hold the same files.
 

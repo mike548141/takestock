@@ -113,6 +113,7 @@ def test_a_rate_limit_parks_the_domain_and_resume_finishes_it(monkeypatch, tmp_p
     waited: list[float] = []
     monkeypatch.setattr(ct_dns, "_wait", lambda s: (waited.append(s), clock.__setitem__(0, clock[0] + s)))
     monkeypatch.setattr(dnsevidence, "capture_subdomains", lambda *a, **k: pytest.fail("no sweep"))
+    monkeypatch.setattr(ct_dns, "parked_assets", lambda *a, **k: ([], []))
     deferral = ct_dns.CTDeferral()
     target = {"discovery": {"domains": ["example.com", "example.net"]},
               "dns": {"ct_search_api": API}}
@@ -151,6 +152,7 @@ def test_an_error_page_with_nothing_read_is_a_failure(monkeypatch):
 def test_a_configured_endpoint_that_errors_is_a_failure_not_a_gap(monkeypatch):
     fake, _ = serve({"": {"code": "not_allowed"}})
     monkeypatch.setattr(ct_dns, "http_json", fake)
+    monkeypatch.setattr(ct_dns, "parked_assets", lambda *a, **k: ([], []))
     target = {"discovery": {"domains": ["example.com"]}, "dns": {"ct_search_api": API}}
     assets, failures, _ = ct_dns.collect(target, None, NOW)
     (failure,) = failures
@@ -162,6 +164,7 @@ def test_no_endpoint_is_a_gap_not_a_failure(monkeypatch, tmp_path):
     from takestock import config
     config.set_workspace(tmp_path)
     monkeypatch.setattr(ct_dns, "http_json", lambda *a, **k: pytest.fail("asked"))
+    monkeypatch.setattr(ct_dns, "parked_assets", lambda *a, **k: ([], []))
     assets, failures, _ = ct_dns.collect({"discovery": {"domains": ["example.com"]}})
     (gap,) = failures
     assert assets == [] and isinstance(gap, coverage.Gap)

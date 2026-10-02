@@ -254,6 +254,28 @@ def test_without_ike_scan_each_gateway_is_unknown_and_named_in_a_gap(monkeypatch
     assert gap.kind == coverage.NOT_COLLECTED and "vpn.example.test" in gap
 
 
+@pytest.mark.parametrize(("ident", "probe", "host", "ip"), [
+    ("vpn.example.test", IP, "vpn.example.test", IP),
+    ("", IP, IP, ""),
+    ("", "vpn.example.test", "vpn.example.test", ""),
+])
+def test_a_row_is_named_by_the_host_name_and_ip_never_holds_a_name(ident, probe, host, ip):
+    a = ike_scan._asset_from_transforms(probe, [], ident=ident)
+    assert (a.name, a.host, a.ip) == (f"IKE {host}:500", host, ip)
+
+
+@pytest.mark.parametrize(("gw", "host", "ip"), [
+    ({"host": "vpn.example.test", "ip": IP}, "vpn.example.test", IP),
+    ({"ip": IP}, IP, ""),
+    ({"host": "vpn.example.test"}, "vpn.example.test", ""),
+])
+def test_an_unmeasured_gateway_is_named_by_the_same_rule(monkeypatch, gw, host, ip):
+    monkeypatch.delenv(ike_scan.BINARY_ENV, raising=False)
+    monkeypatch.setattr(ike_scan.shutil, "which", lambda name: None)
+    [a], _ = ike_scan.collect(target(vpn_gateways=[gw]))
+    assert (a.host, a.ip) == (host, ip)
+
+
 def test_no_gap_when_the_sweep_ran(monkeypatch):
     a = ike_scan._asset_from_transforms(IP, [])
     assert ike_scan.coverage_gaps([a]) == []

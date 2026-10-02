@@ -143,12 +143,14 @@ def test_collect_probes_both_ports_and_measures_tls_where_reached(monkeypatch, t
           for flag, name in (("-tls1", "tls1"), ("-tls1_1", "tls1_1"),
                              ("-tls1_2", "tls1_2"), ("-tls1_3", "tls1_3"))]]))
     lines: list[str] = []
-    assets, failures = amt.collect(amt_target(["192.0.2.40"]), raw_dir=tmp_path,
-                                   ref_time=WHEN, announce=lines.append)
+    assets, failures = amt.collect(amt_target([{"host": HOST, "ip": "192.0.2.40"}]),
+                                   raw_dir=tmp_path, ref_time=WHEN, announce=lines.append)
     assert failures == []
-    assert [a.name for a in assets] == ["Intel AMT probe 192.0.2.40:16992",
-                                        "Intel AMT probe 192.0.2.40:16993",
-                                        "Intel AMT TLS 192.0.2.40:16993"]
+    # Probed at the address, named by the host name, the address kept beside it.
+    assert [a.name for a in assets] == [f"Intel AMT probe {HOST}:16992",
+                                        f"Intel AMT probe {HOST}:16993",
+                                        f"Intel AMT TLS {HOST}:16993"]
+    assert {(a.host, a.ip) for a in assets} == {(HOST, "192.0.2.40")}
     assert "-k" in fake.calls[1]
     assert (tmp_path / "intel-amt-budget.txt").exists()
     assert any("never" in ln for ln in lines)

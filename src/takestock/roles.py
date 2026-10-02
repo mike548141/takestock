@@ -90,6 +90,8 @@ _EMAIL_ROLES = {
            "using this domain name",
     "dmarc": "Email fraud policy for {domain} — what receiving servers do with mail that "
              "fails the sender checks",
+    "null-mx": "Mail refusal record for {domain} — whether a domain that takes no email "
+               "says so in DNS, so that mail sent to it fails at once",
     "mta-sts": "Email transport security policy for {domain} — tells other mail servers to "
                "encrypt when they deliver here",
     "caa": "Certificate issuing policy for {domain} — which certificate providers are "

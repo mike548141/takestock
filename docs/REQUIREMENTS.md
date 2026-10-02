@@ -51,9 +51,8 @@ directory required and the catalogue as an optional third argument:
 python -m takestock.requirements <observation_dir> <out_dir> [<catalogue.yaml>]
 ```
 
-It exits 0 and 1 the same way, and 2 when the arguments are wrong. An input
-it cannot read stops it with Python's own error (exit code 1, the same as
-"requirements derived"), so scripts should prefer the subcommand.
+It exits 0 and 1 the same way, and 2 when the arguments are wrong or an
+input cannot be read, with a one-line message naming the input.
 
 It reads the observation's `assets.json` and, if present, `summary.json`,
 whose `gaps` list (and the parallel `gap_kinds` list) holds the coverage

@@ -58,7 +58,6 @@ import hashlib
 import ipaddress
 import json
 import re
-import sys
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
@@ -68,6 +67,7 @@ from typing import Any
 
 from . import depth, obsarchive
 from .config import data_file, load_yaml_strict
+from .exits import EXIT_CLEAN, guarded
 
 MEASURED = "measured"
 REPORTED = "reported"
@@ -1454,7 +1454,15 @@ def write_outputs(register: Mapping[str, Any], out_dir: Path | str) -> list[Path
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """``python -m takestock.cmdb``: build and write the register for one observation."""
+    """``python -m takestock.cmdb``: build and write the register for one observation.
+
+    Exits 0 when the register is written, and 2 for wrong arguments or an
+    unreadable input (see :mod:`takestock.exits`).
+    """
+    return guarded("takestock.cmdb", _main, argv)
+
+
+def _main(argv: Sequence[str] | None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m takestock.cmdb",
         description="Build a draft configuration register from one observation.")
@@ -1465,17 +1473,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                         help="an earlier build's keys.jsonl, so items keep their keys")
     args = parser.parse_args(argv)
     out = args.out or args.observation / "cmdb"
-    try:
-        register = build_register(args.observation, keys=args.keys)
-    except (OSError, ValueError) as exc:
-        print(f"takestock.cmdb: {exc}", file=sys.stderr)
-        return 2
+    register = build_register(args.observation, keys=args.keys)
     for path in write_outputs(register, out):
         print(path)
     counts = register["register"]["counts"]
     print(f"{counts['configuration_items']} items, {counts['recorded_facts']} facts, "
           f"{counts['relationships']} relationships")
-    return 0
+    return EXIT_CLEAN
 
 
 if __name__ == "__main__":

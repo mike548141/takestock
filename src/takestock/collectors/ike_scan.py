@@ -47,6 +47,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .. import coverage, inside_scope, roles
+from ..identity import row_identity
 from ..model import CryptoAsset, register_informational_prefixes
 from ..util import ERROR_PREFIX, is_ipv6_literal, now_date, run, scan_address
 
@@ -608,9 +609,10 @@ def _asset_from_transforms(ip: str, accepted: list[str], ref_time: datetime | No
             IKEV2_ERROR: "; the IKEv2 probe could not run",
         }[answer]
 
+    host, address = row_identity(ident, ip)
     return CryptoAsset(
-        name=f"IKE {ident or ip}:500", role=role, data_state="in-transit", protocol="ike",
-        host=ident or ip, ip=ip, port="500", source=SOURCE, internet_facing=True,
+        name=f"IKE {host}:500", role=role, data_state="in-transit", protocol="ike",
+        host=host, ip=address, port="500", source=SOURCE, internet_facing=True,
         source_class="public", source_name=SOURCE_NAME, collected_at=now_date(ref_time),
         symmetric=t["enc"], hashes=t["hashes"], flags=sorted(flags),
         notes=notes, extra=extra,
@@ -670,7 +672,8 @@ def collect(target: dict, raw_dir: Path | None = None, ref_time: datetime | None
         return [CryptoAsset(name=f"IKE {gw.get('host') or gw['ip']}:500",
                             role=roles.vpn_gateway(gw), data_state="in-transit",
                             protocol="ike", host=str(gw.get("host") or gw["ip"]),
-                            ip=str(gw.get("ip") or ""), port="500",
+                            ip=row_identity(str(gw.get("host") or ""), str(gw.get("ip") or ""))[1],
+                            port="500",
                             source=SOURCE, verdict="unknown",
                             source_class="unknown",
                             source_name=NOT_PERFORMED_SOURCE_NAME,

@@ -223,6 +223,22 @@ def test_two_sources_naming_one_machine_make_one_item(built):
     assert {a.kind for a in servers[0].aliases} == {"hostname", "agent-id"}
 
 
+def test_probes_of_one_named_address_make_one_machine_carrying_the_address(tmp_path):
+    # Rows as the collectors name them for an entry {host: files-01..., ip: 192.0.2.45}.
+    rows = [cmdbfake._row(name=f"{label} files-01.example.test:{port}", protocol=proto,
+                          host="files-01.example.test", ip="192.0.2.45", port=port,
+                          source=source, source_name=source)
+            for label, proto, port, source in (("SMB signing", "smb", "445", "smb_scan"),
+                                               ("RDP", "rdp", "3389", "rdp_scan"),
+                                               ("SSH", "ssh", "22", "ssh_audit"))]
+    register = cmdb.build(cmdbfake.write_observation(tmp_path, assets=rows))
+    machines = [i for i in register.items.values() if i.label == "files-01.example.test"]
+    assert len(machines) == 1
+    assert not [i for i in register.items.values() if i.label.startswith("192.0.2.45")]
+    address = register.resolved()[machines[0].key]["address"]
+    assert {x.value for x in address.assertions} == {"192.0.2.45"}
+
+
 def test_disagreeing_sources_are_both_published(built):
     os = _value(built, "app-01.example.test", "os")
     assert os.contested and os.tie

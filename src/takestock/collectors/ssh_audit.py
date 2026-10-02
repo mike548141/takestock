@@ -32,6 +32,7 @@ from pathlib import Path
 
 from .. import coverage, inside_scope, roles
 from ..config import display_path, inbox_path
+from ..identity import names_by_address, report_as, row_identity
 from ..inside_scope import MAX_HOSTS
 from ..model import NA_VERDICT, CryptoAsset
 from ..util import (
@@ -148,9 +149,10 @@ def _normalise_target(entry: object) -> Listener:
 
 def _report_as(asset: CryptoAsset, listener: Listener) -> CryptoAsset:
     """Name a row after the listener's reported name, keeping the probed address beside it."""
-    if listener.name != listener.probe:
-        asset.name = f"SSH {listener.name}:{listener.port}"
-        asset.host, asset.ip = listener.name, listener.probe
+    host, ip = row_identity(listener.name, listener.probe)
+    if host != asset.host:
+        asset.name = f"SSH {host}:{listener.port}"
+        asset.host, asset.ip = host, ip
     return asset
 
 
@@ -524,4 +526,5 @@ def collect_inside(target: dict, raw_dir: Path | None = None,
                 a.notes = (f"Not measured: neither ssh-audit (set {BINARY_ENV}) nor nmap "
                            "is available, so no probe was sent.")
                 assets.append(a)
-    return assets, failures
+    names = names_by_address(target)
+    return [report_as(a, names) for a in assets], failures

@@ -159,7 +159,10 @@ def test_an_authorised_run_sends_the_declared_command(monkeypatch, tmp_path):
     assert failures == []
     assert fake.calls == [["nmap", *smb_scan.NMAP_FLAGS, "-p", "445", "--script",
                            smb_scan.NMAP_SCRIPTS, "192.0.2.45"]]
-    assert [a.name for a in assets] == ["SMB dialects 192.0.2.45:445", "SMB signing 192.0.2.45:445"]
+    # Probed at the address, named by the host name, the address kept beside it.
+    assert [a.name for a in assets] == ["SMB dialects files-01.example.test:445",
+                                        "SMB signing files-01.example.test:445"]
+    assert {(a.host, a.ip) for a in assets} == {("files-01.example.test", "192.0.2.45")}
     assert all(a.internet_facing is False for a in assets)
     assert said[0].startswith("[smb_scan] probe budget")
     assert (tmp_path / "nmap-smb-budget.txt").exists()

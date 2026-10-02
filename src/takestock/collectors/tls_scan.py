@@ -33,6 +33,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .. import inside_scope, roles, tls_negotiate, tls_session
+from ..identity import row_identity
 from ..model import CryptoAsset, cert_expiry_flag, register_informational_prefixes
 from ..tls_session import COULD_NOT_ASK, OFFERED, REFUSED, TlsSession
 from ..util import (
@@ -301,7 +302,7 @@ def _scan_host(host: str, port: int = 443, raw_dir: Path | None = None,
     if "ssl-enum-ciphers" not in out:
         return CryptoAsset(name=f"TLS {ident}:{port}", role=role,
                            data_state="in-transit", protocol="tls",
-                           host=ident, ip=host if ident != host else "",
+                           host=ident, ip=row_identity(ident, host)[1],
                            port=str(port), source=SOURCE, internet_facing=True,
                            source_class="public", source_name=SOURCE_NAME,
                            collected_at=now_date(ref_time),
@@ -317,7 +318,7 @@ def _scan_host(host: str, port: int = 443, raw_dir: Path | None = None,
         notes.append(version_note)
     asset = CryptoAsset(
         name=f"TLS {ident}:{port}", role=role, data_state="in-transit", protocol="tls",
-        host=ident, ip=host if ident != host else "",
+        host=ident, ip=row_identity(ident, host)[1],
         port=str(port), source=SOURCE, internet_facing=True,
         source_class="public", source_name=SOURCE_NAME, collected_at=now_date(ref_time),
         protocol_versions=versions,

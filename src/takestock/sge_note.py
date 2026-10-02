@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Any
 
 from . import config, htmlpage, sge
+from .exits import EXIT_CLEAN, EXIT_FINDINGS, guarded
 from .htmlpage import esc
 
 STATUS_LABEL = {sge.PASS: "Met", sge.FAIL: "Not met", sge.NOT_MEASURED: "Not measured"}
@@ -148,7 +149,7 @@ def _sentence(text: str) -> str:
 
 
 def _subject(row: sge.Conformance) -> str:
-    return row.subject or "the organisation"
+    return (row.subject or "the organisation") + (" (parked)" if row.parked else "")
 
 
 def _badge(status: str) -> str:
@@ -215,7 +216,10 @@ class _Note:
         discovered = (target.get("discovery") or {}).get("email_domains") or []
         self.domains = [str(d) for d in discovered] or sorted({
             r.subject for r in results.rows
-            if r.scope in ("email-domain", "non-email-domain") and r.subject})
+            if r.scope in ("email-domain", "non-email-domain") and r.subject and not r.parked})
+        self.parked = list(results.parked) or [
+            sge.ParkedDomain(d) for d in dict.fromkeys(r.subject for r in results.rows
+                                                       if r.parked)]
 
     def levels(self) -> list[str]:
         seen = [str(self.reqs[rid].get("level") or "") for rid in self.order]
@@ -292,6 +296,9 @@ class _Note:
 
         facts = [("Organisation", esc(self.organisation)),
                  ("Domains read", esc(", ".join(self.domains)) or "none named")]
+        if self.parked:
+            facts.append(("Parked domains", f'{esc(", ".join(p.domain for p in self.parked))} '
+                                            '(<a href="#parked">read separately</a>)'))
         if self.observation:
             facts.append(("Evidence", f"observation <code>{esc(self.observation)}</code>"))
         if self.std.get("deadline_note"):
@@ -339,6 +346,46 @@ class _Note:
             if intro:
                 out.append(f"<p>{esc(intro)}</p>")
             out += [self.requirement(rid) for rid in ids]
+        out.append("</section>")
+        return "\n".join(out)
+
+    def parked_section(self) -> str:
+        if not self.parked:
+            return ""
+        out = ['<section id="parked" aria-labelledby="parked-h">',
+               '<h2 id="parked-h">Parked domains</h2>',
+               "<p>A parked domain is one the organisation holds that sends and receives no "
+               "mail: the profile lists it among its domains and not among its email "
+               "domains. The framework's rules for domains that send no mail apply to it, so "
+               "it is read against those requirements here rather than against the rules for "
+               "mail domains. Whether a domain sends mail cannot be seen in DNS, so which "
+               "domains are parked is taken from the profile, not measured. Each result "
+               "below also appears in its requirement's card above.</p>"]
+        cols = [rid for rid in sge.PARKED_REQUIREMENTS if rid in self.rows]
+        head = ["Domain", *(f"{rid}" for rid in cols), "Null MX"]
+        rows = []
+        for p in self.parked:
+            cells = [f"<code>{esc(p.domain)}</code>"]
+            for rid in cols:
+                mine = [r for r in self.rows[rid] if r.parked and r.subject == p.domain]
+                cells.append(_badge(requirement_status(mine)) + (
+                    f"<br><small>{esc(mine[0].observed)}</small>"
+                    if mine and mine[0].observed else ""))
+            cells.append(esc(p.observed or "not read"))
+            rows.append(cells)
+        out.append(_table(head, rows, caption="Each parked domain, requirement by requirement"))
+        out.append("<p>" + " ".join(f'<a href="#{esc(rid)}">{esc(rid)}</a> '
+                                    f"{esc(self.title(rid))}." for rid in cols) + "</p>")
+        out.append(f"<h3>Null MX</h3><p>{esc(sge.NULL_MX_GUIDANCE)}</p>")
+        records = [[f"<code>{esc(r.subject)}</code>", esc(r.requirement),
+                    f"<code>{esc(r.record)}</code>"]
+                   for rid in cols for r in self.rows[rid] if r.parked and r.record.strip()]
+        records += [[f"<code>{esc(p.domain)}</code>", "MX",
+                     f"<code>{esc('; '.join(p.records))}</code>"]
+                    for p in self.parked if p.records]
+        if records:
+            out.append("<h3>Records read</h3>")
+            out.append(_table(["Domain", "Read for", "Text as read"], records))
         out.append("</section>")
         return "\n".join(out)
 
@@ -440,8 +487,9 @@ def build_note(results: sge.Report, target: dict, *, standard: dict | None = Non
     """The note as an HTML string."""
     std = standard or sge.load_standard()
     note = _Note(results, target, std, list(evidence or []), observation)
-    body = "\n".join([note.summary(), note.requirements(), note.not_measured(),
-                      note.dns_records(), note.limits(), note.appendix()])
+    body = "\n".join(x for x in [note.summary(), note.requirements(), note.parked_section(),
+                                 note.not_measured(), note.dns_records(), note.limits(),
+                                 note.appendix()] if x)
     title = f"Secure Government Email conformance for {note.organisation}"
     lead = ("Each requirement of the Secure Government Email Common Implementation "
             "Framework, read against the organisation's published mail configuration: met, "
@@ -471,7 +519,15 @@ def _load_assets(observation_dir: Path) -> list[Any]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Write the conformance note for one observation and one target profile."""
+    """Write the conformance note for one observation and one target profile.
+
+    Exits as ``takestock sge-note`` does: 1 when a MUST requirement is unmet,
+    0 when none is, and 2 for wrong arguments or an unreadable input.
+    """
+    return guarded("takestock.sge_note", _main, argv)
+
+
+def _main(argv: list[str] | None) -> int:
     ap = argparse.ArgumentParser(prog="takestock.sge_note",
                                  description=(__doc__ or "").split("\n")[0])
     ap.add_argument("observation_dir", help="observation directory holding assets.json")
@@ -483,14 +539,15 @@ def main(argv: list[str] | None = None) -> int:
     target = config.load_target(args.target)
     domains = [str(d) for d in (target.get("discovery") or {}).get("email_domains") or []]
     results = sge.evaluate(_load_assets(obs), domains,
-                           bulk_mail_domains=sge.bulk_mail_domains(target))
+                           bulk_mail_domains=sge.bulk_mail_domains(target),
+                           parked=sge.parked_domains(target))
     theme = htmlpage.theme_from_target(target)
     for problem in theme.contrast_failures():
         print(f"warning: branding contrast: {problem}", file=sys.stderr)
     out = render_note(results, target, args.out, evidence=evidence_files(obs),
                       observation=obs.resolve().name, theme=theme)
     print(out)
-    return 0
+    return EXIT_FINDINGS if results.breaches() else EXIT_CLEAN
 
 
 if __name__ == "__main__":       # pragma: no cover

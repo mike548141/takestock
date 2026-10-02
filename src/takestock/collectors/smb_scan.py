@@ -30,6 +30,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .. import inside_scope, roles
+from ..identity import names_by_address, report_as
 from ..inside_scope import MAX_HOSTS
 from ..model import NA_VERDICT, CryptoAsset, register_informational_prefixes
 from ..util import ERROR_PREFIX, is_ipv6_literal, now_date, run, scan_address
@@ -324,12 +325,13 @@ def collect(target: dict, raw_dir: Path | None = None,
     if raw_dir:
         (raw_dir / "nmap-smb-budget.txt").write_text("\n".join(lines) + "\n")
 
+    names = names_by_address(target)
     if not shutil.which("nmap"):
-        return [_row(h, "SMB", role_by_host.get(h, ""), collected_at, verdict="unknown",
+        return [report_as(_row(h, "SMB", role_by_host.get(h, ""), collected_at, verdict="unknown",
                      flags=[SCAN_NOT_RUN], source_class="unknown",
                      source_name="SMB probe not performed — nmap unavailable in this "
                                  "environment",
-                     notes="nmap is not on PATH, so no SMB probe was sent.")
+                     notes="nmap is not on PATH, so no SMB probe was sent."), names)
                 for h in hosts], []
 
     assets: list[CryptoAsset] = []
@@ -341,7 +343,8 @@ def collect(target: dict, raw_dir: Path | None = None,
         if raw_dir:
             (raw_dir / f"nmap-smb-{scan_address(host)}.txt").write_text(out)
         scan = parse_nmap(out)
-        assets += assets_from_scan(host, scan, collected_at, role_by_host.get(host, ""))
+        assets += [report_as(a, names)
+                   for a in assets_from_scan(host, scan, collected_at, role_by_host.get(host, ""))]
         if not scan.reached:
             failures.append(f"smb_scan {host}: nmap produced no port table ({scan.detail}); "
                             "this run says nothing about SMB on that host.")

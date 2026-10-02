@@ -231,6 +231,10 @@ def test_inside_hosts_run_batch_by_batch(monkeypatch, no_binary):
     assets, failures = ssh_audit.collect_inside(inside_target(entries), announce=said.append)
     assert failures == []
     assert [a.extra["ssh_batch"] for a in assets] == ["a", "a", "b"]
+    assert [(a.name, a.host, a.ip) for a in assets] == [
+        ("SSH build-01.example.test:22", "build-01.example.test", "192.0.2.31"),
+        ("SSH build-02.example.test:22", "build-02.example.test", "192.0.2.32"),
+        ("SSH db-01.example.test:2222", "db-01.example.test", "192.0.2.41")]
     assert all(a.internet_facing is False and a.source_class == "private" for a in assets)
     assert pauses == [ssh_audit.INTER_HOST_SECONDS, ssh_audit.INTER_BATCH_SECONDS]
     assert said[0].startswith("ssh_audit (inside): PROBE BUDGET")

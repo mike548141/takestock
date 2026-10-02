@@ -18,6 +18,12 @@ Two passive readings, neither of which touches the organisation's hosts:
   records a name that sends no mail should publish. A record the resolvers
   settle as missing is written as a row saying so (a measured absence); a
   lookup that does not settle is a failure, and claims nothing either way.
+* **Parked domains.** For each domain under ``discovery.domains`` that is not
+  under ``discovery.email_domains`` (see
+  :func:`takestock.dnsevidence.parked_domains`) it reads SPF, DMARC and MX,
+  the records with which a domain that sends and receives no mail says so:
+  ``v=spf1 -all``, ``p=reject`` and a null MX (RFC 7505). Every such row
+  carries ``extra.parked`` True.
 
 Search services limit how often they may be asked. When one says "wait",
 the run can park the remaining domains in a :class:`CTDeferral`, let other
@@ -65,6 +71,19 @@ TOKEN_KEYCHAIN_ITEM = "takestock-ct-token"
 
 # Expiry is a property of time passing, not of the estate getting worse.
 register_informational_prefixes("expired", "renewal-overdue", "expiry-soon")
+
+#: Protocol of the row reading whether a parked domain publishes a null MX.
+NULL_MX = "null-mx"
+
+#: The null MX states (RFC 7505), each also a ``null-mx:<state>`` flag on the row.
+NULL_MX_PUBLISHED = "published"
+NULL_MX_WITH_OTHERS = "alongside-other-mx"
+NULL_MX_MAIL_EXCHANGERS = "mail-exchangers"
+NULL_MX_NONE = "no-mx"
+NULL_MX_FLAG = "null-mx:"
+
+# Whether a null MX is published is a reading, graded by no standard here.
+register_informational_prefixes(NULL_MX_FLAG)
 
 #: Receives one progress line at a time.
 Progress = Callable[[str], None]
@@ -533,6 +552,12 @@ def collect(
         if not parked:
             assets.extend(_ned_sweep(domain, discovered, ref_time, note, asked))
 
+    for domain in dnsevidence.parked_domains(target):
+        note(f"    · SPF, DMARC and MX for parked domain {domain} …")
+        rows, unsettled = parked_assets(domain, ref_time, asked)
+        assets.extend(rows)
+        failures.extend(unsettled)
+
     if parked and deferral is not None:
         deferral.target, deferral.raw_dir = target, raw_dir
         deferral.ref_time, deferral.progress = ref_time, progress
@@ -709,9 +734,12 @@ class TxtLookup:
         return ", ".join(dict.fromkeys(seen)) or "not asked"
 
 
-def read_txt(name: str, resolvers: tuple[str, ...] = ("",)) -> TxtLookup:
-    """Ask every resolver for the TXT records at ``name``, keeping each response code."""
-    q = dnsevidence.corroborate_status(name, "TXT", resolvers)
+def read_txt(name: str, resolvers: tuple[str, ...] = ("",), rtype: str = "TXT") -> TxtLookup:
+    """Ask every resolver for the ``rtype`` (TXT unless given) records at ``name``.
+
+    Each resolver's response code is kept.
+    """
+    q = dnsevidence.corroborate_status(name, rtype, resolvers)
     replied = [lk for lk in q.lookups if not lk.error]
     measured = bool(replied) and all(lk.rcode in SETTLED_RCODES for lk in replied)
     answers = next((lk.answers for lk in replied if lk.answers), []) if measured else []
@@ -744,52 +772,9 @@ def _email_assets(domain: str, ref_time: datetime | None = None,
                            protocol="mx", notes="; ".join(mx) or "none",
                            extra={"records": mx}, **common))
 
-    txt = read_txt(domain, resolvers)
-    if not txt.measured:
-        unsettled.append(f"SPF ({txt.name}: {txt.why_unsettled()})")
-    else:
-        spf_records = [t for t in txt.answers if "v=spf1" in t.lower()]
-        legacy_spf2 = [t for t in txt.answers if re.search(r"spf2\.0", t, re.I)]
-        spf = spf_records[0] if spf_records else ""
-        flags = []
-        if spf:
-            flags.append("softfail-all" if "~all" in spf else
-                         ("hardfail-all" if "-all" in spf else "neutral-all"))
-        else:
-            flags.append("no-spf-record")
-        if len(spf_records) > 1:
-            flags.append("duplicate-spf")
-        if legacy_spf2:
-            flags.append("legacy-spf2")
-        notes = spf.strip('"')[:200] if spf else "no v=spf1 record published"
-        if len(spf_records) > 1:
-            notes += f"; {len(spf_records)} v=spf1 records published (should be one)"
-        if legacy_spf2:
-            notes += f"; {len(legacy_spf2)} legacy SPF2.0 record(s) present"
-        out.append(CryptoAsset(name=f"SPF {domain}", role=roles.email_record("spf", domain),
-                               protocol="spf", flags=flags, notes=notes,
-                               extra={"present": bool(spf), "record": spf,
-                                      "spf_records": spf_records,
-                                      "legacy_spf2_records": legacy_spf2,
-                                      "lookup": txt.evidence()}, **common))
-
-    dmarc = read_txt(f"_dmarc.{domain}", resolvers)
-    if not dmarc.measured:
-        unsettled.append(f"DMARC ({dmarc.name}: {dmarc.why_unsettled()})")
-    else:
-        drec = next((t for t in dmarc.answers if "v=DMARC1" in t), "")
-        flags = [] if drec else ["no-dmarc-record"]
-        p = re.search(r"\bp=(\w+)", drec)
-        sp = re.search(r"\bsp=(\w+)", drec)
-        if p and p.group(1) == "reject":
-            flags.append("dmarc-reject")
-        if sp and sp.group(1) == "none":
-            flags.append("subdomains-unprotected")
-        out.append(CryptoAsset(name=f"DMARC {domain}", role=roles.email_record("dmarc", domain),
-                               protocol="dmarc", flags=flags,
-                               notes=drec.strip('"')[:200] if drec else "no DMARC record published",
-                               extra={"present": bool(drec), "record": drec,
-                                      "lookup": dmarc.evidence()}, **common))
+    rows, spf_dmarc_unsettled = _spf_dmarc_rows(domain, common, resolvers)
+    out += rows
+    unsettled += spf_dmarc_unsettled
 
     sts = read_txt(f"_mta-sts.{domain}", resolvers)
     if not sts.measured:
@@ -852,6 +837,114 @@ def _email_assets(domain: str, ref_time: datetime | None = None,
         f"ct_dns {domain}: DNS lookups that did not settle for {'; '.join(unsettled)}, so "
         "those records are not measured: neither present nor absent is claimed")]
         if unsettled else [])
+    return out, failures
+
+
+def _spf_dmarc_rows(domain: str, common: dict[str, Any],
+                    resolvers: tuple[str, ...]) -> tuple[list[CryptoAsset], list[str]]:
+    """The SPF and DMARC rows for ``domain``, and a label for each lookup that did not settle."""
+    out: list[CryptoAsset] = []
+    unsettled: list[str] = []
+    txt = read_txt(domain, resolvers)
+    if not txt.measured:
+        unsettled.append(f"SPF ({txt.name}: {txt.why_unsettled()})")
+    else:
+        spf_records = [t for t in txt.answers if "v=spf1" in t.lower()]
+        legacy_spf2 = [t for t in txt.answers if re.search(r"spf2\.0", t, re.I)]
+        spf = spf_records[0] if spf_records else ""
+        flags = []
+        if spf:
+            flags.append("softfail-all" if "~all" in spf else
+                         ("hardfail-all" if "-all" in spf else "neutral-all"))
+        else:
+            flags.append("no-spf-record")
+        if len(spf_records) > 1:
+            flags.append("duplicate-spf")
+        if legacy_spf2:
+            flags.append("legacy-spf2")
+        notes = spf.strip('"')[:200] if spf else "no v=spf1 record published"
+        if len(spf_records) > 1:
+            notes += f"; {len(spf_records)} v=spf1 records published (should be one)"
+        if legacy_spf2:
+            notes += f"; {len(legacy_spf2)} legacy SPF2.0 record(s) present"
+        out.append(CryptoAsset(name=f"SPF {domain}", role=roles.email_record("spf", domain),
+                               protocol="spf", flags=flags, notes=notes,
+                               extra={"present": bool(spf), "record": spf,
+                                      "spf_records": spf_records,
+                                      "legacy_spf2_records": legacy_spf2,
+                                      "lookup": txt.evidence()}, **common))
+
+    dmarc = read_txt(f"_dmarc.{domain}", resolvers)
+    if not dmarc.measured:
+        unsettled.append(f"DMARC ({dmarc.name}: {dmarc.why_unsettled()})")
+    else:
+        drec = next((t for t in dmarc.answers if "v=DMARC1" in t), "")
+        flags = [] if drec else ["no-dmarc-record"]
+        p = re.search(r"\bp=(\w+)", drec)
+        sp = re.search(r"\bsp=(\w+)", drec)
+        if p and p.group(1) == "reject":
+            flags.append("dmarc-reject")
+        if sp and sp.group(1) == "none":
+            flags.append("subdomains-unprotected")
+        out.append(CryptoAsset(name=f"DMARC {domain}", role=roles.email_record("dmarc", domain),
+                               protocol="dmarc", flags=flags,
+                               notes=drec.strip('"')[:200] if drec else "no DMARC record published",
+                               extra={"present": bool(drec), "record": drec,
+                                      "lookup": dmarc.evidence()}, **common))
+    return out, unsettled
+
+
+def _is_null_mx(record: str) -> bool:
+    """True for the null MX of RFC 7505 §3: preference 0 and the root as exchange."""
+    parts = record.split()
+    return len(parts) == 2 and parts[0] == "0" and parts[1] == "."
+
+
+_NULL_MX_NOTES = {
+    NULL_MX_PUBLISHED: "publishes a null MX (0 .), so mail sent to it fails at once",
+    NULL_MX_WITH_OTHERS: ("publishes a null MX alongside other MX records, which RFC 7505 §3 "
+                          "forbids (a domain advertising a null MX MUST NOT advertise any "
+                          "other), so senders cannot tell whether it takes mail"),
+    NULL_MX_MAIL_EXCHANGERS: ("publishes MX records naming mail servers, so it receives mail "
+                              "although the profile does not list it as an email domain"),
+    NULL_MX_NONE: ("publishes no MX record and no null MX, so a sender falls back to the "
+                   "domain's own address records and tries to deliver there"),
+}
+
+
+def parked_assets(domain: str, ref_time: datetime | None = None,
+                  resolvers: tuple[str, ...] = ("",)) -> tuple[list[CryptoAsset], list[str]]:
+    """The SPF, DMARC and null-MX rows for one parked domain, and any failure.
+
+    Read the same way as an email domain's SPF and DMARC rows (a settled
+    lookup with no record is a measured absence). The MX answer is classified
+    as one of the ``NULL_MX_*`` states. Every row carries ``extra.parked``.
+    """
+    common: dict[str, Any] = {"host": domain, "source": "ct_dns", "source_class": "public",
+                              "source_name": SOURCE_DNS, "collected_at": now_date(ref_time),
+                              "data_state": "email-auth"}
+    out, unsettled = _spf_dmarc_rows(domain, common, resolvers)
+    mx = read_txt(domain, resolvers, rtype="MX")
+    if not mx.measured:
+        unsettled.append(f"MX ({mx.name}: {mx.why_unsettled()})")
+    else:
+        records = [" ".join(r.split()) for r in mx.answers]
+        nulls = [r for r in records if _is_null_mx(r)]
+        state = (NULL_MX_NONE if not records else
+                 NULL_MX_PUBLISHED if nulls and len(records) == 1 else
+                 NULL_MX_WITH_OTHERS if nulls else NULL_MX_MAIL_EXCHANGERS)
+        out.append(CryptoAsset(
+            name=f"Null MX {domain}", role=roles.email_record(NULL_MX, domain),
+            protocol=NULL_MX, flags=[f"{NULL_MX_FLAG}{state}"],
+            notes=f"{domain} {_NULL_MX_NOTES[state]}",
+            extra={"null_mx": state, "records": records, "lookup": mx.evidence()},
+            **common))
+    for row in out:
+        row.extra["parked"] = True
+    failures: list[str] = ([MailLookupFailure(
+        f"ct_dns {domain} (parked): DNS lookups that did not settle for "
+        f"{'; '.join(unsettled)}, so those records are not measured: neither present nor "
+        "absent is claimed")] if unsettled else [])
     return out, failures
 
 

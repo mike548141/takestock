@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from . import config, coverage
+from .exits import guarded
 from .model import CryptoAsset, load_assets
 from .policy import Policy
 
@@ -422,9 +423,12 @@ def main(argv: list[str] | None = None) -> int:
     """``python -m takestock.requirements <observation_dir> <out_dir> [catalogue]``.
 
     Exits as ``takestock requirements`` does: 1 when at least one requirement
-    is derived, 0 when none is, 2 for wrong arguments.
+    is derived, 0 when none is, 2 for wrong arguments or an unreadable input.
     """
-    args = sys.argv[1:] if argv is None else argv
+    return guarded("takestock.requirements", _main, sys.argv[1:] if argv is None else argv)
+
+
+def _main(args: list[str]) -> int:
     if len(args) not in (2, 3):
         print("usage: python -m takestock.requirements <observation_dir> <out_dir> "
               "[catalogue.yaml]", file=sys.stderr)
