@@ -148,6 +148,16 @@ by DKIM-signing all mail and telling users that taking part in mailing lists
 may be hindered. [`STANDARDS.md`](STANDARDS.md) sets out how, in its section
 on DMARC `p=reject`.
 
+The framework's bulk-mail allowance does not change this. It relaxes
+alignment, not the policy: strict DKIM alignment is recommended only *"where
+domains are not involved with bulk mail sending"*, and bulk senders are
+recommended onto *"a different subdomain to end users"* (Framework §8). The
+`p=reject` requirement has no such condition (*"DMARC needs to be set to
+p=reject on all email enabled domains"*, Framework §8), so a bulk-mail
+sub-domain still publishes `p=reject`. Relaxed alignment would not help with
+mailing lists either: a list that rewrites the subject or body breaks the DKIM
+signature itself, and relays from its own servers so SPF fails.
+
 ### All non-email-enabled domains and sub-domains
 
 The framework says this requirement *"remains even if the root level domain
