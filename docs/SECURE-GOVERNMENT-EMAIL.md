@@ -54,6 +54,14 @@ SHOULD) are read across all the standards takestock uses.
 | Timeline | Agencies are to implement the framework by **October 2026**; SEEMail *"is intended to be decommissioned in 2026"* | Framework §6; SGE home page |
 | Monitoring | The government's digital services team monitors SPF, DMARC and MTA-STS settings first, and later DKIM, and follows up on changes such as an SPF record moving from `-all` to `~all` | Framework §7 |
 
+**The framework builds on the NZISM rather than replacing it.** Each
+deployment guide opens with what NZISM §15.2 (*Email Infrastructure*) already
+directs and then says where the framework goes further, often by turning an
+NZISM SHOULD into a framework *must*: MTA-STS in `enforce` is a framework
+*must*, while NZISM `15.2.48.C.01` is a SHOULD. The NZISM still applies beside
+it, and some of its controls are stricter than the framework (a DKIM key, for
+example; see [`STANDARDS.md`](STANDARDS.md)).
+
 ### The documents
 
 All published on the SGE page of digital.govt.nz. The SHA-256 prefix lets a
@@ -236,6 +244,35 @@ Limits that every report should carry:
   available cannot be observed from outside. takestock lists them with the
   reason, so the conformance table shows every requirement.
 
+### SPF's two lookup limits
+
+The framework requires an SPF record ending in `-all`; whether that record can
+be evaluated at all is set by RFC 7208 §4.6.4, which has two limits of
+different force:
+
+- **Ten DNS-consuming terms, a MUST.** *"SPF implementations MUST limit the
+  total number of those terms to 10 during SPF evaluation… If this limit is
+  exceeded, the implementation MUST return "permerror"."* The terms that cost
+  a lookup are `include`, `a`, `mx`, `ptr`, `exists` and `redirect`. Address
+  ranges (`ip4:`, `ip6:`) cost none, which is why replacing names with ranges
+  is the usual cure for a long record.
+- **Two void lookups, a SHOULD.** A *void lookup* is a DNS query made during
+  evaluation that returns no answer or a name that does not exist. *"SPF
+  implementations SHOULD limit "void lookups" to two. An implementation MAY
+  choose to make such a limit configurable. In this case, a default of two is
+  RECOMMENDED. Exceeding the limit produces a "permerror" result."*
+
+Because the second limit is a SHOULD and may be configured, two conforming
+receivers can evaluate the same record differently, one passing it and one
+returning `permerror`.
+
+Under DMARC, an SPF `permerror` is not a pass, so on mail where an evaluator
+returns it, a `p=reject` policy rests on DKIM alone (RFC 9989 §5.3.5).
+takestock counts both limits when it expands an SPF record and reports the
+number of DNS-consuming terms and void lookups it reached. Where the resolver
+reports a status for each answer, the reading is stamped with that resolver
+and the time; where it does not, the void count is reported as not measured.
+
 ## What the framework does not say
 
 - **No cipher suite, key-exchange or curve requirement.** The TLS requirement
@@ -363,6 +400,196 @@ verdict depends on one, the verdict names the document it followed.
     Department of Internal Affairs; the web framework names the Government
     Digital Delivery Agency; the home page names the Government Chief Digital
     Office within the Department of Internal Affairs.
+
+## Every obliging sentence in the source documents
+
+The requirement table above lists what the framework requires. This register
+is the check on that table: every sentence in the framework, its home page and
+its guides that obliges or advises an agency, with the level its own words
+carry and how takestock treats it. A requirement nobody modelled can only be
+found by reading this way, from the first page of each document to the last.
+
+**Level**, from the sentence's own words, under the rules in *How takestock
+reads the level of a requirement*: **must** (*must*, *must not*,
+*mandatory*); **required** (*is* or *are required*, which RFC 2119 treats as
+MUST); **should** (*should*, *recommended*, *strongly recommended*, *best
+practice*, *important*); **directive** (*needs to*, *will need to*, or a bare
+instruction such as *Ensure* or *Set*); **lead-in** (a section's opening
+words, which grade nothing). Two levels joined by `·` mark a row that groups
+sentences of different force.
+
+**Treated as**: *Row* names the requirement in the tables above. *Step* is a
+deployment step or sequence: how to reach a required state, not a state of the
+domain. *Other standard* restates an RFC, the NZISM or the PSR. *Platform
+route* is one platform's way of meeting a row. *Restricted Group* applies only
+to members of that group. *Permissive*, *Future* and *Procurement* allow
+something, announce something, or advise on buying.
+
+### Common Implementation Framework v1.1
+
+| § | Sentence (quoted or closely paraphrased) | Level | Treated as |
+|---|---|---|---|
+| 3 | New Zealand government information, including email, *"requires protective marking"* | directive | Other standard: the PSR, which the framework says it does not change |
+| 4 | The technologies *"required to be deployed"*: TLS 1.2 or later including Implicit TLS, TLS reporting, SPF, DKIM, DMARC, MTA-STS, DLP | lead-in | Each technology has its own row |
+| 4 | *"A DMARC reporting tool is required"* | required | Row: a DMARC reporting tool in use |
+| 5 | It is *"important for Agencies to use a DMARC reporting tool"* | should | Row: a DMARC reporting tool in use |
+| 6 | Agencies implement the framework by October 2026 | directive | The framework's deadline |
+| 8 | *"A minimum of TLS1.2 must be used. TLS1.1, 1.0, SSL, no-TLS, or sending unencrypted must not be used."* | must | Row: TLS 1.2 minimum |
+| 8 | Microsoft 365 *"requires the configuration of an Outbound Connector requiring TLS, and a mail flow rule rejecting non-TLS connections inbound"* | directive | Platform route to Implicit TLS |
+| 8 | Google Workspace administrators *"will need to manually disable TLS1.0 and 1.1"* | directive | Platform route to TLS 1.2 minimum |
+| 8 | *"All email sending domains must have TLS Reporting enabled"* | must | Row: TLS reporting enabled |
+| 8 | Every sending domain *"must have an SPF record and it must end with a hardfail -all"* | must | Row: SPF record ending in `-all` |
+| 8 | *"consideration must be given to all servers and services which may send email"*; all valid source servers *"must be identified and included"* before the switch | must | Step |
+| 8 | DMARC reports *"should be reviewed looking for messages which are hitting the softfail controls"* | should | Step |
+| 8 | *"the suffix should be changed from ~all to -all"* | should | Row: SPF record ending in `-all` |
+| 8 | DKIM signing *"needs to be provided on the exit points of all systems"*, *"applied at the last MX server"* | must · directive | Rows: all outbound mail DKIM signed; signing at the last hop |
+| 8 | *"It is recommended that strict alignment be implemented"* for DKIM | should | Row: strict DKIM alignment |
+| 8 | *"adkim=s is recommended where domains are not involved with bulk mail sending"* | should | Row: strict DKIM alignment, with its condition |
+| 8 | *"The recommended solution is to have bulk mail senders operating from a different subdomain to end users"* | should | Row: bulk senders on a separate sub-domain |
+| 8 | *"Inbound emails must be checked for DMARC compliance and acted on based on the sending domain's DMARC policy"* | must | Row: inbound mail checked for DMARC |
+| 8 | For other providers it is *"up to the Agency to check and ensure their email service performs DMARC checks"* | directive | Row: inbound mail checked for DMARC |
+| 8 | Mail failing DMARC *"should never make it to the users' mailboxes"*: quarantined mail to the platform quarantine, not a junk folder; rejected mail dropped | should | Row: failing mail to an administrator quarantine |
+| 8 | The NZISM *"requires Agencies to review DMARC reports"*, so *"a DMARC reporting tool is required"* | required | Rows: DMARC reports reviewed; a DMARC reporting tool in use |
+| 8 | *"DMARC needs to be set to p=reject on all email enabled domains"* | directive | Row: DMARC `p=reject` (the DMARC guide's *must* decides the level) |
+| 8 | *"Agencies are required to review and apply their own DLP settings"*; *"Enforce DLP in line with the PSR and NZISM requirements"* | required · directive | Row: DLP enforced |
+| 8 | *"MTA-STS needs to be enabled and set to 'enforce' on all email enabled domains"* | directive | Row: MTA-STS in `enforce` (the checklist's *must* decides the level) |
+| 9 | The requirement *"remains even if the root level domain has SP=reject"* and covers *"all non-email domains, sub-domains and all new domains"* | directive | Scope of the non-email-enabled rows |
+| 9 | *"The required SPF record needs to deny all senders"* (*required* is an adjective here) | directive | Row: blank SPF record |
+| 9 | A blank DKIM key on every non-email-enabled name | directive | Row: empty DKIM key |
+| 9 | DMARC `p=reject`, strict SPF and DKIM alignment, and a reporting address | directive | Rows: non-email DMARC `p=reject`; strict alignment and a reporting address |
+| 10 | The deployment checklist, eleven rows | must · should · directive | Each maps to a row above. Three say *must* (MTA-STS, Implicit TLS, DLP), one says *should* (`adkim=s`), and the rest are bare instructions. The DKIM row limits signing to mail *"to Agencies or public destinations"* |
+
+### SGE home page
+
+| Sentence | Level | Treated as |
+|---|---|---|
+| Restricted Group agencies *"must confirm that their ICT services … are formally certified and accredited in writing to RESTRICTED"* | must | Restricted Group |
+| *"Other agencies should block information tagged at this level"* | should | Rows: DLP enforced; marked mail blocked |
+
+### SPF Deployment Guide v1.0
+
+| § | Sentence | Level | Treated as |
+|---|---|---|---|
+| 3 | *"All mail sending domains must have an SPF record finishing with -all"* | must | Row: SPF record ending in `-all` |
+| 3 | *"Blank SPF records with a -all suffix must be configured on non-email enabled domains"* | must | Row: blank SPF record |
+| 3 | *"Inbound emails must be scanned and acted on with SPF"*, which the guide places under DMARC | must | Row: inbound mail checked for DMARC |
+| 4 | *"You must identify all servers or services which send email on behalf of your domain"* | must | Step |
+| 4 | *"it is recommended you start with ~all"* | should | Step: a starting point, ending at `-all` |
+| 4 | Specialist sending platforms *"should be specifically checked to ensure propagation"* | should | Step |
+| 4, step 6 | Best practice: review quarterly, use change management, keep an inventory of sending services, respect the lookup limit, *"Do not use ptr or overly broad IP ranges"*, prefer `-all`, monitor with DMARC reports, keep a changelog, test before deploying | should · directive | Row: no `ptr`, no overly broad ranges. The lookup limit is RFC 7208's (see *SPF's two lookup limits*). The rest are practices |
+| 4.1 | An external gateway's address *"must be contained in your SPF record"* | must | Step: whether the list of senders is complete shows in DMARC aggregate reports, not in the record |
+| 4.1 | Address rewriting by a gateway *"needs to be confirmed with the supplier"* | directive | Step |
+| 4.2 | *"each subdomain must have its own blank SPF record"* | must | Row: blank SPF record |
+| 4.3 | *"Migrating from SPF ~all to -all is required"*, followed by a seven-step method | required | Row: SPF record ending in `-all`; the method is steps |
+| App. 1 | For services that must fail SPF, it is *"recommended the sending service be configured on a separate sub domain"* | should | Permissive: the guide calls a domain-specific exception *"outside the bounds of the Framework"* |
+| App. 2 | *"If you have SPF2.0 type records these should be removed from DNS"* | should | Row: legacy `spf2.0` records removed |
+| App. 2 | A `redirect=` is acceptable *"so long as the lookup results in a -all suffix"* | — | Permissive: an evaluator has to follow the redirect to see how the policy ends |
+| App. 2 | *"It is invalid to have multiple SPF records"* | — | Other standard (RFC 7208) |
+| App. 2 | `-all` is *"Required for SGE Framework and NZISM Compliance"* | required | Row: SPF record ending in `-all` |
+
+### DKIM Deployment Guide v1.0
+
+| § | Sentence | Level | Treated as |
+|---|---|---|---|
+| 3 | *"All outbound email from all sending services must be DKIM signed"* | must | Row: all outbound mail DKIM signed |
+| 3 | *"Blank DKIM records must be configured on non-email enabled domains"* | must | Row: empty DKIM key |
+| 3 | Inbound DKIM checking, which the guide places under DMARC | must | Row: inbound mail checked for DMARC |
+| 4 | Where an external security provider relays outbound mail, *"DKIM signing must happen at that point"* | must | Row: signing at the last hop |
+| 4.1 | *"make sure you copy the M365 statements exactly"* | directive | Step |
+| 4.2 | *"The use of 2048-bit RSA keys are strongly recommended"* | should | Row: DKIM keys of 2048 bits |
+| 4.3 | In the third-party platform example, records *"must be added"* to DNS | must | Step |
+| 4.4 | *"The NZISM requires blank DKIM records"* on non-email-enabled domains | directive | Row: empty DKIM key. The attribution to the NZISM is not supported by its controls (*Contradictions*, item 7) |
+| App. 1 | *"You must configure the platform to sign emails using your domain"* | must | Row: third-party platforms sign with the organisation's own domain |
+| App. 1 | *"each platform should be configured with its own DKIM selector"*; do not use the same private key across several services | should | Row: one DKIM selector and key per sending platform |
+| App. 1 | Best practice: custom signing, unique selectors, relaxed alignment *"only if needed"*, monitoring through DMARC reports, testing first | should | The rows above; testing is a step |
+| App. 2 | A separate sub-domain for each external sender *"is best practice"* | should | Row: bulk senders on a separate sub-domain |
+| App. 2 | 2048-bit keys *"on all systems which support them"*, with 1024-bit keys allowed *"on legacy systems"* | should | Row: DKIM keys of 2048 bits |
+| App. 2 | For 4096-bit keys, *"ensure you've verified full end-to-end compatibility"* | directive | Step |
+
+### DMARC Deployment Guide v1.0
+
+| § | Sentence | Level | Treated as |
+|---|---|---|---|
+| 3 | *"All domains must have a p=reject DMARC policy"* | must | Rows: DMARC `p=reject`, for email-enabled and non-email-enabled domains |
+| 3 | *"DMARC Reports must be reviewed on a regular basis"* | must | Row: DMARC reports reviewed |
+| 3 | *"Inbound emails must be scanned by DMARC and acted on"* | must | Row: inbound mail checked for DMARC |
+| 4 | *"You must have SPF and DKIM configured prior to setting a DMARC policy"* | must | Step |
+| 4, step 1 | *"a DMARC reporting tool is required"* | required | Row: a DMARC reporting tool in use |
+| 4, step 2 | `p=quarantine` *"is not recommended"* | should | Row: `p=quarantine` not used as a step |
+| 4, step 2 | *"sp= should only ever be set on organisation level domains"* | should | Row: `sp=` only on organisational domains |
+| 4, step 2 | Strict DKIM alignment *"(recommended)"*, *"adkim=s should be used"* | should | Row: strict DKIM alignment, with the framework's bulk-mail condition |
+| 4, step 2 | Strict SPF alignment *"(recommended)"*, *"aspf=s should be used"* | should | Row: strict SPF alignment |
+| 4, step 2 | Forensic (`ruf`) reports *"should not be used"* | should | Row: no `ruf`, `fo`, `pct`, `rf` or `ri` tags |
+| 4, step 5 | *"recommended you monitor these reports for a minimum of 4 weeks"* before moving to reject | should | Step |
+| 4, step 7 | *"Implement ongoing monitoring of your DMARC records"* | directive | Row: DMARC reports reviewed |
+| 4 | *"The framework requires p=reject policies are applied to all non-mail-enabled domains"* | directive | Row: non-email DMARC `p=reject` |
+| 4 | *"The Framework requires inbound emails are checked for DMARC compliance and acted on"* | directive | Row: inbound mail checked for DMARC |
+| App. 1 | It is *"important you understand DMARC and apply relevant settings … on your inbound email"* | should | Row: inbound mail checked for DMARC |
+| App. 2 | *"No. Do not enable RUF reporting"*; `ruf` *"should be removed"*, and `fo` *"should also be removed"* | should | Row: no `ruf`, `fo`, `pct`, `rf` or `ri` tags |
+| App. 2 | `np=reject` *"should be expected"* and *"will be added to the framework in future"* | — | Future |
+| App. 2 | Tags that *"should not be used"*: `ruf`, `fo`, `pct`, `rf`, `ri` | should | Row: no `ruf`, `fo`, `pct`, `rf` or `ri` tags |
+| App. 3 | When choosing a reporting supplier, *"you should consider"* a list of features | should | Procurement |
+
+### TLS-RPT Deployment Guide v1.0
+
+| § | Sentence | Level | Treated as |
+|---|---|---|---|
+| 3 | *"All email sending domains must have TLS Reporting enabled"* | must | Row: TLS reporting enabled |
+| 4 | A DNS record *"for each of your mail enabled domains"* (*mail enabled*, where §3 says *sending*) | directive | Row: TLS reporting enabled (*Contradictions*, item 16) |
+| 4, step 2 | The version *"must"* be `v=TLSRPTv1`, the name *"must"* be `_smtp._tls`, and *"You must include a Reporting Address"* | must | Row: TLS-RPT record form |
+| 4, step 1 | The DMARC reporting service *"is the best place to send TLS reports"* | should | Procurement |
+| 4, step 2 | A reporting percentage below 100% means missing reports | — | Other standard: a sender's behaviour, not a record setting |
+
+### MTA-STS Deployment Guide v1.1
+
+| § | Sentence | Level | Treated as |
+|---|---|---|---|
+| 3 | MTA-STS enabled and set to enforce on all email-enabled domains | directive | Row: MTA-STS in `enforce` |
+| 4 | *"TLS Reporting needs to be in place prior to configuring MTA-STS"* | directive | Step; the end state is the TLS reporting row |
+| 4, step 1 | The TXT record's time to live, *"86400 (24 Hours, recommended)"* | should | Step: step 5 of the same guide offers 3600 before enforcing |
+| 4, step 1 | *"The v= … must be v=STSv1 exactly"* | must | Part of the row MTA-STS in `enforce` |
+| 4, step 2 | *"The mode should be set to testing"* on first deployment | should | Step |
+| 4, step 2 | *"The MX entries must match all MX servers configured for your domain"*; *"You must not use * wildcards in the mx records"* | must | Row: policy lists every MX host, without wildcards |
+| 4, step 2 | The policy file *"must be named mta-sts.txt and hosted using https"* under `/.well-known/`, with a certificate from a public authority that *"must"* match | must | Row: MTA-STS policy location (which certificate: *Contradictions*, item 10) |
+| 4, step 2 | The file *"should be accessible in a highly available location"* | should | Row: policy hosted securely and highly available |
+| 4, step 4 | *"Ensure that legitimate email traffic is not being disrupted before enforcing"* | directive | Step |
+| App. 1 | *"the SGE Framework also requires the use of implicit TLS meaning sending in the clear is not permitted"* | directive | Row: Implicit TLS, since narrowed (*Contradictions*, item 1) |
+| App. 1 | The certificate *"must match the MX hostname listed in your MTA-STS policy file"* | must | Contradicts step 2 and RFC 8461 (*Contradictions*, item 10) |
+| App. 2 | The policy *"should be hosted in a high security, highly available location"* | should | Row: policy hosted securely and highly available |
+| App. 2 | *"The use of DANE is not recommended at this stage"* | should | No row (*Contradictions*, item 13) |
+
+### TLS Deployment Guide (v1.0 in its control table)
+
+| § | Sentence | Level | Treated as |
+|---|---|---|---|
+| 3 | TLS 1.2 minimum on all email connections; older versions and cleartext *"must not be used"* | must | Row: TLS 1.2 minimum |
+| 3 | Implicit TLS *"further defined as applying to all email transmitted between Government organisations"* | directive | Row: Implicit TLS, narrowed |
+| 4.1 | *"Recipient domain administrators should confirm they have MTA-STS enabled"* | should | Row: MTA-STS in `enforce` |
+| 4.1 | Other platforms *"need to review their services"*; on Google Workspace *"you must configure TLS compliance rules"* | directive · must | Platform route to TLS 1.2 minimum |
+| 4.2 | Where a platform cannot send over TLS, it is *"strongly recommended you engage with the supplier"* | should | Row: platforms that cannot use TLS raised as a security risk |
+| 4.3 | For legacy systems, administrators *"should review their use"*, and organisations *"need to carefully consider the data being transmitted"* | should | Row: platforms that cannot use TLS raised as a security risk |
+| 4.4 | *"recommended email platform administrators review their TLS-RPT logs or TLS session logs"* to see what mail is sent or received unencrypted | should | Row: unencrypted mail in and out reviewed |
+| 4.4 | *"If it is your systems which do not support TLS, measures should be taken to address this"* | should | Row: platforms that cannot use TLS raised as a security risk |
+| 4.5 | *"Implicit TLS is mandatory and enforced on all email between members of the SGE Restricted Group"* | must | Restricted Group |
+| App. 1 | *"Agencies will need to monitor their Mail Flow Reports to confirm if they are sending or receiving email via non-TLS channels"* | directive | Row: unencrypted mail in and out reviewed |
+| App. 1 | It is *"recommended … this be raised as a security risk, and options to secure the platforms be considered"* | should | Row: platforms that cannot use TLS raised as a security risk |
+| 5.1 | A destination moving to a service with TLS 1.1 or 1.0 *"will require the disabling"* of both | directive | Row: TLS 1.2 minimum |
+
+### Keyword Blocking Deployment Guide (v1.2 in its control table) and scripts
+
+| § | Sentence | Level | Treated as |
+|---|---|---|---|
+| 3 | NZISM `15.2.40.C.01`: agencies *"MUST configure systems to block any outbound emails with a protective marking"* above the classification of the path | must | Rows: DLP enforced; marked mail blocked |
+| 3 | NZISM `15.2.41.C.01`: agencies *"MUST configure email systems to reject, log and report inbound emails"* marked above the receiving system's accreditation | must | Row: marked mail blocked. The guide quotes the control whole; the framework's own sentences ask only for blocking |
+| 3 | *"The SGE Framework requires Data Loss Prevention (DLP) be enforced in line with the PSR and NZISM"* | directive | Row: DLP enforced |
+| 3 | The guide *"recommends, at a minimum, the following keywords be added to your DLP block lists"* | should | Row: minimum keyword list blocked |
+| 3 | In the note for Restricted Group members: *"These keyword blocks must be in place before you exit SEEMail"* | must | Restricted Group. Read more broadly, it would make the blocks a precondition of leaving SEEMail for every agency |
+| 4 | *"inbound email still needs to be blocked at the gateway"*; *"the applicable keywords are blocked on inbound and outbound mail flows"* | directive | Row: marked mail blocked |
+| 5 | It is *"strongly recommended this is done via PowerShell"* | should | Step |
+| 8.1 | The old SEEMail trigger words are *"no longer required"* | — | Permissive |
+| 8.2 | During migration, tagged inbound mail *"should be blocked, or encapsulated with a warning, at the SEEMail gateway"*, and agencies *"need to consider possible mail flow and reporting impacts"* | should | Step, during migration only |
+| App. 2 | Mail classified above IN-CONFIDENCE is *"not permitted to be received via email sources outside of Restricted Group members"* | directive | Row: marked mail blocked |
+| Scripts | *"You must have PowerShell 5.1 or 7+"* | must | Step |
 
 ## How takestock reports SGE conformance
 

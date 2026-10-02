@@ -193,6 +193,7 @@ Every command follows one contract, so a script can act on the result:
 | [`docs/SECURE-GOVERNMENT-EMAIL.md`](docs/SECURE-GOVERNMENT-EMAIL.md) | How takestock reads the Secure Government Email framework |
 | [`docs/OBLIGATIONS.md`](docs/OBLIGATIONS.md) | The New Zealand laws and policies above the technical standards |
 | [`docs/RISK-SCALE.md`](docs/RISK-SCALE.md) | The New Zealand government risk scale |
+| [`docs/CONTINUOUS-ASSURANCE.md`](docs/CONTINUOUS-ASSURANCE.md) | How peer frameworks keep a security authorisation current |
 
 ## Contributing
 

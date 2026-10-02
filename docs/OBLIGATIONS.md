@@ -126,7 +126,10 @@ New Zealand or a lawyer to say.
 ## Protective Security Requirements: INFOSEC
 
 The PSR is the government's protective security policy framework; INFOSEC is
-its information security part. Version 2.0 is dated 1 October 2026.
+its information security part. Version 2.0 is dated 1 October 2026. It has
+four mandatory requirements: INFOSEC 1 *understand what you need to protect*,
+INFOSEC 2 *design your information security*, INFOSEC 3 *validate your
+security measures* and INFOSEC 4 *keep your security up to date*.
 
 - **Who it is for.** Organisations *"mandated to implement the PSR"* and those
   that do so *"on a voluntary basis"*; *"non-mandated organisations in the
@@ -168,6 +171,30 @@ its information security part. Version 2.0 is dated 1 October 2026.
   accreditation in Chapter 4 (*System Certification and Accreditation*) and
   describes no continuous monitoring model. takestock performs neither; its
   inventory and grades are evidence that either process can use.
+
+  The PSR points to an NZISM chapter titled *System Assurance* that is not
+  yet published, and it numbers that chapter two ways: the change log says
+  *"NZISM Chapter 7: System Assurance – Publish date October 2026"*, while
+  paragraph 185's link reads *"NZISM 4. System Assurance"*. In v3.9, Chapter
+  4 is *System Certification and Accreditation* and Chapter 7 is
+  *Information Security Incidents*. Cite neither number as settled until the
+  chapter appears. [`CONTINUOUS-ASSURANCE.md`](CONTINUOUS-ASSURANCE.md) sets
+  out what peer frameworks mean by continuous monitoring in the meantime.
+- **Security keeps pace.** *"An organisation MUST ensure that their security
+  measures keep pace with this change to remain relevant and effective"*
+  (paragraph 188). INFOSEC 4.2 (paragraph 193) carries the framework's only
+  device-level MUSTs: protecting ICT equipment, *"including personal
+  devices"*, from malware, and applying security patches and updates
+  regularly.
+- **Changes from version 1.0.** Version 1.0 (1 October 2025) required
+  certification and accreditation, with physical security certified *before*
+  the ICT system was accredited, and said compensating measures MUST be
+  *"selected"* rather than in place. Version 2.0 changed those two passages
+  and moved paragraph numbers by one to three (v1.0 paragraph 185 is v2.0
+  paragraph 188; v1.0 paragraph 190 is v2.0 paragraph 193). The requirement
+  numbers INFOSEC 1 to 4 and their sub-numbers did not change, and nothing
+  else of substance moved. Check the version before quoting a paragraph
+  number.
 - **Legislation wins a conflict.** *"When legislation requires an organisation
   to manage protective security in a way that is different to the PSR, that
   legislation takes precedence"* (paragraph 19).
@@ -241,7 +268,7 @@ compliance with a New Zealand deadline, because there is none.
 |---|---|---|
 | New Zealand Parliament | Privacy Act 2020: s 8, s 11, s 22 (IPPs 5, 9, 12), ss 112–115 | <https://www.legislation.govt.nz/act/public/2020/0031/latest/LMS23342.html>, <https://www.legislation.govt.nz/act/public/2020/0031/latest/LMS23530.html> |
 | New Zealand Parliament | Public Records Act 2005: ss 4, 17, 18 | <https://www.legislation.govt.nz/act/public/2005/0040/latest/whole.html> |
-| PSR | *INFOSEC* policy framework v2.0 | <https://www.protectivesecurity.govt.nz/assets/psr/INFOSEC-policy.pdf> |
+| PSR | *INFOSEC* policy framework v2.0, and v1.0 for comparison (v1.0 is no longer on the site; the Internet Archive holds a copy) | <https://www.protectivesecurity.govt.nz/assets/psr/INFOSEC-policy.pdf> |
 | GCSB | NZISM v3.9, §1.1.2, §1.2, §2.4, Chapter 4 | <https://nzism.gcsb.govt.nz/ism-document> |
 | NCSC NZ | *Minimum Cyber Security Standards*; site map | <https://www.ncsc.govt.nz/protect-your-organisation/minimum-cyber-security-standards/>, <https://www.ncsc.govt.nz/sitemap.xml> |
 | Department of the Prime Minister and Cabinet | *New Zealand's Cyber Security Strategy 2026–2030* | Published on the Department's website |
