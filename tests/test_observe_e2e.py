@@ -235,9 +235,10 @@ def test_the_sample_end_to_end(net: FakeNet, workspace: Path, capsys: pytest.Cap
     ran = set(summary["observation"]["collectors_run"])
     assert {"ct_dns", "spf_senders", "dnssec", "dane", "caa", "dns_zones", "tls_scan",
             "ike_scan", "ssh_audit", "plaintext_scan", "hsts", "smtp_starttls",
-            "implicit_tls", "ssh_audit_inbox"} <= ran
+            "implicit_tls", "ssh_audit_inbox", "software_inventory"} <= ran
     sources = {a["source"] for a in assets}
-    assert {"ct_dns", "tls_scan", "plaintext_scan", "hsts", "ssh_audit", "dns_zones"} <= sources
+    assert {"ct_dns", "tls_scan", "plaintext_scan", "hsts", "ssh_audit", "dns_zones",
+            "software_inventory"} <= sources
     shared = [a for a in assets if any(f.startswith("shared-key:") for f in a["flags"])]
     assert {a["host"] for a in shared} == {"www.example.com", "shop.example.com"}
 

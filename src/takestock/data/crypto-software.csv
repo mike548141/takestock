@@ -1,8 +1,13 @@
 product,match,provides,branch,max_tls,citation,note
 OpenSSL,^openssl\b,tls,,,"OpenSSL project, documentation and release notes",General-purpose TLS and cryptography library; many other products link against it
+OpenSSL,^openssl\b,tls,0.9.8,TLSv1.0,"OpenSSL project, NEWS file: major changes between 1.0.0h and 1.0.1 (TLS 1.1 and 1.2 were first added in 1.0.1)",No 0.9.8 release implements TLS 1.1 or later
+OpenSSL,^openssl\b,tls,1.0.0,TLSv1.0,"OpenSSL project, NEWS file: major changes between 1.0.0h and 1.0.1 (TLS 1.1 and 1.2 were first added in 1.0.1)",No 1.0.0 release implements TLS 1.1 or later
 OpenSSL,^openssl\b,tls,1.0,TLSv1.2,"OpenSSL project, release notes for OpenSSL 1.1.1 (TLS 1.3 was first added in 1.1.1)",No 1.0.x release implements TLS 1.3: a capability ceiling rather than a configuration choice
+OpenSSL,^openssl\b,tls,1.1.0,TLSv1.2,"OpenSSL project, NEWS file: major changes between 1.1.0i and 1.1.1 (TLS 1.3 was first added in 1.1.1)",No 1.1.0 release implements TLS 1.3
+OpenSSL,^openssl\b,tls,1.1.1,TLSv1.3,"OpenSSL project, NEWS file: major changes between 1.1.0i and 1.1.1 (TLS 1.3 support added)",
 OpenSSL,^openssl\b,tls,3,TLSv1.3,"OpenSSL project, OpenSSL 3.0 release notes",
 LibreSSL,^libressl\b,tls,,,"LibreSSL project (OpenBSD), project page",A fork of OpenSSL maintained by the OpenBSD project
+LibreSSL,^libressl\b,tls,2,TLSv1.2,"LibreSSL project, release notes for LibreSSL 3.1.0 (initial TLS 1.3 implementation completed and enabled for clients in 3.1.0)",No 2.x release implements TLS 1.3
 BoringSSL,^boringssl\b,tls,,,"BoringSSL project (Google), project page",A fork of OpenSSL used inside other products rather than installed on its own
 GnuTLS,^gnutls\b,tls,,,"GnuTLS project, manual",TLS library from the GNU project
 Mozilla NSS,^(?:(?:mozilla )?nss|network security services)\b,tls,,,"Mozilla, Network Security Services documentation",TLS and cryptography libraries used by Mozilla products and others

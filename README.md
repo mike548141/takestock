@@ -60,10 +60,11 @@ observing Example Widgets Ltd into observations/2030-01-31T0930Z
   inbox: /tmp/example-widgets/exports
   · ssh_audit_inbox
   · netdev
+  · software_inventory
   · dns_zones
   · winrm_config
 observations/2030-01-31T0930Z
-12 assets; verdicts {'weak': 2, 'strong': 3, 'unknown': 1, 'acceptable': 2, 'n/a': 4}; 5 coverage gap(s); 2 finding(s)
+18 assets; verdicts {'weak': 2, 'strong': 3, 'unknown': 5, 'acceptable': 2, 'n/a': 6}; 5 coverage gap(s); 2 finding(s)
 ```
 
 The observation directory is named for the UTC minute of the run, and

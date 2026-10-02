@@ -326,6 +326,7 @@ PLANS: dict[str, Plan] = {
     "ssh_audit_inbox": Plan(_ssh_inbox, offline=True),
     "winrm_config": Plan(_winrm_config, late=True, offline=True),
     "netdev": Plan(_ingest("netdev"), offline=True),
+    "software_inventory": Plan(_ingest("software_inventory"), offline=True),
 }
 
 

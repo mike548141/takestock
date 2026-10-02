@@ -87,13 +87,13 @@ def test_an_offline_observation_reads_only_the_supplied_exports(workspace, monke
     s = json.loads((obs / "summary.json").read_text())
     # The zone reader runs last because it compares the zones with every other row.
     # Ingest collectors run offline; the late ones compare their reading with every other row.
-    ingest = ["ssh_audit_inbox", "netdev", "dns_zones", "winrm_config"]
+    ingest = ["ssh_audit_inbox", "netdev", "software_inventory", "dns_zones", "winrm_config"]
     assert s["observation"]["collectors_run"] == ingest
     assert set(s["observation"]["collectors_skipped"]) == set(collectors.REGISTRY) - set(ingest)
     assert any("run offline" in g for g in s["gaps"])
     assert not any("independent DNS resolvers" in g for g in s["gaps"])
     sources = {r["source"] for r in json.loads((obs / "assets.json").read_text())}
-    assert {"ssh_audit", "dns_zones", "netdev", "winrm_config"} <= sources
+    assert {"ssh_audit", "dns_zones", "netdev", "winrm_config", "software_inventory"} <= sources
     assert s["complete"] is False and s["collector_failures"] == []
 
     rows = {r["name"]: r for r in json.loads((obs / "assets.json").read_text())}
@@ -104,6 +104,15 @@ def test_an_offline_observation_reads_only_the_supplied_exports(workspace, monke
     assert legacy["migration_strategy"] == "retire"
     assert legacy["support_status"] == "end-of-support"
     assert rows["SSH files-01.example.test:22"]["verdict"] in ("strong", "pqc")
+    capped = rows["OpenSSL 1.0.2"]
+    assert "capability-ceiling:TLSv1.2" in capped["flags"] and capped["verdict"] == "unknown"
+    assert rows["OpenSSL 1.1.1"]["extra"]["hosts"] == "vpn.example.test"
+    assert rows["OpenSSL 3.0.0"]["hosts_count"] == 2
+    assert "version-spread:3" in rows["OpenSSL version spread"]["flags"]
+    assert "Example Office Suite 1.0.0" not in rows
+    placed = {p["position"]: p["groups"] for p in s["agility"]["positions"]}
+    assert [g["label"] for g in placed["replacement"]] == ["OpenSSL 1.0.2"]
+    assert [(g["label"], g["count"]) for g in placed["library"]] == [("OpenSSL", 3)]
     assert result.exit_code == observe.EXIT_FINDINGS
     assert sorted(f["name"] for f in result.findings) == [
         "SSH build-01.example.test:22", "WinRM configuration — build-01.example.test"]

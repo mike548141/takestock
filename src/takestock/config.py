@@ -332,6 +332,15 @@ def load_dictionary() -> dict[str, dict]:
     return out
 
 
+def load_crypto_software() -> list[dict[str, str]]:
+    """The cryptographic software register, in file order; [] when the file is absent."""
+    path = data_file("crypto-software.csv")
+    if not path.exists():
+        return []
+    with path.open(newline="", encoding="utf-8-sig") as f:
+        return [{k: str(v or "").strip() for k, v in row.items() if k} for row in _csv_rows(f)]
+
+
 def load_port_encryption() -> dict[str, dict[str, str]]:
     """The port-encryption table, indexed by :func:`takestock.plaintext.build_index`."""
     with data_file("port-encryption.csv").open(newline="") as f:

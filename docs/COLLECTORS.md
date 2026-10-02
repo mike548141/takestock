@@ -55,6 +55,7 @@ the others loading.
 | `ssh_audit_inbox` | ingest | `ssh-audit` JSON files someone ran and supplied | optional `ssh_inbox.dir` | none |
 | `winrm_config` | ingest | a WinRM configuration export: whether each Windows host requires encrypted remote administration | optional `winrm_inbox.export` | none |
 | `netdev` | ingest | a network device export: cryptographic controls on switches, routers, firewalls and management equipment | optional `netdev_inbox.devices` and `netdev_inbox.expect` | none |
+| `software_inventory` | ingest | a software inventory: which cryptographic providers are installed, at which versions | optional `software_inbox.export` | none |
 
 **Inside** probes run inside the organisation's network. Each needs its own
 named, dated authorisation record as well as the profile's general one, and
@@ -752,3 +753,85 @@ naming no device or no control are a gap, and a **scope row** states what the
 export covers (controls, devices, classes present and absent) without
 claiming a share of the estate. A missing or unreadable export never stops
 the run.
+
+### `software_inventory`
+
+**Reads** a software inventory: one row per product installed on one
+machine, as any inventory tool or a spreadsheet can produce. The probes
+measure what a service negotiates; this reads what it negotiates *with*: the
+TLS libraries, language runtimes and other cryptographic providers installed
+on each machine.
+
+**The export** is a CSV, `inbox/software-inventory.csv` unless
+`software_inbox.export` names another file. Header names are matched
+ignoring case, spaces, hyphens and underscores, and the first spelling
+present wins:
+
+| Column | Also read as | Holds |
+|---|---|---|
+| `host` | `hostname`, `computer name`, `computer`, `machine`, `device`, `server` | Required: the machine, by name or address |
+| `product` | `product name`, `name`, `software`, `application`, `display name`, `package` | Required: the product as the inventory spells it |
+| `version` | `product version`, `software version`, `display version`, `package version` | The installed version |
+| `vendor` | `publisher`, `manufacturer` | Context |
+| `path` | `install path`, `install location`, `location`, `file path` | Context: where the copy is installed |
+
+**Matching.** Each product is matched against
+`src/takestock/data/crypto-software.csv`. The first entry whose `match`
+expression matches the start of the product name, ignoring case, names the
+provider; a product no entry matches is counted on the scope row and
+otherwise ignored. An entry with a `branch` describes one release line of
+its provider. It applies to a version that equals the branch, or continues
+it with something other than a digit, once a packaging epoch such as `1:` is
+set aside:
+
+| Branch | Takes | Does not take |
+|---|---|---|
+| `1.0` | `1.0`, `1.0.2`, `1:1.0.2-fips` | `1.01` |
+| `3` | `3.0.0` | `30.0` |
+
+When several branches match, the longest wins, so `1.0.0` can describe a
+narrower line than `1.0`. The entry's `max_tls` is the highest TLS version
+that line can negotiate, and its `citation` is the public source for it.
+
+**Rows.** One per provider and version, named `<provider> <version>`, with
+the number of machines that carry it in `hosts_count` and their names in
+`extra.hosts`. The row has no `host` of its own, because it describes every
+machine on the list. Machines are named by the one rule above: an address
+that `scan_targets` pairs with a host name is reported by that name, so a
+machine listed once by name and once by address is counted once.
+
+| The release line | Flag | Verdict |
+|---|---|---|
+| caps below the baseline's floor (the lowest TLS version it grades better than weak) | `capability-ceiling:<max_tls>` | weak: nothing it negotiates can reach the floor |
+| caps below TLS 1.3, at or above the floor | `capability-ceiling:<max_tls>` | unknown |
+| reaches TLS 1.3 | none | unknown |
+| is not on record for this version | `ungraded:crypto-software:<provider> <version>` | unknown |
+
+A verdict stays unknown wherever the ceiling is not itself weak, because an
+installed version says the most a service using it can do, not the least it
+will accept. A provider found at two or more versions gets one more row,
+`<provider> version spread`, flagged `version-spread:<n>` and graded `n/a`.
+These are the two flags the agility reading places: a ceiling puts the row
+in `replacement`, a spread in `library`.
+
+**Lifecycle.** Each provider and version is graded against
+`data/software-lifecycle.yaml` by the same function that grades any software
+inventory row (`lifecycle.derive_census_support`), as a library and as an
+application, under the provider's name and each spelling the export used, on
+the export file's modification date. Exactly one matching lifecycle line
+sets `support_status` (and `support_end` where the line gives a date it holds
+to); none, or more than one, leaves both blank. A status declared in the
+profile's `lifecycle:` block still wins.
+
+**Coverage gaps.** A missing or unreadable export, one with no host or no
+product column, and one with no data rows are each one gap, and the
+collector then writes no rows. Rows naming no machine or no product are a
+gap, and so are provider rows with no version (each kept as
+`<provider> (version not recorded)`, flagged `version-unrecorded`). A
+**scope row** states how many rows and machines the export lists and how
+many rows named a provider, without claiming a share of the estate.
+
+**Cannot see.** A provider the register does not list; a library compiled
+into another program, since an inventory lists installed packages, not what
+a binary contains; and what any service using an installed provider actually
+negotiates, which is for the probes.

@@ -198,7 +198,7 @@ a new collector or reader declares itself without editing a central list
 
 | Registry | Declares | Shipped entries |
 |---|---|---|
-| `collectors.register(name, module, kind, function="collect")`; `collectors.REGISTRY` | A collector: its module, its kind (`passive`, `active`, `ingest`) and its entry point | Twenty-one, listed in `collectors/__init__.py` |
+| `collectors.register(name, module, kind, function="collect")`; `collectors.REGISTRY` | A collector: its module, its kind (`passive`, `active`, `ingest`) and its entry point | Twenty-two, listed in `collectors/__init__.py` |
 | `observe.PLANS` | How an observation runs each registered collector: its step, and whether it is `late` or `offline`-safe | One per collector; a collector without one is skipped and recorded as a gap |
 | `model.register_informational_prefixes(*prefixes)` | Flags, or flag prefixes ending in `:`, that are informational | Built-in list in `model.py`, plus many collectors' own |
 | `depth.register_flags(rung, *flags, convention=False)` | Flags that lift a row to an evidence-depth rung (`key-management`, `key`, `posture`), or record an unanswered question (`unanswered`) | Built-in lists in `depth.py` |
@@ -228,7 +228,7 @@ standard can change without a code change. Each is read through
 | `daemon-dictionary.csv` | Process binary names mapped to products |
 | `vendor-domains.csv` | Public vendor domains, for naming the operator of an outside service |
 | `windows-lifecycle.yaml`, `software-lifecycle.yaml` | Vendor support dates, filled from public sources |
-| `crypto-software.csv` | Cryptographic libraries, and the highest TLS version a release line can negotiate, from public sources. Reference data: no collector reads it yet |
+| `crypto-software.csv` | Cryptographic libraries, and the highest TLS version a release line can negotiate, from public sources. Read by `software_inventory` |
 
 ## Adding a collector
 

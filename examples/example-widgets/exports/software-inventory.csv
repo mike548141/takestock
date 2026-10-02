@@ -1,0 +1,7 @@
+host,product,version,vendor,path
+files-01.example.test,OpenSSL,3.0.0,OpenSSL Project,/usr/lib
+files-01.example.test,GnuTLS,3.0.0,GnuTLS Project,/usr/lib
+files-01.example.test,Example Office Suite,1.0.0,Example Software Co,/opt/office
+build-01.example.test,OpenSSL,1.0.2,OpenSSL Project,/opt/build/lib
+build-01.example.test,OpenSSL,3.0.0,OpenSSL Project,/usr/lib
+203.0.113.10,OpenSSL,1.1.1,OpenSSL Project,/usr/lib

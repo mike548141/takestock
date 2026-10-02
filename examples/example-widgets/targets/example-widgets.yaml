@@ -71,8 +71,13 @@ plaintext_ports: ["21/tcp", "80/tcp", "110/tcp", "465/tcp", "993/tcp"]
 #   inbox/dns-zones/  zone files exported from the DNS host
 #   inbox/winrm-config.csv     WinRM service settings, one row per Windows host
 #   inbox/netdev-controls.csv  network device encryption controls, one row each
+#   inbox/software-inventory.csv  installed products, one row per product per machine
 ssh_inbox:
   dir: inbox/ssh-audit
+# The software inventory; the address 203.0.113.10 in it is reported as
+# vpn.example.test, the name `scan_targets` gives that address.
+software_inbox:
+  export: inbox/software-inventory.csv
 
 # What is planned for a system, and whether its vendor still supports it.
 # Each entry is a regular expression matched against a row's host or name.

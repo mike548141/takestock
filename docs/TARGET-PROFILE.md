@@ -131,6 +131,7 @@ collector reads is ignored.
 | `ssh_inbox` | Where supplied `ssh-audit` JSON files are | `ssh_audit_inbox` |
 | `winrm_inbox` | Where the WinRM configuration export is | `winrm_config` |
 | `netdev_inbox` | Where the network device export is, and which device classes to expect | `netdev` |
+| `software_inbox` | Where the software inventory export is | `software_inventory` |
 | `dns_zones` | Settings for reading supplied zone files | `dns_zones` |
 | `third_party` | Outside providers and the domains they operate | dispositions, `dns_zones` |
 | `infrastructure` | Infrastructure providers and their domains | `dns_zones` |
@@ -294,7 +295,7 @@ host-and-port pairs in all. `implicit_tls` takes its 465, 993 and 995 pairs
 from the same plan. A derived-ports overlay, when present, replaces this list
 (see below).
 
-### `ssh_inbox`, `winrm_inbox` and `netdev_inbox`
+### `ssh_inbox`, `winrm_inbox`, `netdev_inbox` and `software_inbox`
 
 Where the ingest collectors find their exports. Each has a default inside
 the inbox, so the keys are needed only to move a file.
@@ -307,6 +308,8 @@ winrm_inbox:
 netdev_inbox:
   devices: inbox/netdev-controls.csv   # one row per control on a device or link
   expect: [switch, router, firewall, wireless, out-of-band]
+software_inbox:
+  export: inbox/software-inventory.csv # one row per product on each machine
 ```
 
 `netdev_inbox.expect` lists the device classes the export should cover;
@@ -314,8 +317,8 @@ each one with no row becomes its own coverage gap. Without it, the five
 classes shown are expected. The classes an export may use are `switch`,
 `router`, `firewall`, `wireless`, `vpn-gateway`, `out-of-band`, `wan-link`,
 `storage` and `other`. The columns each export takes are described in the
-module docstrings of `takestock.collectors.winrm_config` and
-`takestock.collectors.netdev`.
+module docstrings of `takestock.collectors.winrm_config`,
+`takestock.collectors.netdev` and `takestock.collectors.software_inventory`.
 
 ### `dns_zones`
 
@@ -470,14 +473,15 @@ keys above:
   gateway, one inbound mail gateway and one internet-facing SSH listener;
 - `plaintext_ports`;
 - `ssh_inbox.dir`, pointing at the supplied `ssh-audit` files;
+- `software_inbox.export`, pointing at the supplied software inventory;
 - a `lifecycle` block marking the build server for retirement and out of
   support.
 
 Its supplied exports, in `examples/example-widgets/exports/`, are two
 `ssh-audit` files, a zone export under `dns-zones/`, a WinRM configuration
-export and a network device export, which are what an offline observation
-reads (through `ssh_audit_inbox`, `dns_zones`, `winrm_config` and
-`netdev`), plus the asset register, laptop check-in log and zone file the IP
+export, a network device export and a software inventory, which are what an
+offline observation reads (through `ssh_audit_inbox`, `dns_zones`,
+`winrm_config`, `netdev` and `software_inventory`), plus the asset register, laptop check-in log and zone file the IP
 plan reads.
 
 ## Environment variables

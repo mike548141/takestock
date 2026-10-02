@@ -55,7 +55,7 @@ def test_crypto_software_rows_are_complete_and_cited():
         assert r["product"] and r["provides"] and r["citation"], r
         re.compile(r["match"])
         if r["branch"]:
-            assert r["max_tls"] in ("TLSv1.2", "TLSv1.3"), r
+            assert r["max_tls"] in ("TLSv1.0", "TLSv1.1", "TLSv1.2", "TLSv1.3"), r
 
 
 @pytest.mark.parametrize("name, product", [
@@ -78,7 +78,9 @@ def test_inventory_names_match_the_right_product(name, product):
 
 def test_a_capability_row_exists_only_for_a_documented_branch():
     rows = [r for r in _crypto_register() if r["branch"]]
-    assert {(r["product"], r["branch"]) for r in rows} == {("OpenSSL", "1.0"), ("OpenSSL", "3")}
+    assert {(r["product"], r["branch"]) for r in rows} == {
+        ("OpenSSL", "0.9.8"), ("OpenSSL", "1.0.0"), ("OpenSSL", "1.0"), ("OpenSSL", "1.1.0"),
+        ("OpenSSL", "1.1.1"), ("OpenSSL", "3"), ("LibreSSL", "2")}
 
 
 def test_the_cli_prints_its_version(capsys):
