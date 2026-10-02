@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
 from takestock import coverage, normalise
-from takestock.disposition import load_dispositions
+from takestock.disposition import deciding_entry, load_dispositions
 from takestock.model import CryptoAsset
 
 
@@ -121,6 +122,52 @@ def test_finalise_grades_places_and_stamps_every_row(policy):
     assert row.evidence_depth
     assert passes["lifecycle_unmatched"] == [
         "support_status.end-of-support: /^nothing-matches$/ matched no asset"]
+
+
+_PLAN_MARKS = {"replaced_by": [r"^edge-01\.", r"^app-01\.", r"^gone-"],
+               "retiring_by": [r"^edge-01\.", r"^app-02\."]}
+
+
+def _marked_rows() -> list[CryptoAsset]:
+    return [
+        _tls("edge-01.example.test", protocol_versions=["TLSv1.0"], internet_facing=True),
+        _tls("app-01.example.test", protocol_versions=["TLSv1.3"], symmetric=["AES-256-GCM"],
+             key_exchange=["X25519MLKEM768"], signatures=["ecdsa-p256"], hashes=["sha384"]),
+        _tls("app-02.example.test", protocol_versions=["TLSv1.2"], symmetric=["AES-128-GCM"],
+             key_exchange=["ecdhe-x25519"], signatures=["rsa-2048"], hashes=["sha256"]),
+    ]
+
+
+def test_plan_marks_place_tolerable_rows_and_report_unmatched_patterns(policy):
+    rules = load_dispositions()
+    rows, passes = normalise.finalise(_marked_rows(), policy, {}, rules, lifecycle=_PLAN_MARKS)
+    edge, replaced, retiring = rows
+    assert edge.extra["replaced_by"] is True and edge.extra["retiring_by"] is True
+    assert (replaced.verdict, deciding_entry(replaced, rules)[1]["id"]) == (
+        "strong", "accept-replacement-tolerable-control")
+    assert (retiring.verdict, deciding_entry(retiring, rules)[1]["id"]) == (
+        "acceptable", "defer-migration-retiring-infrastructure")
+    assert passes["lifecycle_unmatched"] == ["replaced_by: /^gone-/ matched no asset"]
+
+
+def test_a_weak_internet_facing_row_is_never_softened_by_a_plan_mark(policy):
+    # The bundled rules, with the verdict filter taken off both mark rules, so
+    # only the order of the rules can keep the marked weak row on its rung.
+    bundled = load_dispositions()
+    unfiltered = [
+        dict(r, match={k: v for k, v in r["match"].items() if k != "verdict"})
+        if r["id"] in ("accept-replacement-tolerable-control",
+                       "defer-migration-retiring-infrastructure") else r
+        for r in bundled.rules]
+    ids = [r["id"] for r in unfiltered]
+    assert ids.index("internet-facing-weak") < ids.index("accept-replacement-tolerable-control")
+    assert ids.index("internet-facing-weak") < ids.index("defer-migration-retiring-infrastructure")
+    for rules in (bundled, replace(bundled, rules=unfiltered)):
+        rows, _ = normalise.finalise(_marked_rows()[:1], policy, {}, rules, lifecycle=_PLAN_MARKS)
+        (edge,) = rows
+        assert edge.verdict == "weak"
+        assert (edge.disposition, deciding_entry(edge, rules)[1]["id"]) == (
+            "wave-1", "internet-facing-weak")
 
 
 def test_findings_are_weak_verdicts_and_out_of_cycle_work():

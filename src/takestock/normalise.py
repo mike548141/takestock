@@ -5,9 +5,10 @@ rows into one set, in this order:
 
 1. **merge**: rows that describe the same thing (the same bill-of-materials
    reference, see :meth:`~takestock.model.CryptoAsset.bom_ref`) become one;
-2. **lifecycle**: migration strategy and support status from the target
-   profile's ``lifecycle:`` block, then Windows support derived from the
-   bundled lifecycle data (see :mod:`takestock.lifecycle`);
+2. **lifecycle**: migration strategy, support status and the plan marks
+   (``replaced_by``, ``retiring_by``) from the target profile's
+   ``lifecycle:`` block, then Windows support derived from the bundled
+   lifecycle data (see :mod:`takestock.lifecycle`);
 3. **readings across rows**: a key served by more than one host, a port-80
    redirect with nothing to stop it being stripped, the HTTP protocol readings
    carried onto the TLS row for the same endpoint, and certificate expiry read
@@ -39,7 +40,9 @@ from .disposition import (
     load_dispositions,
 )
 from .lifecycle import (
+    PLAN_MARKS,
     apply_migration_strategy,
+    apply_plan_marks,
     apply_support_status,
     derive_windows_support,
     lifecycle_summary,
@@ -269,17 +272,22 @@ def finalise(assets: list[CryptoAsset], policy: Policy, dictionary: Mapping[str,
     (:func:`takestock.config.load_dictionary`). ``dispositions`` defaults to
     the bundled generic rules. ``lifecycle`` is the target profile's
     ``lifecycle:`` block, with optional ``migration_strategy`` and
-    ``support_status`` mappings.
+    ``support_status`` mappings and optional ``replaced_by`` and
+    ``retiring_by`` pattern lists. Every pattern that matched nothing is
+    listed under ``lifecycle_unmatched``.
     """
     rules = dispositions if dispositions is not None else load_dispositions()
     assets, merged = merge_duplicates(list(assets))
     block = dict(lifecycle or {})
     apply_migration_strategy(assets, block.get("migration_strategy") or {})
     apply_support_status(assets, block.get("support_status") or {})
+    apply_plan_marks(assets, block)
     unmatched = (unmatched_patterns(assets, block.get("migration_strategy") or {},
                                     "migration_strategy")
                  + unmatched_patterns(assets, block.get("support_status") or {},
                                       "support_status"))
+    for key in PLAN_MARKS:
+        unmatched += unmatched_patterns(assets, list(block.get(key) or []), key)
     windows = derive_windows_support(assets, config.load_windows_lifecycle())
     passes = {
         "merged_duplicates": merged,

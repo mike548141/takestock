@@ -416,9 +416,10 @@ rules:
       Wave 1 rather than being treated as an emergency.
 
   # Dormant until a person marks an asset `replaced_by` a planned
-  # replacement: whether a planned change replaces a control is a judgement
-  # only a person can make. It requires a non-weak verdict, so it can never
-  # contradict the rail above.
+  # replacement, with a pattern in the target profile's `lifecycle:` block:
+  # whether a planned change replaces a control is a judgement only a person
+  # can make. It requires a non-weak verdict, so it can never contradict the
+  # rail above.
   - id: accept-replacement-tolerable-control
     match:
       extra_true: replaced_by
@@ -439,8 +440,9 @@ rules:
       rules before that.)
 
   # Dormant until a person marks an asset `retiring_by` a migration or
-  # retirement. Even then it fires only when the current exposure is
-  # tolerable; a weak internet-facing asset still meets the rail above.
+  # retirement, with a pattern in the target profile's `lifecycle:` block.
+  # Even then it fires only when the current exposure is tolerable; a weak
+  # internet-facing asset still meets the rail above.
   - id: defer-migration-retiring-infrastructure
     match:
       extra_true: retiring_by

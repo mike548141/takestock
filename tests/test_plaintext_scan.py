@@ -218,6 +218,14 @@ def test_a_page_served_in_clear_is_a_finding(port_table):
     assert "Measured" in evidence
 
 
+def test_8081_is_measured_by_its_page_and_inconclusive_without_one(port_table):
+    row = plaintext.lookup("8081", "tcp", port_table)
+    served, _ = ps.classify(_obs("8081/tcp", state="open", title="Example"), row)
+    silent, _ = ps.classify(_obs("8081/tcp", state="open"), row)
+    assert (served, silent) == (ps.CLEARTEXT_SERVED, ps.INCONCLUSIVE)
+    assert ps._needs_verification(served, row)
+
+
 def test_a_redirect_to_https_is_not_a_finding(port_table):
     outcome, _ = ps.classify(
         _obs("80/tcp", state="open", title="Did not follow redirect to https://www.example.test/"),

@@ -32,6 +32,17 @@ identifies a product line exactly:
 Derived bands are computed as of the date the evidence was collected, never
 today's date, so the same observation always gives the same answer. A near
 match is left unmatched rather than guessed.
+
+**Plan marks** (``replaced_by``, ``retiring_by``) are two further lists of
+patterns, also declared by a person. A match sets ``extra[<key>] = True`` on
+the row, which two disposition rules read:
+
+* ``replaced_by``: a planned replacement will remove this control;
+* ``retiring_by``: the system is being migrated off or retired.
+
+No collector can know either fact, so neither is ever derived. The marks
+never change a verdict, and the rules that read them claim only rows that are
+not weak (see ``docs/DISPOSITIONS.md``).
 """
 
 from __future__ import annotations
@@ -109,15 +120,45 @@ def apply_support_status(assets: list[CryptoAsset], block: dict) -> list[CryptoA
     return assets
 
 
-def unmatched_patterns(assets: list[CryptoAsset], block: dict, key: str) -> list[str]:
-    """Patterns in a lifecycle block that match no asset: a typo, or a host since gone."""
+REPLACED_BY = "replaced_by"
+RETIRING_BY = "retiring_by"
+#: Keys of the lifecycle block that are flat pattern lists setting ``extra[<key>] = True``.
+PLAN_MARKS = (REPLACED_BY, RETIRING_BY)
+
+
+def _mark_patterns(block: dict, key: str) -> list[str]:
+    patterns = (block or {}).get(key) or []
+    if not isinstance(patterns, list) or not all(isinstance(p, str) for p in patterns):
+        raise LifecycleError(f"{key}: expected a list of regular expressions, got {patterns!r}")
+    return patterns
+
+
+def apply_plan_marks(assets: list[CryptoAsset], block: dict) -> list[CryptoAsset]:
+    """Set ``extra[key] = True`` on every asset a ``replaced_by`` or ``retiring_by`` pattern matches."""
+    for key in PLAN_MARKS:
+        for pattern in _mark_patterns(block, key):
+            rx = re.compile(pattern)
+            for a in assets:
+                if _match(rx, a):
+                    a.extra[key] = True
+    return assets
+
+
+def unmatched_patterns(assets: list[CryptoAsset], block: dict | list, key: str) -> list[str]:
+    """Patterns in a lifecycle block that match no asset: a typo, or a host since gone.
+
+    ``block`` is either a mapping of value to entries, or a flat list of
+    patterns (a plan mark), reported under ``key`` alone.
+    """
+    groups = {"": block} if isinstance(block, list) else (block or {})
     out = []
-    for value, entries in (block or {}).items():
+    for value, entries in groups.items():
+        label = f"{key}.{value}" if value else key
         for entry in entries or []:
             pattern = entry if isinstance(entry, str) else entry.get("match", "")
             rx = re.compile(pattern)
             if not any(_match(rx, a) for a in assets):
-                out.append(f"{key}.{value}: /{pattern}/ matched no asset")
+                out.append(f"{label}: /{pattern}/ matched no asset")
     return out
 
 

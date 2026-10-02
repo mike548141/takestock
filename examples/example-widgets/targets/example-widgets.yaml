@@ -87,3 +87,11 @@ lifecycle:
   support_status:
     end-of-support:
       - {match: '^build-01\.example\.test$', ends: "2029-12-31"}
+  # Rows a planned replacement will remove, and rows on a system being
+  # migrated off. Each match marks the row for the disposition rules that
+  # read these marks; a weak row is never softened by one. Left empty here:
+  # a pattern that matched nothing would be reported as a likely typing slip.
+  #   replaced_by: ['^edge-fw-01\.example\.test$']
+  #   retiring_by: ['^files-01\.example\.test$']
+  replaced_by: []
+  retiring_by: []

@@ -359,18 +359,29 @@ lifecycle:
   support_status:
     end-of-support:
       - {match: '^build-01\.example\.test$', ends: "2029-12-31"}
+  replaced_by: ['^edge-fw-01\.example\.test$']
+  retiring_by: ['^files-01\.example\.test$']
 ```
 
-Each entry is a regular expression matched against a row's host or name.
+Each entry is a regular expression matched against a row's host, then its
+name.
 
 | Field | Means |
 |---|---|
 | `migration_strategy` | `{strategy: [pattern, ...]}`, where a strategy is one of `rehost`, `replatform`, `repurchase`, `refactor`, `retire`, `retain`. A word covering two of them is refused |
 | `support_status` | `{status: [pattern or {match, ends}, ...]}`, where a status is one of `supported`, `security-only`, `end-of-support`, `end-of-life`. `ends` records when support ends |
+| `replaced_by` | `[pattern, ...]`: rows whose control a planned replacement will remove. A match sets `replaced_by` on the row |
+| `retiring_by` | `[pattern, ...]`: rows on a system being migrated off or retired. A match sets `retiring_by` on the row |
 
-Both are recorded beside the grade and never change it. A pattern that
-matches no row is listed in `summary.json`, because it is usually a typing
-slip or a host since gone.
+All four are recorded beside the grade and never change it. `replaced_by`
+and `retiring_by` are what the disposition rules
+`accept-replacement-tolerable-control` and
+`defer-migration-retiring-infrastructure` read, and both rules claim only a
+row that is not weak (see [`DISPOSITIONS.md`](DISPOSITIONS.md)). Only a
+person can know either fact, so takestock never sets them itself. A pattern
+that matches no row is listed in `summary.json` under
+`lifecycle_unmatched`, because it is usually a typing slip or a host since
+gone, and an empty match must not read as "nothing qualifies".
 
 ### `sge`
 

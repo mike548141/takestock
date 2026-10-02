@@ -55,6 +55,22 @@ def test_unmatched_patterns_are_reported():
         "migration_strategy.retire: /^gone-/ matched no asset"]
 
 
+def test_plan_marks_are_set_by_host_or_name():
+    rows = [host("app-01"), host("app-02"), CryptoAsset(name="db cluster", data_state="at-rest")]
+    lc.apply_plan_marks(rows, {"replaced_by": [r"^app-01\."], "retiring_by": [r"^db cluster$"]})
+    assert [a.extra for a in rows] == [{"replaced_by": True}, {}, {"retiring_by": True}]
+
+
+def test_a_plan_mark_must_be_a_list_of_patterns():
+    with pytest.raises(lc.LifecycleError, match="list of regular expressions"):
+        lc.apply_plan_marks([host("app-01")], {"retiring_by": "^app-"})
+
+
+def test_an_unmatched_plan_mark_is_reported_under_its_key():
+    assert lc.unmatched_patterns([host("app-01")], ["^app-", "^gone-"], "retiring_by") == [
+        "retiring_by: /^gone-/ matched no asset"]
+
+
 # ── Windows, against the bundled Microsoft tables ──
 
 @pytest.fixture(scope="module")

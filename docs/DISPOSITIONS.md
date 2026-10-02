@@ -162,7 +162,12 @@ deadline is blank: the tool supplies no date of its own.
 
 The two dormant rules (`replaced_by`, `retiring_by`) fire only after a person
 marks a row: whether a planned change replaces a control is a judgement only
-a person can make.
+a person can make. The marks are lists of host or name patterns in the target
+profile's `lifecycle:` block (see
+[`TARGET-PROFILE.md`](TARGET-PROFILE.md#lifecycle)); a pattern that matches
+nothing is reported, not ignored. A mark never softens a weak row: both rules
+require a verdict that is not weak, and `internet-facing-weak` and
+`weak-not-internet-facing` are checked before them in any case.
 
 Each rule's full `reason:` in the data file is written for the reader of a
 report: what the exposure is, why the rung, and what the fix involves.
