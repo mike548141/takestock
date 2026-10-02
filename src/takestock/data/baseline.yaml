@@ -107,6 +107,7 @@ symmetric:
                                  # ciphertext-dependent timing, so the key size carries the grade
   aes192_cbc: acceptable
   aes256_xts: strong             # XTS-AES for block storage (NIST SP 800-38E)
+  aes128_xts: strong             # the same mode with a 128-bit key
   aes128_gcm: strong
   aes256_gcm: strong             # strong, not pqc: AES is quantum-resistant by key length, which
                                  # is a different claim from being a post-quantum algorithm
@@ -1067,6 +1068,15 @@ citations:
       aes256_xts:
         - authority: nist-sp-800-38e
           note: XTS-AES, the mode used for encrypting block storage such as disks and virtual machine files.
+      aes128_xts:
+        - authority: nist-sp-800-38e
+          note: XTS-AES, the mode used for encrypting block storage such as disks and virtual machine files.
+        - authority: nzism
+          control: §17.2.13
+          note: >-
+            The summary table lists AES with a minimum 256-bit key, and this key is shorter. The table
+            is guidance, not a control: no numbered control sets an AES key length, so this is a
+            shortfall from guidance, not a breach of a MUST.
       aes128_gcm:
         - authority: nist-sp-800-38d
         - authority: nzism

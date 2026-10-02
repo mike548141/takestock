@@ -290,7 +290,7 @@ def _role(provides: str) -> str:
 
 
 def _version_row(g: _Group, register: list[dict], baseline_tls: Mapping, floor: str,
-                 source_name: str, mtime: str) -> CryptoAsset:
+                 source_name: str, mtime: str, source: str = SOURCE) -> CryptoAsset:
     n = len(g.hosts)
     flags: list[str] = []
     verdict = "unknown"
@@ -329,13 +329,13 @@ def _version_row(g: _Group, register: list[dict], baseline_tls: Mapping, floor: 
     return CryptoAsset(
         name=f"{g.product} {g.version or '(version not recorded)'}",
         data_state=DATA_STATE, role=_role(g.entry.get("provides", "")),
-        software=g.product, version=g.version, source=SOURCE, source_class="private",
+        software=g.product, version=g.version, source=source, source_class="private",
         source_name=source_name, collected_at=mtime, verdict=verdict, flags=sorted(flags),
         hosts_count=n, notes=note, extra=extra)
 
 
 def _spread_row(product: str, entry: dict, groups: list[_Group], source_name: str,
-                mtime: str) -> CryptoAsset | None:
+                mtime: str, source: str = SOURCE) -> CryptoAsset | None:
     versions: dict[str, str] = {}
     for g in groups:
         if g.version:
@@ -346,7 +346,7 @@ def _spread_row(product: str, entry: dict, groups: list[_Group], source_name: st
     shown = ", ".join(sorted(versions.values()))
     return CryptoAsset(
         name=f"{product} version spread", data_state=DATA_STATE,
-        role=_role(entry.get("provides", "")), software=product, source=SOURCE,
+        role=_role(entry.get("provides", "")), software=product, source=source,
         source_class="private", source_name=source_name, collected_at=mtime,
         verdict=NA_VERDICT, flags=[f"{SPREAD_FLAG}{len(versions)}"], hosts_count=len(hosts),
         notes=(f"{len(hosts)} machine(s) carry {len(versions)} distinct versions of {product}: "
@@ -376,9 +376,10 @@ def _missing_gap(shown: str, fatal: str) -> coverage.Gap:
 
 def _scope_row(shown: str, source_name: str, mtime: str, rows: int, machines: int,
                matched_rows: int, products: list[str], unmatched_rows: int,
-               unmatched_products: int) -> CryptoAsset:
+               unmatched_products: int, source: str = SOURCE,
+               scope_name: str = SCOPE_NAME) -> CryptoAsset:
     return CryptoAsset(
-        name=SCOPE_NAME, data_state=DATA_STATE, role=SCOPE_ROLE, source=SOURCE,
+        name=scope_name, data_state=DATA_STATE, role=SCOPE_ROLE, source=source,
         source_class="private", source_name=source_name, collected_at=mtime, verdict=NA_VERDICT,
         notes=(f"{rows} row(s) read from {shown}, naming {machines} machine(s). {matched_rows} "
                f"row(s) name a cryptographic provider in the register: "
@@ -407,10 +408,6 @@ def collect(target: Mapping, root: Path | None = None) -> tuple[list[CryptoAsset
     if fatal or not rows:
         return [], [_missing_gap(shown, fatal)]
 
-    register = load_crypto_software()
-    baseline = load_baseline()
-    floor = tls_floor(baseline)
-    names = identity.names_by_address(target)
     mtime = file_mtime_date(path) or ""
     source_name = (f"Software inventory export (file dated {mtime})" if mtime
                    else "Software inventory export (file date unavailable)")
@@ -418,6 +415,28 @@ def collect(target: Mapping, root: Path | None = None) -> tuple[list[CryptoAsset
     def cell(row: dict, name: str) -> str:
         return str(row.get(cols[name]) or "").strip() if name in cols else ""
 
+    records = [{name: cell(row, name) for name in _COLUMNS} for row in rows]
+    return assess(target, records, shown=shown, source_name=source_name, mtime=mtime)
+
+
+def assess(target: Mapping, records: list[dict], *, shown: str, source_name: str, mtime: str,
+           source: str = SOURCE, scope_name: str = SCOPE_NAME) -> tuple[list[CryptoAsset], list]:
+    """Match inventory records against the register; return (assets, coverage gaps).
+
+    Each record is a mapping with ``host`` and ``product``, and optionally
+    ``version``, ``vendor`` and ``path``. ``shown`` names the input in gap
+    sentences; ``source`` and ``scope_name`` let another reader of the same
+    kind of evidence keep its rows apart from this collector's.
+    """
+    register = load_crypto_software()
+    baseline = load_baseline()
+    floor = tls_floor(baseline)
+    names = identity.names_by_address(target)
+
+    def cell(row: dict, name: str) -> str:
+        return str(row.get(name) or "").strip()
+
+    rows = records
     groups: dict[tuple[str, str], _Group] = {}
     machines: set[str] = set()
     unusable = matched = 0
@@ -453,12 +472,14 @@ def collect(target: Mapping, root: Path | None = None) -> tuple[list[CryptoAsset
     for key in sorted(groups, key=lambda k: (k[0].casefold(), k[1])):
         g = groups[key]
         by_product.setdefault(g.product, []).append(g)
-        a = _version_row(g, register, baseline.get("tls_versions") or {}, floor, source_name, mtime)
+        a = _version_row(g, register, baseline.get("tls_versions") or {}, floor, source_name, mtime,
+                         source)
         _apply_lifecycle(a, lifecycle_reading(dataset, [g.product, *sorted(g.spellings)],
                                               g.version, mtime))
         assets.append(a)
     for product, product_groups in by_product.items():
-        spread = _spread_row(product, product_groups[0].entry, product_groups, source_name, mtime)
+        spread = _spread_row(product, product_groups[0].entry, product_groups, source_name, mtime,
+                             source)
         if spread is not None:
             assets.append(spread)
 
@@ -486,5 +507,6 @@ def collect(target: Mapping, root: Path | None = None) -> tuple[list[CryptoAsset
             harvest="A re-export with the version column filled.",
             nature=coverage.LOW_FIDELITY))
     assets.append(_scope_row(shown, source_name, mtime, len(rows), len(machines), matched,
-                             sorted(by_product), unmatched_rows, len(unmatched)))
+                             sorted(by_product), unmatched_rows, len(unmatched), source,
+                             scope_name))
     return assets, gaps

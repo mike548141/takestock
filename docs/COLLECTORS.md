@@ -6,7 +6,10 @@ takestock registers: what it reads or probes, what it needs in the target
 profile, which external tools it uses, and what it cannot see.
 
 Installing the external tools, and the authorisation record active probes
-need, are in [`SETUP-SCANNERS.md`](SETUP-SCANNERS.md).
+need, are in [`SETUP-SCANNERS.md`](SETUP-SCANNERS.md). A reader for an export
+takestock has no collector for can be written as a plug-in, in its own
+package, and run in an observation as if it were built in; see
+[`PLUGINS.md`](PLUGINS.md).
 
 ## Terms used here
 

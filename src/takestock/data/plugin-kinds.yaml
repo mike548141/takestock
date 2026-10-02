@@ -1,0 +1,345 @@
+# The record schema for each kind of plug-in collector.
+#
+# A plug-in reads an export takestock has no built-in reader for and hands
+# takestock one record per thing it read. takestock checks each record against
+# its kind's fields below, then turns the valid records into rows and grades
+# them. docs/PLUGINS.md describes every kind in prose; tests/test_plugins.py
+# checks the two agree.
+#
+# This file is the contract between takestock and its plug-ins, so it is read
+# from the package only. A copy in a workspace's data/ directory is ignored.
+#
+# Field types:
+#   text     a string, trimmed; required means not blank
+#   count    a whole number, zero or more ("1,200" is read as 1200)
+#   port     a whole number from 1 to 65535
+#   flag     true or false; also yes/no, on/off, 1/0
+#   date     YYYY-MM-DD; a longer timestamp is cut to its date
+#   tokens   a list of strings, or one string split on ";" or ","
+#   choice   one of `values`, compared ignoring case, after `synonyms`
+#
+# A control graded on `algorithms` lists the baseline tables its tokens may
+# be placed in. One that can carry TLS versions uses protocol `tls`, because
+# the grader reads TLS versions only on a TLS row.
+#
+# Every row kind also accepts `collected_on` (a date: when the record was
+# true) and any field whose name starts `x_`, which is copied into the row's
+# `extra` unchanged. Any other field a kind does not list makes the record
+# invalid, so a misspelt field is reported rather than dropped.
+
+schema: 1
+
+# The state vocabulary shared by the control kinds (directory,
+# virtualisation, backup-encryption, database-encryption). A control is named
+# for the protection it gives, so `on` always means the protection is there.
+control_states:
+  values: ["on", "off", partial, unknown]
+  synonyms:
+    enabled: "on"
+    "yes": "on"
+    "true": "on"
+    required: "on"
+    enforced: "on"
+    configured: "on"
+    present: "on"
+    encrypted: "on"
+    blocked: "on"
+    refused: "on"
+    disabled: "off"
+    "no": "off"
+    "false": "off"
+    not-required: "off"
+    not-enforced: "off"
+    not-configured: "off"
+    absent: "off"
+    allowed: "off"
+    unencrypted: "off"
+    cleartext: "off"
+    some: partial
+    mixed: partial
+    opportunistic: partial
+    "": unknown
+    not-checked: unknown
+
+kinds:
+  endpoint-software:
+    title: Installed software per device
+    shape: software
+    fields:
+      device: {type: text, required: true, doc: "The machine, by name or address."}
+      product: {type: text, required: true, doc: "The product as the inventory spells it."}
+      version: {type: text, doc: "The installed version."}
+      vendor: {type: text, doc: "The publisher."}
+      path: {type: text, doc: "Where the copy is installed."}
+    row:
+      data_state: [software]
+
+  endpoint-encryption:
+    title: Disk encryption state per device
+    shape: disk
+    fields:
+      device: {type: text, required: true, doc: "The machine, by name or address."}
+      volume: {type: text, required: true, doc: "The volume, drive or partition."}
+      state:
+        type: choice
+        required: true
+        values: [encrypted, not-encrypted, in-progress, suspended, unknown]
+        synonyms:
+          "on": encrypted
+          "yes": encrypted
+          protected: encrypted
+          fully-encrypted: encrypted
+          "off": not-encrypted
+          "no": not-encrypted
+          unencrypted: not-encrypted
+          unprotected: not-encrypted
+          decrypted: not-encrypted
+          encrypting: in-progress
+          decrypting: in-progress
+          paused: suspended
+          "": unknown
+        doc: >-
+          Whether the volume is encrypted. `suspended` means encryption is in
+          place but its protection is switched off, so the key is readable from
+          the disk.
+      method: {type: text, doc: "The cipher and mode, such as `aes-256-xts`."}
+      volume_type:
+        type: choice
+        values: [operating-system, data, removable, unknown]
+        synonyms: {os: operating-system, system: operating-system, boot: operating-system,
+                   fixed: data, usb: removable, "": unknown}
+        doc: "What the volume holds."
+      key_protectors:
+        type: tokens
+        doc: "How the volume is unlocked, such as `tpm`, `tpm+pin`, `password`, `recovery-key`."
+      recovery_key_escrowed:
+        type: flag
+        doc: "Whether a recovery key is held somewhere other than the device."
+      device_id: {type: text, doc: "A stable identifier that survives a rename."}
+    aliases:
+      xts-aes-128: aes128_xts
+      xts-aes-256: aes256_xts
+      aes-128-xts: aes128_xts
+      aes-256-xts: aes256_xts
+      xts_aes_128: aes128_xts
+      xts_aes_256: aes256_xts
+      aes-256-cbc: aes256_cbc
+    tables: [symmetric]
+    row:
+      data_state: [at-rest]
+      protocol: [disk-encryption]
+
+  directory:
+    title: Identity and authentication settings
+    shape: control
+    subject: directory
+    fields:
+      directory: {type: text, required: true, doc: "The directory, domain or tenant the setting belongs to."}
+      setting:
+        type: choice
+        required: true
+        values: [ldap-signing-required, ldap-channel-binding-required, kerberos-encryption,
+                 ntlmv1-refused, legacy-authentication-blocked, mfa-required]
+        doc: "Which setting the record reads."
+      state: {type: control-state, required: true, doc: "Whether the protection is in place."}
+      algorithms: {type: tokens, doc: "For `kerberos-encryption`: the encryption types allowed."}
+      scope: {type: text, doc: "Which part of the directory the reading covers."}
+      server: {type: text, doc: "The server the reading was taken from, when it is one server."}
+    # Kerberos encryption types (RFC 3962, RFC 8009) use AES in ciphertext
+    # stealing mode, a CBC mode; RFC 8429 deprecates the RC4 and DES types.
+    aliases:
+      aes128-cts-hmac-sha1-96: aes_cbc
+      aes256-cts-hmac-sha1-96: aes_cbc
+      aes128-cts-hmac-sha256-128: aes_cbc
+      aes256-cts-hmac-sha384-192: aes_cbc
+      rc4-hmac: rc4
+      rc4-hmac-md5: rc4
+      des-cbc-md5: des
+      des-cbc-crc: des
+    controls:
+      ldap-signing-required:
+        {grade: setting, data_state: identity, protocol: ldap,
+         label: "LDAP signing required"}
+      ldap-channel-binding-required:
+        {grade: setting, data_state: identity, protocol: ldap,
+         label: "LDAP channel binding required"}
+      kerberos-encryption:
+        {grade: algorithms, tables: [symmetric], data_state: identity, protocol: kerberos,
+         label: "Kerberos encryption types"}
+      ntlmv1-refused:
+        {grade: setting, data_state: identity, protocol: ntlm, label: "NTLMv1 refused"}
+      legacy-authentication-blocked:
+        {grade: setting, data_state: identity, protocol: legacy-authentication,
+         label: "Legacy authentication blocked"}
+      mfa-required:
+        {grade: setting, data_state: identity, protocol: mfa,
+         label: "Multi-factor authentication required"}
+    row:
+      data_state: [identity]
+
+  mail-transport:
+    title: Transport encryption per message or mail path
+    shape: mail
+    source: mail_transport
+    fields:
+      direction:
+        type: choice
+        required: true
+        values: [inbound, outbound]
+        synonyms: {in: inbound, received: inbound, receive: inbound, incoming: inbound,
+                   out: outbound, sent: outbound, send: outbound, outgoing: outbound}
+        doc: "Which way the mail went."
+      tls_version:
+        type: text
+        required: true
+        doc: >-
+          The TLS version the delivery negotiated, such as `TLS1.2`, or `none`
+          when it crossed with no transport encryption.
+      messages: {type: count, doc: "How many messages the record stands for; 1 when absent."}
+      path: {type: text, doc: "The route the mail took (a connector, relay or rule); `direct` when absent."}
+      route_configured:
+        type: flag
+        doc: "Whether a configured route, such as a connector or relay definition, governed the path."
+      date: {type: date, doc: "The day the mail was sent or received."}
+      counterparty_domain: {type: text, doc: "The other party's mail domain."}
+      government:
+        type: flag
+        doc: >-
+          Whether the other party is a government organisation, for the Secure
+          Government Email reading. Supply it on every record or none.
+      government_basis: {type: text, doc: "How a government counterparty was identified."}
+    row:
+      data_state: [in-transit]
+      protocol: [smtp]
+      extra: [messages]
+
+  virtualisation:
+    title: Virtualisation platform encryption controls
+    shape: control
+    subject: object
+    fields:
+      object: {type: text, required: true, doc: "The virtual machine, host, cluster or datastore."}
+      object_type:
+        type: choice
+        values: [vm, host, cluster, datastore, other]
+        synonyms: {virtual-machine: vm, guest: vm, hypervisor: host, storage: datastore, "": other}
+        doc: "What the object is."
+      control:
+        type: choice
+        required: true
+        values: [vm-encryption, migration-encryption, datastore-encryption, management-tls,
+                 key-management]
+        doc: "Which control the record reads."
+      state: {type: control-state, required: true, doc: "Whether the control is in place."}
+      algorithms: {type: tokens, doc: "The algorithms the control uses."}
+      key_service: {type: text, doc: "The key management service that holds the keys."}
+      platform: {type: text, doc: "The virtualisation product."}
+      version: {type: text, doc: "The product version."}
+    controls:
+      vm-encryption:
+        {grade: algorithms, tables: [symmetric], data_state: at-rest, protocol: vm-encryption,
+         label: "Virtual machine encryption"}
+      migration-encryption:
+        {grade: algorithms, tables: [symmetric], data_state: in-transit,
+         protocol: vm-migration, label: "Live migration encryption"}
+      datastore-encryption:
+        {grade: algorithms, tables: [symmetric], data_state: at-rest,
+         protocol: datastore-encryption, label: "Datastore encryption"}
+      management-tls:
+        {grade: algorithms, tables: [tls_versions, symmetric, key_exchange, signatures],
+         data_state: in-transit, protocol: tls, label: "Management interface TLS"}
+      key-management:
+        {grade: presence, data_state: at-rest, protocol: key-management,
+         label: "Key management service"}
+    row:
+      data_state: [at-rest, in-transit]
+
+  backup-encryption:
+    title: Backup encryption
+    shape: control
+    subject: target
+    fields:
+      target: {type: text, required: true, doc: "The backup job, policy or storage target."}
+      control:
+        type: choice
+        required: true
+        values: [at-rest, in-transit]
+        doc: "Whether the record is about stored backups or backups being copied."
+      state: {type: control-state, required: true, doc: "Whether the control is in place."}
+      algorithms: {type: tokens, doc: "The algorithms the control uses."}
+      key_custody:
+        type: choice
+        values: [product, customer, hsm, external-kms, unknown]
+        synonyms: {vendor: product, software: product, "": unknown}
+        doc: "Who holds the keys."
+      location:
+        type: choice
+        values: [on-premises, cloud, offsite, unknown]
+        synonyms: {local: on-premises, onsite: on-premises, "": unknown}
+        doc: "Where the backup copies are kept."
+      immutable: {type: flag, doc: "Whether stored copies cannot be changed or deleted before they expire."}
+      platform: {type: text, doc: "The backup product."}
+    controls:
+      at-rest:
+        {grade: algorithms, tables: [symmetric], data_state: at-rest,
+         protocol: backup-encryption, label: "Backup encryption at rest"}
+      in-transit:
+        {grade: algorithms, tables: [tls_versions, symmetric], data_state: in-transit,
+         protocol: tls, label: "Backup transport encryption"}
+    row:
+      data_state: [at-rest, in-transit]
+
+  database-encryption:
+    title: Database encryption
+    shape: control
+    subject: database
+    fields:
+      database: {type: text, required: true, doc: "The database or instance."}
+      control:
+        type: choice
+        required: true
+        values: [storage, column, backup, transport]
+        synonyms: {tde: storage, transparent-data-encryption: storage, at-rest: storage,
+                   in-transit: transport}
+        doc: "Which control the record reads."
+      state: {type: control-state, required: true, doc: "Whether the control is in place."}
+      algorithms: {type: tokens, doc: "The algorithms the control uses."}
+      key_custody:
+        type: choice
+        values: [software, hsm, external-kms, unknown]
+        synonyms: {keystore: software, "": unknown}
+        doc: "Where the master key is kept."
+      engine: {type: text, doc: "The database product."}
+      version: {type: text, doc: "The product version."}
+      server: {type: text, doc: "The machine the database runs on."}
+    controls:
+      storage:
+        {grade: algorithms, tables: [symmetric], data_state: at-rest,
+         protocol: database-encryption, label: "Database storage encryption"}
+      column:
+        {grade: algorithms, tables: [symmetric], data_state: at-rest,
+         protocol: column-encryption, label: "Column encryption"}
+      backup:
+        {grade: algorithms, tables: [symmetric], data_state: at-rest,
+         protocol: database-backup-encryption, label: "Database backup encryption"}
+      transport:
+        {grade: algorithms, tables: [tls_versions, symmetric], data_state: in-transit,
+         protocol: tls, label: "Database connection encryption"}
+    row:
+      data_state: [at-rest, in-transit]
+
+  host-listener:
+    title: Listening ports seen from the host
+    shape: listener
+    fields:
+      device: {type: text, required: true, doc: "The machine, by name or address."}
+      port: {type: port, required: true, doc: "The listening port."}
+      transport:
+        type: choice
+        required: true
+        values: [tcp, udp]
+        doc: "The transport protocol."
+      process: {type: text, doc: "The program listening, by its binary name."}
+      address: {type: text, doc: "The address the program is bound to."}
+    row:
+      data_state: [in-transit]

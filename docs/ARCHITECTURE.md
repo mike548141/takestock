@@ -54,12 +54,17 @@ plan file + exports ─► ipam.py + ipam_view.py ─► IP address plan   (read
    collectors it held back.
 3. **Run the early steps**, in registration order, then finish any
    certificate-transparency domains that were parked while a search service
-   asked the run to wait, then run the **late** steps, which read the rows
-   the earlier ones produced (`caa`, `dns_zones`, `winrm_config`).
+   asked the run to wait, then the profile's ordinary **plug-ins**
+   (`plugins.py`, below), then the **late** steps, which read the rows the
+   earlier ones produced (`caa`, `dns_zones`, `winrm_config`), then the late
+   plug-ins and coverage checks.
 4. **Contain failure.** A collector that raises is recorded as a failure and
    the run continues. What a collector returns in its failures list is split
    by `observe.split_failures`: a `coverage.Gap` (a service nobody
-   configured) is a gap; anything else is a failure.
+   configured) is a gap; anything else is a failure. A plug-in is contained
+   the same way, but whatever goes wrong with one (it cannot be found, has
+   no input, raises, or returns records its kind's schema refuses) is
+   recorded as a gap naming it, not as a failure.
 
 Each collector step returns `(rows, failures, gaps)`. The adapters in
 `observe.py` (`_rows_and_failures`, `_ingest`, `_port_probe`) fit each
@@ -84,14 +89,17 @@ collector's own signature to that shape.
    (`disposition.py`);
 6. **usage bands** (`usage.py`) and **evidence depth** (`depth.py`).
 
-Then `normalise.not_measured_gaps` turns each `not-measured:` flag into a
+Then any **annotation** plug-ins add `extra` keys to the graded rows (they
+can add a key, never change one), each plug-in's `summarise` reads its own
+graded rows, `normalise.not_measured_gaps` turns each `not-measured:` flag into a
 gap, `sge.apply_conformance` marks rows behind an unmet Secure Government
 Email MUST, `normalise.findings` picks out the findings,
 `dispensation.payload` assesses each row's dispensation state on the
 observation's date, and `normalise.summarise` counts everything
 (post-quantum readiness, plaintext, dispositions, agility, hardware or
 software binding, evidence depth, the gaps and their classifications) into
-`summary.json`, with the dispensation states under `dispensations`.
+`summary.json`, with the dispensation states under `dispensations` and each
+declared plug-in's record under `plugins`.
 
 ### 3. Write (`model.py`)
 
@@ -207,6 +215,7 @@ a new collector or reader declares itself without editing a central list
 | `cmdb.register_source_strength(source, strength)` | The evidence strength a source's rows carry in the register when a row does not say (for example `reported` for a management system's own records) | None: rows default to `measured` |
 | `config.register_overlay_suffix(*suffixes)` | File suffixes beside a profile that are overlays, never profiles | `.dispositions.yaml`, `.derived-ports.yaml`, and `.ipam.yaml` (registered by `ipam.py`) |
 | `ipam.register_reader(kind, fn, optional=False, evidence="observed", replace=False)`, or the entry-point group `takestock.ipam_readers` | A reader for one kind of IP plan source | `csv`, `dns-zones`, `asn-lookups` |
+| `plugins.Plugin(...)`, found through the entry-point group `takestock.collectors` or a profile's `module:` or `path:` | A plug-in collector outside the package: its name, kind, input and step. It runs only when the profile's `plugins:` list names it (see [`PLUGINS.md`](PLUGINS.md)) | None |
 | `coverage.SCOPE_AREAS` | Whole areas of an assessment, so a gap that names a whole area (undone work, not a gap) is refused | Empty: a caller fills it or passes its own |
 
 ## Data files
@@ -229,8 +238,13 @@ standard can change without a code change. Each is read through
 | `vendor-domains.csv` | Public vendor domains, for naming the operator of an outside service |
 | `windows-lifecycle.yaml`, `software-lifecycle.yaml` | Vendor support dates, filled from public sources |
 | `crypto-software.csv` | Cryptographic libraries, and the highest TLS version a release line can negotiate, from public sources. Read by `software_inventory` |
+| `plugin-kinds.yaml` | The record schema of each plug-in kind, and how its records become rows. The contract with plug-ins, so it is read from the package only and a workspace copy is ignored |
 
 ## Adding a collector
+
+A reader for an export that need not ship with takestock can be a plug-in
+in its own package instead, with no change here; see
+[`PLUGINS.md`](PLUGINS.md). A collector inside the package:
 
 1. **Write the module**, `src/takestock/collectors/<name>.py`, with an entry
    point that takes the loaded profile first and returns

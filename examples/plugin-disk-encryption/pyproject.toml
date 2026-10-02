@@ -1,0 +1,25 @@
+# An example takestock plug-in, installable on its own:
+#   pip install -e examples/plugin-disk-encryption
+# The entry point below is how takestock finds it once installed. The target
+# profile still has to declare it under `plugins:` before it runs.
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "takestock-example-disk-encryption"
+version = "0.1.0"
+description = "Example takestock plug-in: disk encryption state from an invented export."
+requires-python = ">=3.11"
+license = "Apache-2.0"
+dependencies = ["takestock"]
+
+[project.entry-points."takestock.collectors"]
+example-disk-encryption = "example_disk_encryption:PLUGIN"
+
+[tool.setuptools]
+packages = ["example_disk_encryption"]
+
+[tool.setuptools.package-data]
+example_disk_encryption = ["*.csv"]

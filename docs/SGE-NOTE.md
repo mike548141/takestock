@@ -270,7 +270,9 @@ The **sending** half needs the organisation's own record of each outbound
 delivery: rows with `source: mail_transport` and `extra.direction: outbound`,
 each giving `messages`, `no_tls_messages` and a `tls_distribution` such as
 `TLS1.2=900; TLS1.3=100`. Any collector, including one an organisation plugs
-in, can supply such rows; without them this half is *not measured*. With them,
+in, can supply such rows (a plug-in of the `mail-transport` kind writes them;
+see [`PLUGINS.md`](PLUGINS.md#mail-transport)); without them this half is
+*not measured*. With them,
 any delivery with no TLS, or at a forbidden version, is *not met*.
 
 **SGE-ITLS-01, Implicit TLS configured and enforced** (must) can at best be

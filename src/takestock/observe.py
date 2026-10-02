@@ -21,6 +21,10 @@ Which collectors run (see :mod:`takestock.collectors` for the kinds):
   one the observation is refused before anything is written or contacted;
 * **ingest** collectors read supplied exports and always run.
 
+Plug-in collectors the target profile declares (see :mod:`takestock.plugins`)
+run alongside the ingest collectors: ordinary ones after the built-in early
+steps, late ones after the built-in late steps, and annotations after grading.
+
 Whatever does not run is recorded as a coverage gap on the observation, so
 an unread area never reads as a clean one. The same holds for a public
 service nobody has configured (a certificate-transparency endpoint, a DNSSEC
@@ -51,6 +55,7 @@ from . import (
     dnsevidence,
     inside_scope,
     normalise,
+    plugins,
     sge,
 )
 from .collectors import ct_dns
@@ -471,6 +476,7 @@ def observe(target: dict, options: Options | None = None) -> Result:
     run.say(f"observing {_organisation(target) or 'the target'} into {config.display_path(obs)}")
     run.say(f"  inbox: {config.inbox_dir()}")
 
+    host = plugins.Host(target, raw, options.now, announce=run.say)
     names = collectors.names()
     for name in names:
         why = _why_not(run, name)
@@ -489,8 +495,14 @@ def observe(target: dict, options: Options | None = None) -> Result:
         run.ct_failures += failures
         if run.ct_failures:
             run.gaps.append(_ct_failure_gap(run.ct_failures))
+    rows, gaps = host.run(late=False, assets=run.assets)
+    run.assets += rows
+    run.gaps += gaps
     for name in late:
         _run_step(run, name)
+    rows, gaps = host.run(late=True, assets=run.assets)
+    run.assets += rows
+    run.gaps += gaps
     run.gaps += _skip_gaps(run)
     if not options.offline and any(collectors.REGISTRY[n].kind == "passive" for n in run.ran):
         run.gaps += _resolver_gaps(target)
@@ -501,6 +513,8 @@ def observe(target: dict, options: Options | None = None) -> Result:
     assets, passes = normalise.finalise(run.assets, policy, config.load_dictionary(),
                                         dispositions=rules,
                                         lifecycle=target.get("lifecycle") or {})
+    run.gaps += host.annotate(assets)
+    run.gaps += host.summarise(assets)
     run.gaps += normalise.not_measured_gaps(assets)
     email_domains = [str(d) for d in (target.get("discovery") or {}).get("email_domains") or []]
     marked = sge.apply_conformance(assets, email_domains,
@@ -529,6 +543,8 @@ def observe(target: dict, options: Options | None = None) -> Result:
         "standards_marked": marked,
         "dispensations": dispensations,
         "normalise": passes,
+        plugins.SUMMARY_KEY: host.summary(),
+        plugins.UNDECLARED_KEY: host.undeclared,
         "ct_cache": ctcache.summarise(
             run.ct_reused, list((target.get("discovery") or {}).get("domains") or []),
             ctcache.CT_CACHE_DAYS, options.refresh_ct),

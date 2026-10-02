@@ -132,6 +132,7 @@ collector reads is ignored.
 | `winrm_inbox` | Where the WinRM configuration export is | `winrm_config` |
 | `netdev_inbox` | Where the network device export is, and which device classes to expect | `netdev` |
 | `software_inbox` | Where the software inventory export is | `software_inventory` |
+| `plugins` | The plug-in collectors to run, each with its input and settings ([`PLUGINS.md`](PLUGINS.md#declaring-a-plug-in-in-the-target-profile)) | the named plug-ins |
 | `dns_zones` | Settings for reading supplied zone files | `dns_zones` |
 | `third_party` | Outside providers and the domains they operate | dispositions, `dns_zones` |
 | `infrastructure` | Infrastructure providers and their domains | `dns_zones` |

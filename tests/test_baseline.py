@@ -153,7 +153,8 @@ def test_the_payload_ships_only_what_was_used(baseline):
 
 # Every graded row whose AES key is shorter than the table's 256 bits.
 SHORT_AES_ROWS = ("symmetric/aes128_gcm", "symmetric/aes128_ccm", "symmetric/aes128_ccm_8",
-                  "symmetric/aes192_cbc", "ike_encryption/aes-gcm-128", "ike_encryption/aes-cbc-128",
+                  "symmetric/aes192_cbc", "symmetric/aes128_xts", "ike_encryption/aes-gcm-128",
+                  "ike_encryption/aes-cbc-128",
                   "ike_encryption/aes-cbc-192", "ssh_cipher/aes128-gcm@openssh.com",
                   "ssh_cipher/aes128-ctr", "ssh_cipher/aes128-cbc", "ssh_cipher/aes192-ctr",
                   "ssh_cipher/aes192-cbc")

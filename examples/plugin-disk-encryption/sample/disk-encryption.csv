@@ -1,0 +1,8 @@
+Machine,Disk,Status,Cipher,Unlock,Key escrow
+laptop-01.example.test,C:,Protected,XTS 256,Chip+PIN,Yes
+laptop-01.example.test,D:,Protected,XTS 128,Chip,Yes
+laptop-02.example.test,C:,Paused,XTS 128,Chip,Yes
+laptop-03.example.test,C:,Unprotected,,,No
+files-01.example.test,/,Protected,,Passphrase,No
+build-01.example.test,/data,Working,XTS 256,Passphrase,
+,E:,Protected,XTS 256,Chip,Yes
