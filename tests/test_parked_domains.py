@@ -43,9 +43,11 @@ def resolving(table: dict, status: dict | None = None):
     return run
 
 
+DKIM_AT = f"*._domainkey.{P}"
 CLEAN = {
     (P, "TXT"): ['"v=spf1 -all"'],
     (f"_dmarc.{P}", "TXT"): ['"v=DMARC1; p=reject; adkim=s; aspf=s; rua=mailto:d@example.com"'],
+    (DKIM_AT, "TXT"): ['"v=DKIM1; p="'],
     (P, "MX"): ["0 ."],
 }
 
@@ -56,10 +58,10 @@ def parked(monkeypatch, table: dict, status: dict | None = None):
     return {r.protocol: r for r in rows}, failures
 
 
-def test_a_parked_domain_yields_spf_dmarc_and_null_mx_rows(monkeypatch):
+def test_a_parked_domain_yields_spf_dmarc_dkim_and_null_mx_rows(monkeypatch):
     rows, failures = parked(monkeypatch, CLEAN)
     assert failures == []
-    assert set(rows) == {"spf", "dmarc", ct_dns.NULL_MX}
+    assert set(rows) == {"spf", "dmarc", ct_dns.DKIM_WILDCARD, ct_dns.NULL_MX}
     assert all(r.extra["parked"] is True and r.host == P for r in rows.values())
     assert rows["spf"].extra["record"].strip('"') == "v=spf1 -all"
     assert "dmarc-reject" in rows["dmarc"].flags
@@ -78,6 +80,35 @@ def test_each_mx_answer_has_its_null_mx_state(monkeypatch, mx, state):
     table = {**CLEAN, (P, "MX"): mx}
     rows, _ = parked(monkeypatch, table)
     assert rows[ct_dns.NULL_MX].extra["null_mx"] == state
+
+
+def test_the_wildcard_dkim_record_is_read_with_its_lookup(monkeypatch):
+    rows, _ = parked(monkeypatch, CLEAN)
+    dkim = rows[ct_dns.DKIM_WILDCARD]
+    assert (dkim.name, dkim.flags) == (f"DKIM wildcard {P}", [])
+    assert dkim.extra["present"] is True and dkim.extra["blank"] is True
+    assert dkim.extra["record"] == "v=DKIM1; p="
+    assert dkim.extra["lookup"]["name"] == DKIM_AT and dkim.extra["lookup"]["measured"]
+
+
+@pytest.mark.parametrize(("answer", "present", "blank", "flag"), [
+    ([], False, False, "no-dkim-wildcard"),
+    (['"v=DKIM1; k=rsa; " "p=EXAMPLEKEY"'],
+     True, False, "dkim-wildcard-not-blank"),
+])
+def test_an_absent_or_keyed_wildcard_is_read_as_such(monkeypatch, answer, present, blank, flag):
+    rows, failures = parked(monkeypatch, {**CLEAN, (DKIM_AT, "TXT"): answer})
+    dkim = rows[ct_dns.DKIM_WILDCARD]
+    assert failures == []
+    assert (dkim.extra["present"], dkim.extra["blank"], dkim.flags) == (present, blank, [flag])
+    if present:                                  # quoted strings joined, as a receiver does
+        assert dkim.extra["record"] == "v=DKIM1; k=rsa; p=EXAMPLEKEY"
+
+
+def test_a_dkim_lookup_that_does_not_settle_is_a_failure_not_an_absence(monkeypatch):
+    rows, failures = parked(monkeypatch, CLEAN, status={DKIM_AT: "SERVFAIL"})
+    assert ct_dns.DKIM_WILDCARD not in rows
+    assert len(failures) == 1 and f"DKIM ({DKIM_AT}: SERVFAIL)" in failures[0]
 
 
 def test_an_mx_lookup_that_does_not_settle_is_a_failure_not_an_absence(monkeypatch):
@@ -109,8 +140,16 @@ def test_the_collector_reads_each_parked_domain(monkeypatch):
 
 def _rows(spf: str | None = "v=spf1 -all", dmarc: str | None = "v=DMARC1; p=reject; adkim=s; "
           "aspf=s; rua=mailto:d@example.com", null_mx: str | None = "published",
-          spf_flags: tuple[str, ...] = ("hardfail-all",)) -> list[dict]:
+          spf_flags: tuple[str, ...] = ("hardfail-all",),
+          dkim: str | None = "v=DKIM1; p=") -> list[dict]:
     out: list[dict] = []
+    if dkim is not None:
+        out.append({"name": f"DKIM wildcard {P}", "protocol": "dkim-wildcard", "host": P,
+                    "flags": [], "notes": "",
+                    "extra": {"present": bool(dkim), "record": dkim, "parked": True,
+                              "lookup": {"name": f"*._domainkey.{P}", "measured": True,
+                                         "lookups": [{"resolver": "192.0.2.53",
+                                                      "rcode": "NOERROR", "at": ""}]}}})
     if spf is not None:
         out.append({"name": f"SPF {P}", "protocol": "spf", "host": P, "flags": list(spf_flags),
                     "notes": spf or "no v=spf1 record published",
@@ -137,7 +176,7 @@ def test_a_clean_parked_domain_meets_the_rules_for_domains_that_send_no_mail():
     by = {r.requirement: r for r in report.rows if r.parked}
     assert {k: v.status for k, v in by.items()} == {
         "SGE-NED-SPF-01": sge.PASS, "SGE-NED-DMARC-01": sge.PASS,
-        "SGE-NED-DMARC-R01": sge.PASS, "SGE-NED-DKIM-01": sge.NOT_MEASURED}
+        "SGE-NED-DMARC-R01": sge.PASS, "SGE-NED-DKIM-01": sge.PASS}
     assert report.breaches() == []
     assert [(p.domain, p.null_mx, p.published) for p in report.parked] == [
         (P, "published", True)]
@@ -163,6 +202,53 @@ def test_a_parked_domain_without_the_blank_spf_record_breaches_a_must(record, fl
 def test_a_parked_domain_without_a_reject_policy_breaches_a_must(record, observed):
     row = graded(_rows(dmarc=record), "SGE-NED-DMARC-01")
     assert (row.status, row.observed) == (sge.FAIL, observed) and row.breaches_must
+
+
+@pytest.mark.parametrize("sp", ["none", "quarantine"])
+def test_a_parked_domain_whose_sub_domain_policy_is_weaker_than_reject_breaches_a_must(sp):
+    row = graded(_rows(dmarc=f"v=DMARC1; p=reject; sp={sp}"), "SGE-NED-DMARC-01")
+    assert (row.status, row.observed) == (sge.FAIL, f"p=reject; pct=100; sp={sp}")
+    assert row.breaches_must and f"sets sp={sp}" in row.reason
+
+
+@pytest.mark.parametrize(("record", "observed"), [
+    ("v=DMARC1; p=reject", "p=reject; pct=100"),            # no sp=: inherits p=reject
+    ("v=DMARC1; p=reject; sp=reject", "p=reject; pct=100; sp=reject"),
+])
+def test_a_parked_domain_whose_sub_domains_inherit_or_set_reject_passes(record, observed):
+    row = graded(_rows(dmarc=record), "SGE-NED-DMARC-01")
+    assert (row.status, row.observed) == (sge.PASS, observed)
+
+
+def test_a_weak_sub_domain_policy_adds_to_a_failing_parked_policy():
+    row = graded(_rows(dmarc="v=DMARC1; p=none; sp=none"), "SGE-NED-DMARC-01")
+    assert (row.status, row.observed) == (sge.FAIL, "p=none; pct=100; sp=none")
+    assert "p=none" in row.reason and "sets sp=none" in row.reason
+
+
+def test_the_empty_dkim_key_on_a_parked_domain_passes():
+    row = graded(_rows(), "SGE-NED-DKIM-01")
+    assert (row.status, row.observed, row.record) == (sge.PASS, "v=DKIM1; p=", "v=DKIM1; p=")
+    assert sge.PARKED_NOTE in row.subject_note
+
+
+@pytest.mark.parametrize(("record", "observed"), [
+    ("", "no DKIM record"),
+    ("v=DKIM1; k=rsa; p=EXAMPLEKEY", "not blank; carries a key"),
+    ("v=DKIM1; k=rsa", "not blank; no p= tag"),
+])
+def test_a_parked_domain_without_the_empty_dkim_key_breaches_a_must(record, observed):
+    row = graded(_rows(dkim=record), "SGE-NED-DKIM-01")
+    assert (row.status, row.level, row.observed) == (sge.FAIL, "must", observed)
+    assert row.breaches_must
+    if not record:
+        assert "settled and returned no such record" in row.reason
+
+
+def test_an_unsettled_dkim_lookup_on_a_parked_domain_is_inconclusive():
+    row = graded(_rows(dkim=None), "SGE-NED-DKIM-01")
+    assert (row.status, row.reason) == (sge.NOT_MEASURED, sge.INCONCLUSIVE)
+    assert "did not settle" in row.evidence
 
 
 def test_relaxed_alignment_on_a_parked_domain_is_a_recommendation_not_a_breach():

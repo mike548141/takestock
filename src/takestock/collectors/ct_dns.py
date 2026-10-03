@@ -20,10 +20,11 @@ Two passive readings, neither of which touches the organisation's hosts:
   lookup that does not settle is a failure, and claims nothing either way.
 * **Parked domains.** For each domain under ``discovery.domains`` that is not
   under ``discovery.email_domains`` (see
-  :func:`takestock.dnsevidence.parked_domains`) it reads SPF, DMARC and MX,
-  the records with which a domain that sends and receives no mail says so:
-  ``v=spf1 -all``, ``p=reject`` and a null MX (RFC 7505). Every such row
-  carries ``extra.parked`` True.
+  :func:`takestock.dnsevidence.parked_domains`) it reads SPF, DMARC, the
+  wildcard DKIM record and MX, the records with which a domain that sends and
+  receives no mail says so: ``v=spf1 -all``, ``p=reject``, the empty key
+  ``v=DKIM1; p=`` at ``*._domainkey.<domain>`` and a null MX (RFC 7505).
+  Every such row carries ``extra.parked`` True.
 
 Search services limit how often they may be asked. When one says "wait",
 the run can park the remaining domains in a :class:`CTDeferral`, let other
@@ -74,6 +75,10 @@ register_informational_prefixes("expired", "renewal-overdue", "expiry-soon")
 
 #: Protocol of the row reading whether a parked domain publishes a null MX.
 NULL_MX = "null-mx"
+
+#: Protocol of the row reading a parked domain's wildcard DKIM record, where the
+#: empty key that says "no mail from here is ever signed" is published.
+DKIM_WILDCARD = "dkim-wildcard"
 
 #: The null MX states (RFC 7505), each also a ``null-mx:<state>`` flag on the row.
 NULL_MX_PUBLISHED = "published"
@@ -553,7 +558,7 @@ def collect(
             assets.extend(_ned_sweep(domain, discovered, ref_time, note, asked))
 
     for domain in dnsevidence.parked_domains(target):
-        note(f"    · SPF, DMARC and MX for parked domain {domain} …")
+        note(f"    · SPF, DMARC, DKIM and MX for parked domain {domain} …")
         rows, unsettled = parked_assets(domain, ref_time, asked)
         assets.extend(rows)
         failures.extend(unsettled)
@@ -900,6 +905,28 @@ def _is_null_mx(record: str) -> bool:
     return len(parts) == 2 and parts[0] == "0" and parts[1] == "."
 
 
+def _dkim_wildcard_row(domain: str, dkim: TxtLookup, common: dict[str, Any]) -> CryptoAsset:
+    """The row for a settled read of ``*._domainkey.<domain>``.
+
+    ``extra.present`` is False when no ``v=DKIM1`` record is published there (a
+    measured absence); ``extra.blank`` is True only for the empty key.
+    """
+    record = dnsevidence.pick_txt(dkim.answers, "v=DKIM1")
+    blank = dnsevidence.is_blank_dkim(record)
+    want = dnsevidence.BLANK_DKIM_DISPLAY
+    return CryptoAsset(
+        name=f"DKIM wildcard {domain}", role=roles.email_record(DKIM_WILDCARD, domain),
+        protocol=DKIM_WILDCARD,
+        flags=([] if blank else ["dkim-wildcard-not-blank"] if record
+               else ["no-dkim-wildcard"]),
+        notes=(f"{dkim.name} carries the empty key '{want}'" if blank else
+               f"{dkim.name} carries a DKIM record that is not the empty key: "
+               f"{record[:200]}" if record else
+               f"no v=DKIM1 record published at {dkim.name}"),
+        extra={"present": bool(record), "record": record, "blank": blank,
+               "lookup": dkim.evidence()}, **common)
+
+
 _NULL_MX_NOTES = {
     NULL_MX_PUBLISHED: "publishes a null MX (0 .), so mail sent to it fails at once",
     NULL_MX_WITH_OTHERS: ("publishes a null MX alongside other MX records, which RFC 7505 §3 "
@@ -914,16 +941,24 @@ _NULL_MX_NOTES = {
 
 def parked_assets(domain: str, ref_time: datetime | None = None,
                   resolvers: tuple[str, ...] = ("",)) -> tuple[list[CryptoAsset], list[str]]:
-    """The SPF, DMARC and null-MX rows for one parked domain, and any failure.
+    """The SPF, DMARC, wildcard DKIM and null-MX rows for one parked domain, and any failure.
 
     Read the same way as an email domain's SPF and DMARC rows (a settled
-    lookup with no record is a measured absence). The MX answer is classified
-    as one of the ``NULL_MX_*`` states. Every row carries ``extra.parked``.
+    lookup with no record is a measured absence). The TXT record at
+    ``*._domainkey.<domain>`` is read into a :data:`DKIM_WILDCARD` row, with
+    ``extra.blank`` True only for the empty key ``v=DKIM1; p=``. The MX answer
+    is classified as one of the ``NULL_MX_*`` states. Every row carries
+    ``extra.parked``.
     """
     common: dict[str, Any] = {"host": domain, "source": "ct_dns", "source_class": "public",
                               "source_name": SOURCE_DNS, "collected_at": now_date(ref_time),
                               "data_state": "email-auth"}
     out, unsettled = _spf_dmarc_rows(domain, common, resolvers)
+    dkim = read_txt(dnsevidence.dkim_wildcard_name(domain), resolvers)
+    if not dkim.measured:
+        unsettled.append(f"DKIM ({dkim.name}: {dkim.why_unsettled()})")
+    else:
+        out.append(_dkim_wildcard_row(domain, dkim, common))
     mx = read_txt(domain, resolvers, rtype="MX")
     if not mx.measured:
         unsettled.append(f"MX ({mx.name}: {mx.why_unsettled()})")

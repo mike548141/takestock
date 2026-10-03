@@ -96,9 +96,10 @@ The target profile supplies:
    and the explanation).
 3. **Parked domains**, when the profile has any: each parked domain against
    the framework's requirements for domains that send no mail (the blank SPF
-   record `v=spf1 -all`, a `p=reject` DMARC policy, strict alignment with a
-   reporting address, and the empty DKIM key, which is not read for parked
-   domains yet), whether it publishes a null MX, and the record text read.
+   record `v=spf1 -all`, a `p=reject` DMARC policy with no `sp=` weaker than
+   reject, strict alignment with a reporting address, and the empty DKIM key
+   `v=DKIM1; p=` at `*._domainkey.<domain>`), whether it publishes a null MX,
+   and the record text read.
    The same readings also appear, marked *(parked)*, in their requirements'
    tables, so an unmet *must* on a parked domain counts like any other.
 4. **Not measured, and what would settle it**: every unsettled reading,

@@ -194,10 +194,23 @@ domains apply to it directly, and takestock grades it on its own records:
 | Record | Level | Basis |
 |---|---|---|
 | SPF `v=spf1 -all`, with no other mechanism | MUST | SGE SPF guide §3 (the row above). The M3AAWG *Protecting Parked Domains Best Common Practices* (December 2015) say parked domains *"should publish a SPF TXT record in DNS that is referred to as a "naked" -all"* |
-| DMARC `p=reject` | MUST | SGE DMARC guide §3 (the row above). M3AAWG: parked domains *"should publish a DMARC TXT record in DNS which specifies "p=reject""* |
+| DMARC `p=reject`, and no `sp=` weaker than `reject` | MUST | SGE DMARC guide §3 (the row above). M3AAWG: parked domains *"should publish a DMARC TXT record in DNS which specifies "p=reject""*. A record that sets `sp=none` or `sp=quarantine` fails, and one with no `sp=` passes on its `p=reject`; see below |
 | Strict alignment and a reporting address | Directive | Framework §10 checklist (the row above) |
-| Empty DKIM key at `*._domainkey.<domain>` | MUST | DKIM guide §3 (the row above). Not yet read for parked domains, so reported as not measured |
+| Empty DKIM key `v=DKIM1; p=` at `*._domainkey.<domain>` | MUST | DKIM guide §3 (the row above). Read at the wildcard name: the empty key passes; no DKIM record there, or one carrying a key, fails; a lookup that does not settle is not measured |
 | Null MX (`0 .`) | Not an SGE requirement | RFC 7505 §3 defines it: *"To indicate that a domain does not accept email, it advertises a single MX RR … with an RDATA section consisting of preference number 0 and a zero-length label"*, and *"A domain that advertises a null MX MUST NOT advertise any other MX RR."* M3AAWG calls it *"The recommended way to indicate that a domain is not meant to receive email"*. The UK NCSC's *Protecting parked domains* guidance says *"If you have an A record on your domain, but no MX records, you should create a null MX record"* |
+
+**The sub-domain policy on a parked domain.** The DMARC requirement's
+deciding sentence is *"All domains must have a p=reject DMARC policy"* (DMARC
+guide §3), and the framework applies it to *"all non-email domains,
+sub-domains and all new domains"* (§9). The names beneath a parked domain send
+no mail either. A name with no DMARC record of its own is given the parent's
+`sp=` policy, or its `p=` policy when `sp=` is absent (RFC 7489 §6.3; RFC
+9989, which obsoletes it, keeps the tag). So a parked domain whose record says
+`sp=none` or `sp=quarantine` leaves those names without a reject policy, and
+its row fails even when it reads `p=reject`. The framework's sentence that
+the requirement *"remains even if the root level domain has SP=reject set"*
+makes `sp=reject` necessary, not sufficient: each name beneath still needs its
+own SPF and DKIM records, which are not read for a parked domain.
 
 The null MX is reported beside the graded rows, never as a breach of the
 framework. A parked domain that publishes MX records naming mail servers

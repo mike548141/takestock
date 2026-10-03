@@ -23,8 +23,9 @@ requirement, so a reader of the asset sees the standard beside the grade.
 **Parked domains.** A domain the profile lists under ``discovery.domains``
 and not ``discovery.email_domains`` sends and receives no mail
 (:func:`parked_domains`). The framework's rules for domains that send no mail
-apply to it: the blank SPF record ``v=spf1 -all`` and a ``p=reject`` DMARC
-policy, both stated as must. :func:`evaluate` reads each parked domain against
+apply to it: the blank SPF record ``v=spf1 -all``, the empty DKIM key
+``v=DKIM1; p=`` and a ``p=reject`` DMARC policy (with no ``sp=`` weaker than
+reject), all stated as must. :func:`evaluate` reads each parked domain against
 those requirements, on its own records, in rows marked ``parked``. Whether it
 publishes a null MX (RFC 7505) is not a framework requirement; it is reported
 beside them in :attr:`Report.parked`, with the guidance that recommends it.
@@ -1690,14 +1691,50 @@ def _eval_parked_spf(req: dict, assets: list[Any], parked: list[str]) -> list[Co
 
 
 def _eval_parked_dmarc(req: dict, assets: list[Any], parked: list[str]) -> list[Conformance]:
-    own = [a for d in parked for a in _parked_rows(assets, "dmarc", d)]
+    """SGE-NED-DMARC-01 on each parked domain: its own ``p=``, and the ``sp=`` it sets for names beneath.
+
+    The policy is read as for an email domain: ``p=reject`` at ``pct=100``
+    passes. A parked domain is then also failed when its record sets ``sp=``
+    to anything but ``reject``. The deciding sentence is the requirement's
+    own, *"All domains must have a p=reject DMARC policy"* (DMARC guide §3),
+    which the framework's §9 extends to *"all non-email domains, sub-domains
+    and all new domains"*. A name beneath a parked domain sends no mail
+    either, and when it publishes no DMARC record of its own a receiver
+    applies the parent's ``sp=``, or ``p=`` when ``sp=`` is absent (RFC 7489
+    §6.3; RFC 9989, which obsoletes it, keeps the tag). So ``sp=none`` or
+    ``sp=quarantine`` leaves every such name without a reject policy, and an
+    absent ``sp=`` inherits ``p=reject``. The framework's further sentence,
+    that the requirement *"remains even if the root level domain has
+    SP=reject set"*, does not decide this row: it says ``sp=reject`` on the
+    parent does not discharge the requirement for the names beneath, so it
+    makes ``sp=reject`` necessary, never sufficient.
+    """
     rows = []
     for d in parked:
-        if not _parked_rows(assets, "dmarc", d):
+        found = _parked_rows(assets, "dmarc", d)
+        if not found:
             rows.append(_parked_unread(req, d, "DMARC"))
-        else:
-            rows += _eval_dmarc(req, own, [d])
+            continue
+        rows += [_parked_subdomain_policy(row, _dmarc_record(found[0]))
+                 for row in _eval_dmarc(req, found, [d])]
     return _as_parked(rows)
+
+
+def _parked_subdomain_policy(row: Conformance, record: str) -> Conformance:
+    """Fail a parked domain's DMARC row whose record sets ``sp=`` to anything but reject."""
+    sp = _dmarc_tags(record).get("sp", "")
+    if not sp:
+        return row
+    row.observed = f"{row.observed}; sp={sp}" if row.observed else f"sp={sp}"
+    if sp.lower() == "reject":
+        return row
+    row.status = FAIL
+    row.reason = "; ".join(x for x in [row.reason, (
+        f"the record sets sp={sp}, so a name beneath this domain that publishes no DMARC "
+        "record of its own is not rejected; the domain sends no mail, so neither do the "
+        "names beneath it, and the framework applies the p=reject requirement to "
+        "sub-domains of non-email domains too")] if x)
+    return row
 
 
 def _eval_parked_dmarc_alignment(req: dict, assets: list[Any],
@@ -1731,10 +1768,57 @@ def _eval_parked_dmarc_alignment(req: dict, assets: list[Any],
 
 
 def _eval_parked_dkim(req: dict, assets: list[Any], parked: list[str]) -> list[Conformance]:
-    return _as_parked([_unmeasured(
-        req, d, NOT_COLLECTED,
-        f"the empty DKIM key at {dnsevidence.dkim_wildcard_name(d)} is not read for parked "
-        "domains yet") for d in parked])
+    """SGE-NED-DKIM-01 on each parked domain, read at ``*._domainkey.<domain>``.
+
+    Graded in both directions, because the parked domain's own wildcard record
+    is read rather than a sample of names: the empty key ``v=DKIM1; p=``
+    passes; no DKIM record there, or one carrying a key, fails; a lookup that
+    did not settle leaves the row inconclusive. A selector published under its
+    own name answers ahead of the wildcard, and selectors cannot be listed, so
+    a pass speaks for every selector nobody has published.
+    """
+    rows = []
+    for d in parked:
+        found = _parked_rows(assets, "dkim-wildcard", d)
+        if not found:
+            rows.append(_parked_unread(req, d, "DKIM"))
+            continue
+        a = found[0]
+        at = dnsevidence.dkim_wildcard_name(d)
+        declared = str(req.get("record") or "").replace("<domain>", d)
+        if declared and declared.lower() != at.lower():
+            rows.append(_unmeasured(
+                req, d, INCONCLUSIVE,
+                f"the standard names {declared} as the record to publish and the reading is of "
+                f"{at}, so what was measured is not what the requirement asks about"))
+            continue
+        record = str((_get(a, "extra") or {}).get("record") or "").strip('"')
+        want = dnsevidence.BLANK_DKIM_DISPLAY
+        common = {"evidence": str(_get(a, "name") or ""), "source": req["source"]}
+        if _absent(a):
+            rows.append(Conformance(
+                req["id"], req["title"], req["level"], req["scope"], d, FAIL,
+                observed="no DKIM record",
+                reason=(f"no v=DKIM1 record is published at {at}, so receivers are not told "
+                        "that no mail from the domain is ever signed; the framework asks a "
+                        f"domain that sends no mail for the blank record {want}. "
+                        + _settled_by(a)),
+                **common))
+        elif dnsevidence.is_blank_dkim(record):
+            rows.append(Conformance(req["id"], req["title"], req["level"], req["scope"], d,
+                                    PASS, observed=want, record=record, **common))
+        else:
+            keyed = bool(_dmarc_tags(record).get("p"))
+            rows.append(Conformance(
+                req["id"], req["title"], req["level"], req["scope"], d, FAIL,
+                observed="not blank; carries a key" if keyed else "not blank; no p= tag",
+                reason=(f"the record at {at} is not the blank {want}: "
+                        + ("it carries a public key, so a receiver would accept a signature "
+                           "made with the matching private key from a domain that sends no "
+                           "mail" if keyed else
+                           "it has no p= tag, so it does not say the key is revoked")),
+                record=record, **common))
+    return _as_parked(rows)
 
 
 #: The evaluator for each requirement that reads parked domains.

@@ -245,6 +245,15 @@ def _pick_txt(answers: list[str], prefix: str) -> str:
     return ""
 
 
+def pick_txt(answers: list[str], prefix: str) -> str:
+    """The first TXT answer starting with ``prefix``, its quoted strings joined into one.
+
+    A long record (a DKIM key, say) is published as several quoted strings in
+    one answer; they are joined without separators, as a receiver joins them.
+    """
+    return _pick_txt(answers, prefix)
+
+
 def _starttls(host: str, version: str) -> dict:
     """Offer exactly one TLS version to ``host`` over SMTP STARTTLS on port 25."""
     at = _now()

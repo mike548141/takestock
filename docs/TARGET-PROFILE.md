@@ -184,7 +184,7 @@ discovery:
 
 | Field | Means |
 |---|---|
-| `domains` | Domains whose certificates (from certificate-transparency logs) and DNSSEC are read. A domain here and not under `email_domains` is a **parked domain**: one that sends and receives no mail. Its SPF, DMARC and MX are read and graded against Secure Government Email's rules for domains that send no mail |
+| `domains` | Domains whose certificates (from certificate-transparency logs) and DNSSEC are read. A domain here and not under `email_domains` is a **parked domain**: one that sends and receives no mail. Its SPF, DMARC, wildcard DKIM record and MX are read and graded against Secure Government Email's rules for domains that send no mail |
 | `email_domains` | Domains whose mail-authentication records (SPF, DKIM, DMARC, MTA-STS, TLS-RPT) are read and graded against Secure Government Email. `takestock sge-note` refuses a profile with none and no parked domain |
 | `dkim_selectors` | The organisation's own DKIM selector names, tried before a short list of common defaults. DNS offers no way to list selectors |
 

@@ -92,6 +92,9 @@ _EMAIL_ROLES = {
              "fails the sender checks",
     "null-mx": "Mail refusal record for {domain} — whether a domain that takes no email "
                "says so in DNS, so that mail sent to it fails at once",
+    "dkim-wildcard": "Signing key record for {domain} — whether a domain that sends no email "
+                     "publishes the empty key that tells receivers no mail from it is ever "
+                     "signed",
     "mta-sts": "Email transport security policy for {domain} — tells other mail servers to "
                "encrypt when they deliver here",
     "caa": "Certificate issuing policy for {domain} — which certificate providers are "

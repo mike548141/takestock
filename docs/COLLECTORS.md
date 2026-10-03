@@ -37,7 +37,7 @@ the others loading.
 
 | Collector | Kind | Reads or probes | Needs in the profile | Tools |
 |---|---|---|---|---|
-| `ct_dns` | passive | certificate-transparency logs; MX, SPF, DMARC, MTA-STS, TLS-RPT and DKIM records; SPF, DMARC and null MX on parked domains | `discovery.domains`, `discovery.email_domains` | `dig`, `curl` |
+| `ct_dns` | passive | certificate-transparency logs; MX, SPF, DMARC, MTA-STS, TLS-RPT and DKIM records; SPF, DMARC, wildcard DKIM and null MX on parked domains | `discovery.domains`, `discovery.email_domains` | `dig`, `curl` |
 | `spf_senders` | passive | each email domain's SPF record, expanded | `discovery.email_domains` | `dig` |
 | `dnssec` | passive | DNSSEC signing and validation | `discovery.domains` or `email_domains` | `dig` |
 | `dane` | passive | TLSA records for each mail server | as `dnssec` | `dig` |
@@ -140,15 +140,20 @@ hosts:
   should publish.
 - **Parked domains.** A domain under `discovery.domains` and not under
   `discovery.email_domains` is *parked*: it sends and receives no mail. For
-  each one it reads SPF and DMARC the same way as for an email domain, and
+  each one it reads SPF and DMARC the same way as for an email domain; the
+  TXT record at `*._domainkey.<domain>`, in a row of protocol `dkim-wildcard`
+  named `DKIM wildcard <domain>`, whose `extra.present` says whether a
+  `v=DKIM1` record is published there and `extra.blank` whether it is the
+  empty key `v=DKIM1; p=` (flag `no-dkim-wildcard` when absent,
+  `dkim-wildcard-not-blank` when it is not the empty key); and
   MX, recording whether the domain publishes a **null MX** (an MX record of
   `0 .`, RFC 7505) in a row of protocol `null-mx`, named `Null MX <domain>`.
   Its flag is one of `null-mx:published`, `null-mx:no-mx`,
   `null-mx:mail-exchangers` (real mail servers, so the domain receives mail)
   and `null-mx:alongside-other-mx` (which RFC 7505 §3 forbids). Every row for
-  a parked domain carries `extra.parked: true`. The MX lookup settles or fails
-  as the SPF and DMARC lookups do, and a failure line names the domain as
-  parked.
+  a parked domain carries `extra.parked: true`. The DKIM and MX lookups
+  settle or fail as the SPF and DMARC lookups do, and a failure line names the
+  domain as parked.
 
 **Missing records.** The SPF, DMARC, MTA-STS and TLS-RPT records are each
 asked of every configured resolver, keeping each resolver's response code.
