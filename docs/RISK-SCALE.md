@@ -113,6 +113,12 @@ The dollar bands are fixed amounts, not proportions of a budget. An
 organisation adopting the detailed scale should tailor them, which is what the
 guidance asks senior management to do (*Using risk scales and matrices*:
 *"senior management must define the impacts at each point on the scale"*).
+The same page says senior management should consider the impacts on
+*"reputation, financial effects, legal aspects, health and safety, service
+delivery, any other area that is specific to your organisation's context"*,
+and suggests fixing the two ends first: *"write down the maximum credible
+impact and the lowest impact of concern"*, which become severe (5) and
+minimal (1).
 
 ## The matrix: 5 × 5, four zones
 
@@ -151,7 +157,10 @@ inform the right reporting level and get their authorisation — only then can
 a government organisation accept a risk in zones 3 and 4."*
 
 For each risk the business owner chooses one of four actions: **Avoid**,
-**Treat**, **Transfer** or **Accept**. Acceptance applies *"when risks are
+**Treat**, **Transfer** or **Accept**. Avoiding means stopping the activity
+that gives rise to the risk, and *"is not commonly selected, as it typically
+results in not being able to take advantage of the opportunities presented by
+the activity"*. Acceptance applies *"when risks are
 assessed as being within the government organisation's risk tolerance
 level"*, and also *"when it is not practical to avoid, treat or transfer
 them"*.
@@ -166,6 +175,22 @@ Two further points from the same page:
   required to use controls that match the guidance in the New Zealand
   Information Security Manual (NZISM)."* See [`STANDARDS.md`](STANDARDS.md)
   for the NZISM's own statement of its legal force.
+
+## After the rating: monitor or prioritise
+
+*Prioritise the risks* has the business owner check each final rating
+against the organisation's approved risk tolerance levels, and then splits
+the risks in two:
+
+- **Acceptable risks** (the page's term for a final rating of 1 to 3; the
+  next section discusses that number) still go *"to your organisation's risk
+  register for monitoring and assessment on a regular basis — risks are
+  rarely static in nature"*, with a process for checking that their
+  likelihood and impact ratings have not changed.
+- **The rest are prioritised and evaluated.** *"The higher a risk's final
+  rating, the higher its priority."* Where two or more risks share a rating,
+  the business owner uses the protection priorities set when the
+  information system's business context was established.
 
 ## One tension inside the guidance
 

@@ -19,6 +19,7 @@ anyone relies on it.
 |---|---|---|---|
 | Privacy Act 2020 | Law | Every *agency* that holds personal information; the Act's definition of a New Zealand agency covers public sector agencies and private sector bodies alike (s 8) | Reasonable security safeguards (IPP 5); care when a service provider holds the data (IPP 5(b), s 11); retention (IPP 9); offshore disclosure (IPP 12); breach notification (ss 112–115) |
 | Public Records Act 2005 | Law | Public offices and local authorities, as defined in s 4 | Keep full and accurate records, including of contracted-out work (s 17); no disposal, including destruction, without the Chief Archivist's authority (s 18) |
+| Official Information Act 1982 | Law | Public service agencies, Ministers, and the *organisations* defined in s 2 | Information an independent contractor holds for the agency or organisation is treated as held by it (s 2(5)) |
 | Protective Security Requirements (PSR), INFOSEC | Government policy | Agencies mandated by Cabinet; others are encouraged to adopt it | Security measures *"in line with"* the NZISM (paragraph 44); ICT systems, in house or cloud, *"MUST meet the NZISM minimum standards"* (paragraph 138); system assurance through NZISM certification and accreditation or continuous monitoring (paragraphs 184–186); compensating measures where a MUST cannot be met (paragraph 13) |
 | New Zealand Information Security Manual (NZISM) | Technical standard | Departments and agencies it applies to (§1.2.3); compliance *"is not required as a matter of law"* (§1.2.6) | Chapter 17 algorithm and key-length controls; §2.4 post-quantum preparation |
 | NCSC NZ Minimum Cyber Security Standards | Technical standard | GCISO-mandated agencies, who *"will be required to implement them"*; others may adopt them | Ten maturity standards mapped to NZISM controls |
@@ -86,6 +87,16 @@ required to protect the information comparably, *"for example, pursuant to an
 agreement"* (IPP 12(1)(f)). Read with s 11, a provider that only stores or
 processes data on the agency's behalf is not receiving a disclosure.
 
+The Privacy Commissioner's guidance *Sending information overseas* (last
+updated June 2021) gives the same answer for offshore cloud storage. Asked
+whether an agency that stores personal information with a cloud provider
+whose servers are outside New Zealand needs an agreement incorporating the
+model clauses, it answers *"In most circumstances, no"*, because under s 11
+*"you'll be responsible for the personal information that you put in the
+cloud – not the cloud service provider"*. The same guidance notes the
+exception in s 11(3): if the provider uses or discloses the information for
+its own purposes, it is treated as held by the provider as well.
+
 ### Part 6: notifiable privacy breaches
 
 - A *privacy breach* includes *"unauthorised or accidental access to, or
@@ -104,6 +115,17 @@ processes data on the agency's behalf is not receiving a disclosure.
 
 ## Public Records Act 2005
 
+- **Who is a public office.** Section 4 defines a *public office* as the
+  legislative, executive and judicial branches of the Government of New
+  Zealand and *"the agencies or instruments of those branches of
+  government"*, and then says it *"includes (without limiting the agencies
+  or instruments)"* a list: departments under the Public Service Act 2020,
+  Offices of Parliament, State enterprises, Crown entities as defined in
+  s 7(1) of the Crown Entities Act 2004, a set of named bodies, and any
+  person or class of persons declared a public office by Order in Council
+  under s 5. Archives New Zealand publishes the list of public offices it
+  treats as subject to the Act (*Public offices subject to the Public Records
+  Act 2005*), and is the body to ask about a particular organisation.
 - **Records include data.** A *record* is information *"in its original form
   or otherwise"*, including *"data compiled, recorded, or stored"* in any
   medium (s 4).
@@ -123,6 +145,22 @@ encrypted records are therefore records-management questions as well as
 security ones. Whether a given practice counts as *disposal* is for Archives
 New Zealand or a lawyer to say.
 
+## Official Information Act 1982
+
+- **Who it reaches.** Besides public service agencies and Ministers, the Act
+  applies to each *organisation* in s 2: one named in Part 2 of Schedule 1 of
+  the Ombudsmen Act 1975 (other than the Parliamentary Service and mortality
+  review committees), or in Schedule 1 of the Act itself.
+- **Contractors' information is the organisation's.** *"Any information held
+  by an independent contractor engaged by any public service agency or
+  Minister of the Crown or organisation in his capacity as such contractor
+  shall, for the purposes of this Act, be deemed to be held by the public
+  service agency or Minister of the Crown or organisation"* (s 2(5)).
+
+What this means for data, as takestock reads it: information that a supplier
+or cloud service holds for an organisation the Act covers stays within reach
+of a request made to that organisation.
+
 ## Protective Security Requirements: INFOSEC
 
 The PSR is the government's protective security policy framework; INFOSEC is
@@ -134,7 +172,13 @@ security measures* and INFOSEC 4 *keep your security up to date*.
 - **Who it is for.** Organisations *"mandated to implement the PSR"* and those
   that do so *"on a voluntary basis"*; *"non-mandated organisations in the
   public and private sectors are encouraged to adopt the PSR as appropriate to
-  their context"* (paragraphs 2–3).
+  their context"* (paragraphs 2–3). The Controller and Auditor-General's
+  *Mind the gap: Governing cyber security risks* (April 2025) puts the same
+  line from outside the framework: complying with the PSR *"is mandatory for
+  a core group of public service organisations, but not for others"*. It
+  adds that, in its view, *"material in the Protective Security Requirements
+  could also be useful to public organisations that are not required to
+  comply with them"*.
 - **It delegates the technical detail to the NZISM.** *"An organisation MUST
   design and implement the appropriate information security measures …
   proportionate to the risks it faces and in line with: a. The New Zealand
@@ -225,6 +269,22 @@ them. They are not a cryptography standard. Their relevance to takestock is
 procedural: requirements derived from findings can be written into any
 procurement that an agency must run properly under the Rules.
 
+- **Who must apply them.** *Application of the Rules* names, as required to
+  apply them: all Public Service departments, New Zealand Police, the New
+  Zealand Defence Force, and *"Crown agents, Autonomous Crown Entities,
+  Independent Crown Entities, Crown Entity Companies – other companies,
+  Public Finance Act 1989 Schedule 4A companies"*. Crown Research Institutes
+  *"must have regard to the Rules"*. The same page lists the agencies
+  expected or encouraged to apply them, and New Zealand Government
+  Procurement keeps a list of mandated agencies by name. Check the
+  organisation's legal form against both before saying the Rules bind it.
+- **How their words are read.** The Rules overview says that where a rule
+  uses *must*, *"the Rule is compulsory. Non-compliance is a breach of the
+  Rules"*, and that *expected to* *"indicates an expectation that agencies
+  meet good practice standards, unless circumstances mean it is not
+  appropriate to do so"*, in which case the agency must record its
+  decision-making (Rule 46).
+
 ## New Zealand's post-quantum position
 
 **New Zealand has published no official deadline for migrating to
@@ -236,6 +296,8 @@ post-quantum cryptography.** The evidence, source by source:
 | NZISM v3.9 §2.4.9 | GCSB *"will review applicable standards and consider them for incorporation into the NZISM when they are published"* |
 | NZISM v3.9 §2.4.10 | Agencies *"should therefore be prepared to transition away from these algorithms possibly in the next 2-3 years"*: a hedged expectation in an undated paragraph, not a date |
 | NZISM v3.9 §2.4.13 | Seven controls, all SHOULD: awareness, inventories, risk marking, prioritisation, a transition plan. None sets a date |
+| RNZ, *Government told to prepare for quantum computers able to break encryption* (6 May 2026), quoting a report by the Government Chief Information Security Officer (GCISO) to the Treasury | *"Agencies will need to invest in PQC [post-quantum computing] solutions before the first fully error-corrected quantum computer is expected to come online in 2030"*. A threat horizon for planning investment, not a compliance date. The article does not name or link the report |
+| The same article, reporting NCSC NZ | NCSC NZ *"was widening the list of approved algorithms to include post-quantum ones developed by international standards bodies"*, and the GCISO and the Government Digital Delivery Agency were setting a digital *"Target State"* for government, aligned with the NZISM. No date for either |
 | New Zealand's Cyber Security Strategy 2026–2030 (Department of the Prime Minister and Cabinet, February 2026) | *"Within the timeframe of this strategy, quantum computing has the potential to render current encryption methods obsolete"*, and *"The GCSB will also refresh its Cryptographic Products Management Infrastructure to ensure government ICT will be prepared for the emerging needs of a post-quantum world."* No migration date |
 | NCSC NZ website | At the time of writing, no page listed in the site's own sitemap mentions quantum computing |
 
@@ -267,12 +329,17 @@ compliance with a New Zealand deadline, because there is none.
 | Publisher | Document | Where |
 |---|---|---|
 | New Zealand Parliament | Privacy Act 2020: s 8, s 11, s 22 (IPPs 5, 9, 12), ss 112–115 | <https://www.legislation.govt.nz/act/public/2020/0031/latest/LMS23342.html>, <https://www.legislation.govt.nz/act/public/2020/0031/latest/LMS23530.html> |
-| New Zealand Parliament | Public Records Act 2005: ss 4, 17, 18 | <https://www.legislation.govt.nz/act/public/2005/0040/latest/whole.html> |
+| New Zealand Parliament | Public Records Act 2005: ss 4, 5, 17, 18 | <https://www.legislation.govt.nz/act/public/2005/0040/latest/whole.html> |
+| New Zealand Parliament | Official Information Act 1982: s 2 | <https://www.legislation.govt.nz/act/public/1982/0156/latest/whole.html> |
+| Archives New Zealand | *Public offices subject to the Public Records Act 2005* | Published on the Archives New Zealand website |
+| Privacy Commissioner | *Sending information overseas* (last updated June 2021) | Published on the Privacy Commissioner's website |
+| Controller and Auditor-General | *Mind the gap: Governing cyber security risks* (April 2025) | Published on the Office of the Auditor-General's website |
+| RNZ | *Government told to prepare for quantum computers able to break encryption*, 6 May 2026 | Published on the RNZ website |
 | PSR | *INFOSEC* policy framework v2.0, and v1.0 for comparison (v1.0 is no longer on the site; the Internet Archive holds a copy) | <https://www.protectivesecurity.govt.nz/assets/psr/INFOSEC-policy.pdf> |
 | GCSB | NZISM v3.9, §1.1.2, §1.2, §2.4, Chapter 4 | <https://nzism.gcsb.govt.nz/ism-document> |
 | NCSC NZ | *Minimum Cyber Security Standards*; site map | <https://www.ncsc.govt.nz/protect-your-organisation/minimum-cyber-security-standards/>, <https://www.ncsc.govt.nz/sitemap.xml> |
 | Department of the Prime Minister and Cabinet | *New Zealand's Cyber Security Strategy 2026–2030* | Published on the Department's website |
-| New Zealand Government Procurement | *Application of the Rules*; *Government Procurement Rules* overview | Published on the New Zealand Government Procurement website |
+| New Zealand Government Procurement | *Application of the Rules*; *Government Procurement Rules* overview, including *How to use the Rules* | Published on the New Zealand Government Procurement website |
 | ASD | ISM, *Guidelines for cryptography*, September 2026 | Australian Cyber Security Centre website |
 | NSA | CNSA 2.0 advisory, Ver. 1.0 | NSA press release and advisory PP-22-1338 |
 | NIST | IR 8547 ipd | <https://csrc.nist.gov/pubs/ir/8547/ipd> |
