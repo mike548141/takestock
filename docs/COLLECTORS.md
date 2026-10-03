@@ -37,7 +37,7 @@ the others loading.
 
 | Collector | Kind | Reads or probes | Needs in the profile | Tools |
 |---|---|---|---|---|
-| `ct_dns` | passive | certificate-transparency logs; MX, SPF, DMARC, MTA-STS, TLS-RPT and DKIM records; SPF, DMARC, wildcard DKIM and null MX on parked domains | `discovery.domains`, `discovery.email_domains` | `dig`, `curl` |
+| `ct_dns` | passive | certificate-transparency logs; MX, SPF, DMARC, MTA-STS, TLS-RPT and DKIM records; SPF, DMARC, wildcard DKIM and null MX on parked domains; a sweep of the sub-domain names beneath each email and parked domain | `discovery.domains`, `discovery.email_domains` | `dig`, `curl` |
 | `spf_senders` | passive | each email domain's SPF record, expanded | `discovery.email_domains` | `dig` |
 | `dnssec` | passive | DNSSEC signing and validation | `discovery.domains` or `email_domains` | `dig` |
 | `dane` | passive | TLSA records for each mail server | as `dnssec` | `dig` |
@@ -150,10 +150,17 @@ hosts:
   `0 .`, RFC 7505) in a row of protocol `null-mx`, named `Null MX <domain>`.
   Its flag is one of `null-mx:published`, `null-mx:no-mx`,
   `null-mx:mail-exchangers` (real mail servers, so the domain receives mail)
-  and `null-mx:alongside-other-mx` (which RFC 7505 §3 forbids). Every row for
-  a parked domain carries `extra.parked: true`. The DKIM and MX lookups
-  settle or fail as the SPF and DMARC lookups do, and a failure line names the
-  domain as parked.
+  and `null-mx:alongside-other-mx` (which RFC 7505 §3 forbids). It then
+  sweeps the sub-domain names the transparency read found beneath the parked
+  domain, as for an email domain, into the same three rows (`ned-spf`,
+  `ned-dkim`, `ned-dmarc`). Every row for a parked domain, the sweep's
+  included, carries `extra.parked: true`. The DKIM and MX lookups settle or
+  fail as the SPF and DMARC lookups do, and a failure line names the domain as
+  parked.
+
+  Each sweep's rows list in `extra.names_nonexistent` the names read that
+  answered NXDOMAIN. A receiver gives such a name the parent's DMARC `np=`
+  policy (RFC 9989 §4.7) rather than its `sp=` policy.
 
 **Missing records.** The SPF, DMARC, MTA-STS and TLS-RPT records are each
 asked of every configured resolver, keeping each resolver's response code.

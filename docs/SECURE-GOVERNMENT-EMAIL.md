@@ -194,7 +194,7 @@ domains apply to it directly, and takestock grades it on its own records:
 | Record | Level | Basis |
 |---|---|---|
 | SPF `v=spf1 -all`, with no other mechanism | MUST | SGE SPF guide §3 (the row above). The M3AAWG *Protecting Parked Domains Best Common Practices* (December 2015) say parked domains *"should publish a SPF TXT record in DNS that is referred to as a "naked" -all"* |
-| DMARC `p=reject`, and no `sp=` weaker than `reject` | MUST | SGE DMARC guide §3 (the row above). M3AAWG: parked domains *"should publish a DMARC TXT record in DNS which specifies "p=reject""*. A record that sets `sp=none` or `sp=quarantine` fails, and one with no `sp=` passes on its `p=reject`; see below |
+| DMARC `p=reject`, and no `sp=` or `np=` weaker than `reject` | MUST | SGE DMARC guide §3 (the row above). M3AAWG: parked domains *"should publish a DMARC TXT record in DNS which specifies "p=reject""*. A record that sets `sp=` or `np=` to `none` or `quarantine` fails, and one with neither passes on its `p=reject`; see below |
 | Strict alignment and a reporting address | Directive | Framework §10 checklist (the row above) |
 | Empty DKIM key `v=DKIM1; p=` at `*._domainkey.<domain>` | MUST | DKIM guide §3 (the row above). Read at the wildcard name: the empty key passes; no DKIM record there, or one carrying a key, fails; a lookup that does not settle is not measured |
 | Null MX (`0 .`) | Not an SGE requirement | RFC 7505 §3 defines it: *"To indicate that a domain does not accept email, it advertises a single MX RR … with an RDATA section consisting of preference number 0 and a zero-length label"*, and *"A domain that advertises a null MX MUST NOT advertise any other MX RR."* M3AAWG calls it *"The recommended way to indicate that a domain is not meant to receive email"*. The UK NCSC's *Protecting parked domains* guidance says *"If you have an A record on your domain, but no MX records, you should create a null MX record"* |
@@ -210,7 +210,48 @@ no mail either. A name with no DMARC record of its own is given the parent's
 its row fails even when it reads `p=reject`. The framework's sentence that
 the requirement *"remains even if the root level domain has SP=reject set"*
 makes `sp=reject` necessary, not sufficient: each name beneath still needs its
-own SPF and DKIM records, which are not read for a parked domain.
+own SPF and DKIM records, which the sweep below reads.
+
+**Names that do not exist: `np=`.** RFC 9989, which obsoletes RFC 7489, adds
+the `np=` tag. Its §4.7 defines it as the policy *"for non-existent subdomains
+of the given Organizational Domain"*, and says *"It applies only to
+non-existent subdomains of the Organizational Domain queried and not to either
+existing subdomains or the domain itself"*, and *"If the "np" tag is absent,
+the policy specified by the "sp" tag (if the "sp" tag is present) or the policy
+specified by the "p" tag (if the "sp" tag is not present) MUST be applied for
+non-existent subdomains."* A name that does not exist publishes no record of its
+own, so `np=` is the only policy a receiver applies to mail claiming one. An
+`np=` of `none` or `quarantine` therefore leaves every such name without a
+reject policy, against the framework's requirement for sub-domains and *"all
+new domains"*. takestock fails it wherever it reads a domain's record for the
+names beneath: on a parked domain's own DMARC row, and on an email domain's
+SGE-NED-DMARC-01 row. An absent `np=` inherits `sp=` or `p=`, which are graded
+already. In the sweep, a swept name that answers NXDOMAIN is given the
+parent's `np=`, and a name that exists its `sp=`.
+
+**The names beneath a parked domain.** Certificate transparency is searched
+for every domain under `discovery.domains`, parked ones included, and the names
+it finds beneath a parked domain are swept exactly as an email domain's are:
+each name's SPF, wildcard DKIM and DMARC records are read, with an absence
+control in the same batch. They are graded against SGE-NED-SPF-01,
+SGE-NED-DKIM-01, SGE-NED-DMARC-01, SGE-NED-DMARC-R01 and SGE-DMARC-R05, in rows
+marked *(parked)* whose subject is *sub-domains of* the parked domain, so they
+sit beside, and never merge with, the rows for the parked domain's own records.
+A name with no DMARC record of its own is read through the parked domain's own
+record, which a receiver applies to it. As with every sweep, the names are a
+floor: a name without the required record is a breach, and any number of names
+carrying it settles nothing, so these rows can fail and never pass. A name the
+sweep finds sending mail (it publishes MX, is named in the parent's sender
+policy, or authorises senders) is excluded from them and listed in the note.
+
+**An observation whose rows are not marked parked.** The DNS collector marks
+each reading of a parked domain `extra.parked`. An observation taken while the
+domain was listed as an email domain, or by a tool that does not mark the rows,
+may hold the domain's SPF and DMARC rows unmarked. They are the same DNS records
+read the same way, so takestock grades them and says beside the grade that the
+row was not marked. A requirement with no reading of the domain at all, in an
+observation with no parked reading of any domain, is reported as not collected,
+with that reason, rather than as a lookup that did not settle.
 
 The null MX is reported beside the graded rows, never as a breach of the
 framework. A parked domain that publishes MX records naming mail servers
@@ -224,7 +265,7 @@ without credentials. Three kinds of evidence are available.
 
 | Probe | What it shows | Requirements it can grade |
 |---|---|---|
-| DNS queries | The SPF, DMARC, TLS-RPT and MTA-STS records; DKIM keys at selectors that are already known; the MX records | SPF `-all`; `ptr` use; `spf2.0` records; DMARC `p=`, `sp=`, alignment tags, unwanted tags, presence of `rua=`; TLS-RPT record form; MTA-STS record; the non-email-enabled records on every name takestock knows of; DKIM key length on known selectors |
+| DNS queries | The SPF, DMARC, TLS-RPT and MTA-STS records; DKIM keys at selectors that are already known; the MX records | SPF `-all`; `ptr` use; `spf2.0` records; DMARC `p=`, `sp=`, `np=`, alignment tags, unwanted tags, presence of `rua=`; TLS-RPT record form; MTA-STS record; the non-email-enabled records on every name takestock knows of; DKIM key length on known selectors |
 | HTTPS fetch of the MTA-STS policy, with certificate validation | The policy's mode and `mx:` lines, and whether the policy host presents a valid certificate | MTA-STS in `enforce`; MX list complete and without wildcards |
 | SMTP connection to each inbound MX | Whether STARTTLS is offered, which TLS versions the server accepts, and its certificate | Whether the domain's receiving servers *accept* TLS below 1.2, or accept mail without TLS |
 
@@ -241,8 +282,8 @@ Limits that every report should carry:
   DKIM signed"* is a statement about mail flow. A key in DNS shows that signing
   is possible, not that every service signs.
 - **Sub-domain checks can fail but never pass.** The list of sub-domains
-  takestock knows is a floor drawn from DNS and certificate logs, not the full
-  population. A known name without the required records settles the
+  takestock knows is a floor drawn from certificate-transparency logs, not the
+  full population. A known name without the required records settles the
   requirement as unmet; any number of compliant names does not settle it as
   met.
 - **Some conditions are invisible.** Whether a domain sends bulk mail decides

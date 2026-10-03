@@ -24,11 +24,20 @@ requirement, so a reader of the asset sees the standard beside the grade.
 and not ``discovery.email_domains`` sends and receives no mail
 (:func:`parked_domains`). The framework's rules for domains that send no mail
 apply to it: the blank SPF record ``v=spf1 -all``, the empty DKIM key
-``v=DKIM1; p=`` and a ``p=reject`` DMARC policy (with no ``sp=`` weaker than
-reject), all stated as must. :func:`evaluate` reads each parked domain against
-those requirements, on its own records, in rows marked ``parked``. Whether it
-publishes a null MX (RFC 7505) is not a framework requirement; it is reported
-beside them in :attr:`Report.parked`, with the guidance that recommends it.
+``v=DKIM1; p=`` and a ``p=reject`` DMARC policy (with no ``sp=`` or ``np=``
+weaker than reject), all stated as must. :func:`evaluate` reads each parked
+domain against those requirements, on its own records, in rows marked ``parked``. The names
+beneath a parked domain that certificate transparency found are swept and read
+as an email domain's sub-domains are, in rows marked ``parked`` whose subject is
+:func:`parked_subdomains_subject`; like every sweep row, they can find a breach
+and never show conformance. Whether a parked domain publishes a null MX (RFC
+7505) is not a framework requirement; it is reported beside them in
+:attr:`Report.parked`, with the guidance that recommends it.
+
+**Sub-domains that do not exist.** RFC 9989 (DMARC, which obsoletes RFC 7489)
+adds the ``np=`` tag, the policy for non-existent sub-domains. Wherever a
+root's DMARC record is read for the names beneath it, an ``np=`` weaker than
+``reject`` fails the row (:func:`_np_weaker_than_reject`).
 
 Run as ``python -m takestock.sge <target>`` for a text report.
 """
@@ -526,17 +535,24 @@ def _eval_ned_dmarc(req: dict, assets: list[Any], domains: list[str]) -> list[Co
             continue
         a = found[0]
         record = "" if _absent(a) else str(_get(a, "notes") or "")
-        m = re.search(r"\bsp=(\w+)", record)
-        sp = m.group(1) if m else ""
-        if sp == "none":
+        tags = _dmarc_tags(_dmarc_record(a))
+        sp = tags.get("sp", "")
+        weak = []
+        if sp.lower() == "none":
+            weak.append(("sp=none", (
+                "the root record sets sp=none, so every sub-domain without a "
+                "DMARC record of its own inherits no policy; the DMARC guide "
+                "says all domains must have a p=reject policy, and the "
+                "framework says even sp=reject only partially resolves this")))
+        np_weak = _np_weaker_than_reject(tags)
+        if np_weak:
+            weak.append((f"np={tags['np']}", np_weak))
+        if weak:
             rows.append(Conformance(
                 req["id"], req["title"], req["level"], req["scope"], d, FAIL,
-                observed="sp=none",
+                observed="; ".join(w[0] for w in weak),
                 reason="; ".join(x for x in [
-                    ("the root record sets sp=none, so every sub-domain without a "
-                     "DMARC record of its own inherits no policy; the DMARC guide "
-                     "says all domains must have a p=reject policy, and the "
-                     "framework says even sp=reject only partially resolves this"),
+                    *(w[1] for w in weak),
                     (f"what this row does NOT read: {partial}" if partial else ""),
                 ] if x),
                 evidence=str(_get(a, "name") or ""), source=req["source"], record=record))
@@ -545,17 +561,56 @@ def _eval_ned_dmarc(req: dict, assets: list[Any], domains: list[str]) -> list[Co
     return rows
 
 
+#: Each DMARC policy tag, and the tags a receiver falls back to when it is absent
+#: (RFC 9989 §4.7: ``np`` falls back to ``sp`` then ``p``; ``sp`` to ``p``).
+_POLICY_FALLBACK = {"p": ("p",), "sp": ("sp", "p"), "np": ("np", "sp", "p")}
+
+
+def _np_weaker_than_reject(tags: dict[str, str]) -> str:
+    """Why a record's explicit ``np=`` fails the reject requirement, or "" when it does not.
+
+    RFC 9989 §4.7 (which obsoletes RFC 7489) defines ``np`` as the policy "for
+    non-existent subdomains of the given Organizational Domain", and says: "It
+    applies only to non-existent subdomains of the Organizational Domain
+    queried and not to either existing subdomains or the domain itself." And:
+    "If the "np" tag is absent, the policy specified by the "sp" tag (if the
+    "sp" tag is present) or the policy specified by the "p" tag (if the "sp"
+    tag is not present) MUST be applied for non-existent subdomains." A name
+    that does not exist publishes no record of its own, so ``np=`` is the only
+    policy a receiver applies to mail claiming one, and a value weaker than
+    ``reject`` leaves every such name, of which there is no end, without a
+    reject policy. The framework's §9 applies the requirement *"All domains
+    must have a p=reject DMARC policy"* to *"all non-email domains, sub-domains
+    and all new domains"*, and a name nobody has created yet is the plainest
+    case of a domain that sends no mail. An absent ``np=`` inherits ``sp=`` or
+    ``p=``, which are graded on their own, so only an explicit ``np=`` is read
+    here; nothing here can pass a row, because non-existent names are only
+    part of what is beneath the domain.
+    """
+    np_ = tags.get("np", "")
+    if not np_ or np_.lower() == "reject":
+        return ""
+    return (f"the record sets np={np_}, so mail claiming a name beneath the domain that does "
+            "not exist in DNS is not rejected: RFC 9989 §4.7 has receivers apply np= to "
+            "non-existent sub-domains, and such a name publishes no record of its own to "
+            "override it; the framework applies the p=reject requirement to sub-domains and "
+            "all new domains")
+
+
 def _rejects(tags: dict[str, str], policy_key: str) -> bool:
-    policy = tags.get(policy_key) or tags.get("p", "")
+    """True when ``policy_key``, or the tag a receiver falls back to, is reject at pct=100."""
+    policy = next((tags[k] for k in _POLICY_FALLBACK[policy_key] if tags.get(k)), "")
     return policy.lower() == "reject" and _int(tags.get("pct", "100")) >= 100
 
 
 def _ned_dmarc_from_sweep(req: dict, assets: list[Any], domain: str,
-                          root_record: str, sp: str, partial: str) -> Conformance:
+                          root_record: str, sp: str, partial: str,
+                          head: str | None = None) -> Conformance:
     found = _by(assets, "ned-dmarc", domain)
-    head = (f"root record has sp={sp or 'unset'}, which is not the failing value, "
-            "so the root alone settles nothing; proving the requirement needs each "
-            "sub-domain's own record — ")
+    if head is None:
+        head = (f"root record has sp={sp or 'unset'}, which is not the failing value, "
+                "so the root alone settles nothing; proving the requirement needs each "
+                "sub-domain's own record — ")
     if not found:
         return _unmeasured(req, domain, NOT_COLLECTED, head + _subdomain_limit(
             assets, [domain], "DMARC", owed=(
@@ -579,15 +634,21 @@ def _ned_dmarc_from_sweep(req: dict, assets: list[Any], domain: str,
     own_bad = sorted(n for n, rec in records.items()
                      if not _rejects(_dmarc_tags(str(rec)), "p"))
     without_own = in_scope - len(records)
-    fallback_ok = _rejects(_dmarc_tags(root_record), "sp")
-    fallback_bad = without_own if (without_own and not fallback_ok) else 0
+    # A name that came back NXDOMAIN takes the root's np= (RFC 9989 §4.7), and one
+    # that exists takes its sp=. An observation without the list treats every
+    # name as existing.
+    gone = len([n for n in extra.get("names_nonexistent") or [] if n not in records])
+    root_tags = _dmarc_tags(root_record)
+    fallback_bad = ((without_own - gone) if not _rejects(root_tags, "sp") else 0) + (
+        gone if not _rejects(root_tags, "np") else 0)
     limit = f"what this row does NOT read: {partial}" if partial else ""
     note = [f"read {extra.get('read_at', '')} via {', '.join(extra.get('resolvers') or [])}"]
     if fallback_bad:
-        note.insert(0, f"{without_own} of the {in_scope} enumerated sub-domain(s) that show "
+        note.insert(0, f"{fallback_bad} of the {in_scope} enumerated sub-domain(s) that show "
                        "no sign of sending mail publish no DMARC record of their own and "
                        + ("fall back to the root record, which does not reject all failing "
-                          "mail" if root_record else
+                          "mail for them (sp= for a name that exists, np= for one that does "
+                          "not)" if root_record else
                           "the root domain publishes none for them to fall back to"))
     if own_bad:
         note.insert(0, f"{len(own_bad)} publish a record of their own that does not reject "
@@ -1637,18 +1698,61 @@ def parked_domains(target: dict) -> list[str]:
     return dnsevidence.parked_domains(target)
 
 
+def _is_parked_row(asset: Any) -> bool:
+    return bool((_get(asset, "extra") or {}).get("parked"))
+
+
 def _parked_rows(assets: list[Any], protocol: str, domain: str) -> list[Any]:
-    return [a for a in _by(assets, protocol, domain) if (_get(a, "extra") or {}).get("parked")]
+    """A parked domain's ``protocol`` rows: those marked parked, else any for that host.
+
+    A row is marked ``extra.parked`` when the collector read the domain as
+    parked. An observation taken while the domain was not listed as parked, or
+    by a tool that does not mark the rows, can still hold the domain's SPF and
+    DMARC rows unmarked. They are the same DNS records, read the same way, so
+    they are graded too, and the row says so (:data:`PARKED_UNMARKED_NOTE`);
+    without them a breach on the domain would go unseen.
+    """
+    found = _by(assets, protocol, domain)
+    return [a for a in found if _is_parked_row(a)] or found
 
 
-def _as_parked(rows: list[Conformance]) -> list[Conformance]:
+#: Said beside a parked domain's grade when it was read from a row not marked parked.
+PARKED_UNMARKED_NOTE = (
+    "read from a row that is not marked as a parked reading: the observation was taken "
+    "without this domain listed as parked, or by a tool that does not mark such rows. It "
+    "is the same DNS record either way, so it is graded")
+
+
+def _as_parked(rows: list[Conformance], assets: list[Any] | None = None,
+               protocol: str = "") -> list[Conformance]:
+    """Mark rows as readings of a parked domain.
+
+    With ``assets`` and ``protocol``, a row graded from a reading not marked
+    parked also carries :data:`PARKED_UNMARKED_NOTE`.
+    """
     for row in rows:
         row.parked = True
-        row.subject_note = "; ".join(x for x in (PARKED_NOTE, row.subject_note) if x)
+        found = _parked_rows(assets, protocol, row.subject) if assets and protocol else []
+        unmarked = PARKED_UNMARKED_NOTE if found and not _is_parked_row(found[0]) else ""
+        row.subject_note = "; ".join(x for x in (PARKED_NOTE, row.subject_note, unmarked)
+                                     if x)
     return rows
 
 
-def _parked_unread(req: dict, domain: str, record: str) -> Conformance:
+def _parked_unread(req: dict, domain: str, record: str, assets: list[Any]) -> Conformance:
+    """The row for a parked domain with no reading of ``record``.
+
+    When the observation holds no parked reading of any domain, it was taken
+    without parked readings at all, and the row says so plainly (not
+    collected) rather than suggesting a lookup failed.
+    """
+    if not any(_is_parked_row(a) for a in assets):
+        return _unmeasured(
+            req, domain, NOT_COLLECTED,
+            f"this observation holds no {record} reading of this domain and no parked "
+            "reading of any domain, so it was taken without this domain listed as parked, "
+            "or by a tool that does not read parked domains; nothing is claimed either way, "
+            "and a run with the domain listed as parked reads it")
     return _unmeasured(req, domain, INCONCLUSIVE,
                        f"no {record} reading of this parked domain is in the observation: "
                        "the lookup did not settle, or the DNS collector did not run")
@@ -1659,7 +1763,7 @@ def _eval_parked_spf(req: dict, assets: list[Any], parked: list[str]) -> list[Co
     for d in parked:
         found = _parked_rows(assets, "spf", d)
         if not found:
-            rows.append(_parked_unread(req, d, "SPF"))
+            rows.append(_parked_unread(req, d, "SPF", assets))
             continue
         a = found[0]
         record = str((_get(a, "extra") or {}).get("record") or "").strip('"')
@@ -1687,7 +1791,7 @@ def _eval_parked_spf(req: dict, assets: list[Any], parked: list[str]) -> list[Co
                            "sends mail" if qualifier == "-all" else
                            f"it ends {qualifier}, so mail claiming the domain is not denied")),
                 record=record, **common))
-    return _as_parked(rows)
+    return _as_parked(rows, assets, "spf")
 
 
 def _eval_parked_dmarc(req: dict, assets: list[Any], parked: list[str]) -> list[Conformance]:
@@ -1707,33 +1811,46 @@ def _eval_parked_dmarc(req: dict, assets: list[Any], parked: list[str]) -> list[
     that the requirement *"remains even if the root level domain has
     SP=reject set"*, does not decide this row: it says ``sp=reject`` on the
     parent does not discharge the requirement for the names beneath, so it
-    makes ``sp=reject`` necessary, never sufficient.
+    makes ``sp=reject`` necessary, never sufficient. An ``np=`` weaker than
+    ``reject`` fails the row too, for names beneath that do not exist
+    (:func:`_np_weaker_than_reject`). The names beneath that do exist are read
+    by the sub-domain sweep, in their own rows
+    (:func:`_eval_parked_subdomain_dmarc`).
     """
     rows = []
     for d in parked:
         found = _parked_rows(assets, "dmarc", d)
         if not found:
-            rows.append(_parked_unread(req, d, "DMARC"))
+            rows.append(_parked_unread(req, d, "DMARC", assets))
             continue
         rows += [_parked_subdomain_policy(row, _dmarc_record(found[0]))
                  for row in _eval_dmarc(req, found, [d])]
-    return _as_parked(rows)
+    return _as_parked(rows, assets, "dmarc")
 
 
 def _parked_subdomain_policy(row: Conformance, record: str) -> Conformance:
-    """Fail a parked domain's DMARC row whose record sets ``sp=`` to anything but reject."""
-    sp = _dmarc_tags(record).get("sp", "")
-    if not sp:
-        return row
-    row.observed = f"{row.observed}; sp={sp}" if row.observed else f"sp={sp}"
-    if sp.lower() == "reject":
-        return row
-    row.status = FAIL
-    row.reason = "; ".join(x for x in [row.reason, (
-        f"the record sets sp={sp}, so a name beneath this domain that publishes no DMARC "
-        "record of its own is not rejected; the domain sends no mail, so neither do the "
-        "names beneath it, and the framework applies the p=reject requirement to "
-        "sub-domains of non-email domains too")] if x)
+    """Fail a parked domain's DMARC row whose ``sp=`` or ``np=`` is anything but reject.
+
+    ``sp=`` covers names beneath that exist; ``np=`` covers names that do not
+    (see :func:`_np_weaker_than_reject`). Each, when present, is shown in the
+    row's ``observed``.
+    """
+    tags = _dmarc_tags(record)
+    sp = tags.get("sp", "")
+    reasons = [row.reason]
+    for key in ("sp", "np"):
+        if tags.get(key):
+            row.observed = "; ".join(x for x in [row.observed, f"{key}={tags[key]}"] if x)
+    if sp and sp.lower() != "reject":
+        reasons.append(
+            f"the record sets sp={sp}, so a name beneath this domain that publishes no DMARC "
+            "record of its own is not rejected; the domain sends no mail, so neither do the "
+            "names beneath it, and the framework applies the p=reject requirement to "
+            "sub-domains of non-email domains too")
+    reasons.append(_np_weaker_than_reject(tags))
+    if any(reasons[1:]):
+        row.status = FAIL
+        row.reason = "; ".join(x for x in reasons if x)
     return row
 
 
@@ -1743,7 +1860,7 @@ def _eval_parked_dmarc_alignment(req: dict, assets: list[Any],
     for d in parked:
         found = _parked_rows(assets, "dmarc", d)
         if not found:
-            rows.append(_parked_unread(req, d, "DMARC"))
+            rows.append(_parked_unread(req, d, "DMARC", assets))
             continue
         a = found[0]
         if _absent(a):
@@ -1764,7 +1881,7 @@ def _eval_parked_dmarc_alignment(req: dict, assets: list[Any],
                     + ", ".join(short) + " — a recommendation unmet, not a breach"
                     if short else ""),
             evidence=str(_get(a, "name") or ""), source=req["source"], record=record))
-    return _as_parked(rows)
+    return _as_parked(rows, assets, "dmarc")
 
 
 def _eval_parked_dkim(req: dict, assets: list[Any], parked: list[str]) -> list[Conformance]:
@@ -1781,7 +1898,7 @@ def _eval_parked_dkim(req: dict, assets: list[Any], parked: list[str]) -> list[C
     for d in parked:
         found = _parked_rows(assets, "dkim-wildcard", d)
         if not found:
-            rows.append(_parked_unread(req, d, "DKIM"))
+            rows.append(_parked_unread(req, d, "DKIM", assets))
             continue
         a = found[0]
         at = dnsevidence.dkim_wildcard_name(d)
@@ -1818,7 +1935,44 @@ def _eval_parked_dkim(req: dict, assets: list[Any], parked: list[str]) -> list[C
                            "mail" if keyed else
                            "it has no p= tag, so it does not say the key is revoked")),
                 record=record, **common))
+    return _as_parked(rows, assets, "dkim-wildcard")
+
+
+def parked_subdomains_subject(domain: str) -> str:
+    """The subject of a row reading the names beneath a parked domain, not the domain itself."""
+    return f"sub-domains of {domain}"
+
+
+def _beneath_parked(rows: list[Conformance]) -> list[Conformance]:
+    """Re-subject sweep rows run over parked domains, and mark them parked."""
+    for row in rows:
+        if row.subject:
+            row.subject = parked_subdomains_subject(row.subject)
     return _as_parked(rows)
+
+
+def _eval_parked_subdomain_dmarc(req: dict, assets: list[Any],
+                                 parked: list[str]) -> list[Conformance]:
+    """SGE-NED-DMARC-01 on the swept names beneath each parked domain.
+
+    Read as for an email domain's sub-domains (:func:`_ned_dmarc_from_sweep`):
+    each name's own record, or the parked domain's own DMARC record as the
+    organisational fallback (``sp=`` for a name that exists, ``np=`` for one
+    that does not). The parked domain's ``sp=`` and ``np=`` themselves are
+    graded on its own row (:func:`_eval_parked_dmarc`), so they are not
+    graded a second time here.
+    """
+    partial = str(req.get("partial") or "").strip()
+    rows = []
+    for d in parked:
+        root = _by(assets, "dmarc", d)
+        root_record = _dmarc_record(root[0]) if root else ""
+        sp = _dmarc_tags(root_record).get("sp", "")
+        rows.append(_ned_dmarc_from_sweep(
+            req, assets, d, root_record, sp, partial,
+            head=("the parked domain's own sp= and np= are graded on its own row; this row "
+                  "reads the names beneath it, which needs each one's own record — ")))
+    return rows
 
 
 #: The evaluator for each requirement that reads parked domains.
@@ -1829,9 +1983,38 @@ _PARKED_EVALUATORS: dict[str, Callable[..., list[Conformance]]] = {
     "SGE-NED-DMARC-R01": _eval_parked_dmarc_alignment,
 }
 
+#: The evaluator for each requirement read over the swept names beneath a parked
+#: domain. These are the evaluators an email domain's sub-domains are read with,
+#: so they keep the same one-directional honesty: the names come from
+#: certificate transparency, which is a floor, so a missing record proves a
+#: breach and any number of conformant names proves nothing.
+_PARKED_SUBDOMAIN_EVALUATORS: dict[str, Callable[..., list[Conformance]]] = {
+    "SGE-NED-SPF-01": _eval_ned_spf,
+    "SGE-NED-DKIM-01": _eval_ned_dkim,
+    "SGE-NED-DMARC-01": _eval_parked_subdomain_dmarc,
+    "SGE-NED-DMARC-R01": _eval_subdomain_dmarc_alignment,
+    "SGE-DMARC-R05": _eval_subdomain_sp,
+}
+
 
 #: The requirements a parked domain is read against, in the order they are listed.
 PARKED_REQUIREMENTS: tuple[str, ...] = tuple(_PARKED_EVALUATORS)
+
+#: The requirements the names beneath a parked domain are read against.
+PARKED_SUBDOMAIN_REQUIREMENTS: tuple[str, ...] = tuple(_PARKED_SUBDOMAIN_EVALUATORS)
+
+
+def _parked_requirement_rows(req: dict, assets: list[Any],
+                             parked: list[str]) -> list[Conformance]:
+    """Every parked row for ``req``: each parked domain's own record, then the names beneath."""
+    if not parked or req.get("measurable") != "observed":
+        return []
+    rows: list[Conformance] = []
+    if req["id"] in _PARKED_EVALUATORS:
+        rows += _PARKED_EVALUATORS[req["id"]](req, assets, parked)
+    if req["id"] in _PARKED_SUBDOMAIN_EVALUATORS:
+        rows += _beneath_parked(_PARKED_SUBDOMAIN_EVALUATORS[req["id"]](req, assets, parked))
+    return rows
 
 
 def _parked_readings(assets: list[Any], parked: list[str]) -> list[ParkedDomain]:
@@ -1839,8 +2022,10 @@ def _parked_readings(assets: list[Any], parked: list[str]) -> list[ParkedDomain]
     for d in parked:
         found = _parked_rows(assets, "null-mx", d)
         if not found:
-            out.append(ParkedDomain(d, observed="not read: the MX lookup did not settle, or "
-                                                "the DNS collector did not run"))
+            out.append(ParkedDomain(d, observed=(
+                "not read: the MX lookup did not settle, or the DNS collector did not run"
+                if any(_is_parked_row(a) for a in assets) else
+                "not read: this observation holds no parked reading of any domain")))
             continue
         extra = _get(found[0], "extra") or {}
         state = str(extra.get("null_mx") or "")
@@ -1908,16 +2093,15 @@ def evaluate(assets: list[Any], domains: list[str], standard: dict | None = None
     sender policy that includes one is noted beside the strict-alignment row.
     ``parked`` are domains that send and receive no mail (:func:`parked_domains`):
     each is read against the requirements for such domains, in rows marked
-    ``parked``, and its null MX reading goes in :attr:`Report.parked`.
+    ``parked``, and its null MX reading goes in :attr:`Report.parked`. The
+    swept names beneath each are read in further rows marked ``parked``, with
+    :func:`parked_subdomains_subject` as their subject.
     """
     std = standard or load_standard()
     parked = list(parked)
     rows: list[Conformance] = []
     for req in std.get("requirements", []):
-        if parked and req["id"] in _PARKED_EVALUATORS and req.get("measurable") == "observed":
-            parked_rows = _PARKED_EVALUATORS[req["id"]](req, assets, parked)
-        else:
-            parked_rows = []
+        parked_rows = _parked_requirement_rows(req, assets, parked)
         measurable = req.get("measurable")
         if measurable == "no-instrument":
             rows.append(_unmeasured(

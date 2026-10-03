@@ -353,6 +353,32 @@ def test_sub_domain_dmarc():
     assert one("SGE-NED-DMARC-01", [rejecting_root]).reason == sge.NOT_COLLECTED
 
 
+@pytest.mark.parametrize("np_", ["none", "quarantine"])
+def test_a_root_np_weaker_than_reject_fails_the_sub_domain_policy(np_):
+    # RFC 9989 §4.7: np= is the policy a receiver applies to names that do not exist.
+    row = one("SGE-NED-DMARC-01", [dmarc(f"v=DMARC1; p=reject; np={np_}")])
+    assert (row.status, row.observed) == (sge.FAIL, f"np={np_}") and row.breaches_must
+    assert "RFC 9989 §4.7" in row.reason and "does not exist in DNS" in row.reason
+    both = one("SGE-NED-DMARC-01", [dmarc(f"v=DMARC1; p=reject; sp=none; np={np_}")])
+    assert both.observed == f"sp=none; np={np_}"
+    # np=reject, or no np= (inheriting sp=, then p=), leaves the root settling nothing.
+    for record in ("v=DMARC1; p=reject; np=reject", "v=DMARC1; p=reject"):
+        assert one("SGE-NED-DMARC-01", [dmarc(record)]).reason == sge.NOT_COLLECTED
+
+
+def test_a_swept_name_that_does_not_exist_falls_back_to_np():
+    sweep = {"name": f"DMARC on sub-domains of {D}", "protocol": "ned-dmarc", "host": D,
+             "extra": {"control_usable": True, "names_in_scope": 2, "dmarc_records": {},
+                       "names_nonexistent": ["gone.example.com"],
+                       "read_at": "t", "resolvers": ["192.0.2.53"]}}
+    # sp=quarantine fails only the name that exists; np= is reject, so the other is covered.
+    row = one("SGE-NED-DMARC-01", [dmarc("v=DMARC1; p=reject; sp=quarantine; np=reject"), sweep])
+    assert row.status == sge.FAIL and row.observed.startswith("1 of 2")
+    # With no np=, a name that does not exist inherits sp=, as RFC 9989 §4.7 says.
+    row = one("SGE-NED-DMARC-01", [dmarc("v=DMARC1; p=reject; sp=quarantine"), sweep])
+    assert row.observed.startswith("2 of 2")
+
+
 # ── TLS on the mail path ──────────────────────────────────────────────
 
 def gateway(host: str, versions: list[str], flags: list[str] | None = None) -> dict:

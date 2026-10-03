@@ -217,9 +217,11 @@ class _Note:
         self.domains = [str(d) for d in discovered] or sorted({
             r.subject for r in results.rows
             if r.scope in ("email-domain", "non-email-domain") and r.subject and not r.parked})
+        beneath = sge.parked_subdomains_subject("")
         self.parked = list(results.parked) or [
-            sge.ParkedDomain(d) for d in dict.fromkeys(r.subject for r in results.rows
-                                                       if r.parked)]
+            sge.ParkedDomain(d) for d in dict.fromkeys(
+                r.subject for r in results.rows
+                if r.parked and not r.subject.startswith(beneath))]
 
     def levels(self) -> list[str]:
         seen = [str(self.reqs[rid].get("level") or "") for rid in self.order]
@@ -359,20 +361,29 @@ class _Note:
                "domains. The framework's rules for domains that send no mail apply to it, so "
                "it is read against those requirements here rather than against the rules for "
                "mail domains. Whether a domain sends mail cannot be seen in DNS, so which "
-               "domains are parked is taken from the profile, not measured. Each result "
-               "below also appears in its requirement's card above.</p>"]
-        cols = [rid for rid in sge.PARKED_REQUIREMENTS if rid in self.rows]
+               "domains are parked is taken from the profile, not measured. The names "
+               "beneath a parked domain that certificate transparency found are read on a "
+               "line of their own: that list is incomplete, so a name without the record "
+               "shows a breach and names carrying it show nothing. Each result below also "
+               "appears in its requirement's card above.</p>"]
+        cols = [rid for rid in dict.fromkeys((*sge.PARKED_REQUIREMENTS,
+                                              *sge.PARKED_SUBDOMAIN_REQUIREMENTS))
+                if any(r.parked for r in self.rows.get(rid, []))]
         head = ["Domain", *(f"{rid}" for rid in cols), "Null MX"]
         rows = []
         for p in self.parked:
-            cells = [f"<code>{esc(p.domain)}</code>"]
-            for rid in cols:
-                mine = [r for r in self.rows[rid] if r.parked and r.subject == p.domain]
-                cells.append(_badge(requirement_status(mine)) + (
-                    f"<br><small>{esc(mine[0].observed)}</small>"
-                    if mine and mine[0].observed else ""))
-            cells.append(esc(p.observed or "not read"))
-            rows.append(cells)
+            for subject, null_mx in ((p.domain, esc(p.observed or "not read")),
+                                     (sge.parked_subdomains_subject(p.domain), "")):
+                cells = [f"<code>{esc(subject)}</code>"]
+                found = False
+                for rid in cols:
+                    mine = [r for r in self.rows[rid] if r.parked and r.subject == subject]
+                    found = found or bool(mine)
+                    cells.append(_badge(requirement_status(mine)) + (
+                        f"<br><small>{esc(mine[0].observed)}</small>"
+                        if mine[0].observed else "") if mine else "")
+                if subject == p.domain or found:
+                    rows.append([*cells, null_mx])
         out.append(_table(head, rows, caption="Each parked domain, requirement by requirement"))
         out.append("<p>" + " ".join(f'<a href="#{esc(rid)}">{esc(rid)}</a> '
                                     f"{esc(self.title(rid))}." for rid in cols) + "</p>")

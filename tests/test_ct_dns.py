@@ -112,13 +112,16 @@ def test_a_rate_limit_parks_the_domain_and_resume_finishes_it(monkeypatch, tmp_p
     monkeypatch.setattr(ct_dns, "_now", lambda: clock[0])
     waited: list[float] = []
     monkeypatch.setattr(ct_dns, "_wait", lambda s: (waited.append(s), clock.__setitem__(0, clock[0] + s)))
-    monkeypatch.setattr(dnsevidence, "capture_subdomains", lambda *a, **k: pytest.fail("no sweep"))
+    swept: list[tuple[str, bool, tuple[str, ...]]] = []
+    monkeypatch.setattr(ct_dns, "_ned_sweep", lambda d, found, *a, parked=False, **k: (
+        swept.append((d, parked, tuple(sorted(found)))) or []))
     monkeypatch.setattr(ct_dns, "parked_assets", lambda *a, **k: ([], []))
     deferral = ct_dns.CTDeferral()
     target = {"discovery": {"domains": ["example.com", "example.net"]},
               "dns": {"ct_search_api": API}}
     assets, failures, reused = ct_dns.collect(target, tmp_path, NOW, deferral=deferral)
     assert assets == [] and failures == [] and reused == []
+    assert swept == []                  # the sweep waits for the names it reads
     assert [c.domain for c in deferral.pending] == ["example.com", "example.net"]
     assert deferral.retry_after_seconds == [30.0]
 
@@ -128,6 +131,10 @@ def test_a_rate_limit_parks_the_domain_and_resume_finishes_it(monkeypatch, tmp_p
     assert waited == [30.0] and more_failures == []
     assert {a.host for a in more if a.data_state == "discovery"} >= {"api.example.com"}
     assert deferral.record()["outcome"] == "every deferred lookup was resumed"
+    # Both domains are parked, so the names found beneath them are swept on resume.
+    assert [(d, parked) for d, parked, _ in swept] == [("example.com", True),
+                                                       ("example.net", True)]
+    assert "api.example.com" in swept[0][2]
 
 
 def test_the_page_ceiling_is_reported(monkeypatch):
@@ -153,6 +160,7 @@ def test_a_configured_endpoint_that_errors_is_a_failure_not_a_gap(monkeypatch):
     fake, _ = serve({"": {"code": "not_allowed"}})
     monkeypatch.setattr(ct_dns, "http_json", fake)
     monkeypatch.setattr(ct_dns, "parked_assets", lambda *a, **k: ([], []))
+    monkeypatch.setattr(ct_dns, "_ned_sweep", lambda *a, **k: [])
     target = {"discovery": {"domains": ["example.com"]}, "dns": {"ct_search_api": API}}
     assets, failures, _ = ct_dns.collect(target, None, NOW)
     (failure,) = failures
@@ -165,6 +173,7 @@ def test_no_endpoint_is_a_gap_not_a_failure(monkeypatch, tmp_path):
     config.set_workspace(tmp_path)
     monkeypatch.setattr(ct_dns, "http_json", lambda *a, **k: pytest.fail("asked"))
     monkeypatch.setattr(ct_dns, "parked_assets", lambda *a, **k: ([], []))
+    monkeypatch.setattr(ct_dns, "_ned_sweep", lambda *a, **k: [])
     assets, failures, _ = ct_dns.collect({"discovery": {"domains": ["example.com"]}})
     (gap,) = failures
     assert assets == [] and isinstance(gap, coverage.Gap)

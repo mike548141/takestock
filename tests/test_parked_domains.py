@@ -136,6 +136,36 @@ def test_the_collector_reads_each_parked_domain(monkeypatch):
     assert seen == [P]
 
 
+def test_the_collector_sweeps_the_names_beneath_each_parked_domain(monkeypatch):
+    swept: list[tuple[str, bool, tuple[str, ...]]] = []
+    monkeypatch.setattr(ct_dns, "_email_assets", lambda *a, **k: ([], []))
+    monkeypatch.setattr(ct_dns, "parked_assets", lambda *a, **k: ([], []))
+    monkeypatch.setattr(ct_dns, "_ned_sweep", lambda d, found, *a, parked=False, **k: (
+        swept.append((d, parked, tuple(sorted(found)))) or []))
+    monkeypatch.setattr(ct_dns, "search_endpoint", lambda t: "")
+    target = {"discovery": {"domains": ["example.com", P], "email_domains": ["example.com"]}}
+    ct_dns.collect(target, ref_time=NOW)
+    assert [(d, parked) for d, parked, _ in swept] == [("example.com", False), (P, True)]
+
+
+def test_a_sweep_beneath_a_parked_domain_marks_its_rows_and_lists_names_that_do_not_exist():
+    def sub(name: str, exists: bool = True) -> dict:
+        return {"name": name, "email_enabled": False, "read": True, "exists": exists,
+                "spf_conformant": False, "dkim_conformant": False, "dmarc_record": ""}
+    cap = {"resolvers": ["192.0.2.53"], "tries": 3, "captured_at": "2030-01-15T00:00:00Z",
+           "control": {"name": "x", "rcode": "NXDOMAIN", "usable": True},
+           "names_offered": 2, "names_dropped_by_cap": 0,
+           "wildcard_spf": {"name": f"*.{P}", "record": "", "rcode": "NXDOMAIN",
+                            "agreed": True},
+           "wildcard_dkim": {"name": DKIM_AT, "record": "", "rcode": "NXDOMAIN", "agreed": True},
+           "subdomains": [sub(f"www.{P}"), sub(f"old.{P}", exists=False)]}
+    rows = ct_dns.ned_rows(P, cap, NOW, parked=True)
+    assert [r.protocol for r in rows] == ["ned-spf", "ned-dkim", "ned-dmarc"]
+    assert all(r.extra["parked"] is True and r.host == P for r in rows)
+    assert rows[2].extra["names_nonexistent"] == [f"old.{P}"]
+    assert "parked" not in ct_dns.ned_rows(P, cap, NOW)[0].extra
+
+
 # ── Grading ───────────────────────────────────────────────────────────
 
 def _rows(spf: str | None = "v=spf1 -all", dmarc: str | None = "v=DMARC1; p=reject; adkim=s; "
@@ -166,14 +196,14 @@ def _rows(spf: str | None = "v=spf1 -all", dmarc: str | None = "v=DMARC1; p=reje
 
 def graded(assets: list[dict], req: str) -> sge.Conformance:
     report = sge.evaluate(assets, [], STD, parked=[P])
-    [row] = [r for r in report.rows if r.requirement == req]
-    assert row.parked and row.subject == P
+    [row] = [r for r in report.rows if r.requirement == req and r.subject == P]
+    assert row.parked
     return row
 
 
 def test_a_clean_parked_domain_meets_the_rules_for_domains_that_send_no_mail():
     report = sge.evaluate(_rows(), [], STD, parked=[P])
-    by = {r.requirement: r for r in report.rows if r.parked}
+    by = {r.requirement: r for r in report.rows if r.parked and r.subject == P}
     assert {k: v.status for k, v in by.items()} == {
         "SGE-NED-SPF-01": sge.PASS, "SGE-NED-DMARC-01": sge.PASS,
         "SGE-NED-DMARC-R01": sge.PASS, "SGE-NED-DKIM-01": sge.PASS}
@@ -224,6 +254,18 @@ def test_a_weak_sub_domain_policy_adds_to_a_failing_parked_policy():
     row = graded(_rows(dmarc="v=DMARC1; p=none; sp=none"), "SGE-NED-DMARC-01")
     assert (row.status, row.observed) == (sge.FAIL, "p=none; pct=100; sp=none")
     assert "p=none" in row.reason and "sets sp=none" in row.reason
+
+
+@pytest.mark.parametrize("np_", ["none", "quarantine"])
+def test_a_parked_domain_whose_np_is_weaker_than_reject_breaches_a_must(np_):
+    row = graded(_rows(dmarc=f"v=DMARC1; p=reject; np={np_}"), "SGE-NED-DMARC-01")
+    assert (row.status, row.observed) == (sge.FAIL, f"p=reject; pct=100; np={np_}")
+    assert row.breaches_must and f"sets np={np_}" in row.reason and "RFC 9989" in row.reason
+
+
+def test_a_parked_domain_with_np_reject_passes():
+    row = graded(_rows(dmarc="v=DMARC1; p=reject; sp=reject; np=reject"), "SGE-NED-DMARC-01")
+    assert (row.status, row.observed) == (sge.PASS, "p=reject; pct=100; sp=reject; np=reject")
 
 
 def test_the_empty_dkim_key_on_a_parked_domain_passes():
@@ -286,6 +328,101 @@ def test_the_text_report_lists_parked_domains_on_their_own():
     assert "Parked domains (1)" in text and "no MX record and no null MX" in text
 
 
+# ── The names beneath a parked domain ─────────────────────────────────
+
+SUBS = sge.parked_subdomains_subject(P)
+
+
+def _ned(protocol: str, missing: tuple[str, ...] = (), in_scope: int = 2, **extra) -> dict:
+    """A sweep row for the names beneath the parked domain, as ``ct_dns.ned_rows`` writes it."""
+    base: dict = {"control_usable": True, "names_in_scope": in_scope, "parked": True,
+                  "read_at": "2030-01-15T00:00:00Z", "resolvers": ["192.0.2.53"]}
+    if protocol != "ned-dmarc":
+        base |= {"expected_record": ("v=spf1 -all" if protocol == "ned-spf" else "v=DKIM1; p="),
+                 "wildcard_name": f"*.{P}" if protocol == "ned-spf" else DKIM_AT,
+                 "wildcard_conformant": False, "names_without_record": list(missing)}
+    return {"name": f"{protocol} beneath {P}", "protocol": protocol, "host": P,
+            "extra": {**base, **extra}}
+
+
+def beneath(assets: list[dict]) -> dict[str, sge.Conformance]:
+    report = sge.evaluate(assets, [], STD, parked=[P])
+    return {r.requirement: r for r in report.rows if r.subject == SUBS}
+
+
+def test_the_names_beneath_a_parked_domain_are_read_on_rows_of_their_own():
+    assets = _rows() + [
+        _ned("ned-spf", missing=(f"a.{P}",)), _ned("ned-dkim"),
+        _ned("ned-dmarc", dmarc_records={f"b.{P}": "v=DMARC1; p=reject; sp=reject"})]
+    report = sge.evaluate(assets, [], STD, parked=[P])
+    subs = {r.requirement: r for r in report.rows if r.subject == SUBS}
+    assert set(subs) == set(sge.PARKED_SUBDOMAIN_REQUIREMENTS)
+    assert all(r.parked and sge.PARKED_NOTE in r.subject_note for r in subs.values())
+    spf = subs["SGE-NED-SPF-01"]
+    assert (spf.status, spf.observed) == (sge.FAIL, "1 of 2 sub-domains without v=spf1 -all")
+    assert spf.breaches_must
+    # A floor of names: conformant names show nothing, so nothing beneath ever passes.
+    assert sge.PASS not in {r.status for r in subs.values()}
+    assert subs["SGE-NED-DKIM-01"].status == sge.NOT_MEASURED
+    assert subs["SGE-NED-DMARC-01"].status == sge.NOT_MEASURED     # falls back to p=reject
+    sp = subs["SGE-DMARC-R05"]
+    assert sp.status == sge.FAIL and not sp.breaches_must and f"b.{P}" in sp.subject_note
+    # The parked domain's own records still pass on their own rows.
+    own = {r.requirement: r.status for r in report.rows if r.subject == P}
+    assert set(own.values()) == {sge.PASS}
+    assert [(b.requirement, b.subject) for b in report.breaches()] == [("SGE-NED-SPF-01", SUBS)]
+    assert f"{SUBS} (parked)" in sge._format(report, [])
+
+
+def test_without_a_sweep_the_names_beneath_a_parked_domain_are_not_collected():
+    subs = beneath(_rows())
+    assert {(r.status, r.reason) for r in subs.values()} == {(sge.NOT_MEASURED,
+                                                              sge.NOT_COLLECTED)}
+
+
+def test_names_beneath_fall_back_to_the_parked_domains_own_dmarc_record():
+    weak = _rows(dmarc="v=DMARC1; p=reject; sp=none")
+    row = beneath(weak + [_ned("ned-dmarc", dmarc_records={})])["SGE-NED-DMARC-01"]
+    assert (row.status, row.observed) == (sge.FAIL, "2 of 2 sub-domains without a reject policy")
+    assert "fall back to the root record" in row.subject_note
+    # A name that does not exist takes np= instead of sp= (RFC 9989 §4.7).
+    split = _rows(dmarc="v=DMARC1; p=reject; sp=reject; np=none")
+    row = beneath(split + [_ned("ned-dmarc", dmarc_records={},
+                                names_nonexistent=[f"old.{P}"])])["SGE-NED-DMARC-01"]
+    assert row.observed == "1 of 2 sub-domains without a reject policy"
+    # Unswept, the row does not repeat the sp= the parked domain's own row grades.
+    alone = beneath(weak)["SGE-NED-DMARC-01"]
+    assert alone.status == sge.NOT_MEASURED and "graded on its own row" in alone.evidence
+
+
+# ── An observation whose rows are not marked parked ───────────────────
+
+def _unmarked(**kw) -> list[dict]:
+    rows = _rows(**kw)
+    for r in rows:
+        r["extra"].pop("parked", None)
+    return rows
+
+
+def test_unmarked_spf_and_dmarc_rows_of_a_parked_domain_are_graded_and_say_so():
+    assets = _unmarked(spf="v=spf1 ~all", spf_flags=("softfail-all",),
+                       dmarc="v=DMARC1; p=none", dkim=None, null_mx=None)
+    report = sge.evaluate(assets, [], STD, parked=[P])
+    breaches = [(b.requirement, b.subject) for b in report.breaches()]
+    assert breaches == [("SGE-NED-SPF-01", P), ("SGE-NED-DMARC-01", P)]
+    assert all(sge.PARKED_UNMARKED_NOTE in b.subject_note for b in report.breaches())
+    # No reading at all, in an observation with no parked readings: said plainly.
+    dkim = graded(assets, "SGE-NED-DKIM-01")
+    assert (dkim.status, dkim.reason) == (sge.NOT_MEASURED, sge.NOT_COLLECTED)
+    assert "no parked reading of any domain" in dkim.evidence
+    assert "no parked reading of any domain" in report.parked[0].observed
+
+
+def test_marked_rows_still_win_and_carry_no_unmarked_note():
+    row = graded(_rows(), "SGE-NED-SPF-01")
+    assert row.status == sge.PASS and sge.PARKED_UNMARKED_NOTE not in row.subject_note
+
+
 # ── The note and the command ──────────────────────────────────────────
 
 TARGET = {"organisation": {"name": "Example Widgets Ltd"},
@@ -305,6 +442,32 @@ def test_the_note_reports_parked_domains_in_their_own_section():
     dns = out[out.index('<section id="dns-records"'):]
     assert f"<h3>{P}</h3>" not in dns                     # mail domains only there
     assert f"{P} (parked)" in out[:out.index('<section id="parked"')]   # listed as unmet must
+
+
+def test_the_note_gives_the_names_beneath_a_parked_domain_a_line_of_their_own():
+    report = sge.evaluate(_rows() + [_ned("ned-spf", missing=(f"a.{P}",))], ["example.com"],
+                          STD, parked=[P])
+    out = sge_note.build_note(report, TARGET, standard=STD)
+    section = out[out.index('<section id="parked"'):]
+    section = section[:section.index("</section>")]
+    assert f"<code>{P}</code>" in section and f"<code>{SUBS}</code>" in section
+    assert "SGE-DMARC-R05" in section
+    assert f"{SUBS} (parked)" in out[:out.index('<section id="parked"')]
+
+
+def test_the_command_counts_a_breach_on_unmarked_rows(tmp_path: Path,
+                                                      capsys: pytest.CaptureFixture):
+    (tmp_path / "targets").mkdir()
+    (tmp_path / "targets" / "example.yaml").write_text(
+        f"name: example\ndiscovery:\n  domains: [{P}]\n")
+    obs = tmp_path / "observations" / "2030-01-31T0930Z"
+    obs.mkdir(parents=True)
+    (obs / "assets.json").write_text(json.dumps(_unmarked(
+        spf="v=spf1 ~all", spf_flags=("softfail-all",), dmarc="v=DMARC1; p=none",
+        dkim=None, null_mx=None)))
+    config.set_workspace(tmp_path)
+    assert cli.main(["sge", str(obs), "example", "--workspace", str(tmp_path)]) == 1
+    assert "2 unmet MUST" in capsys.readouterr().out
 
 
 def test_no_parked_section_without_parked_domains():

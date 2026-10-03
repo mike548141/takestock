@@ -28,7 +28,7 @@ evidence settles each kind of requirement.
   no mail.
 - **Sweep**: the reading of each sub-domain name found in
   certificate-transparency logs, for the records a name that sends no mail
-  should publish.
+  should publish. It runs beneath each email domain and each parked domain.
 
 ## Producing the note
 
@@ -96,12 +96,17 @@ The target profile supplies:
    and the explanation).
 3. **Parked domains**, when the profile has any: each parked domain against
    the framework's requirements for domains that send no mail (the blank SPF
-   record `v=spf1 -all`, a `p=reject` DMARC policy with no `sp=` weaker than
-   reject, strict alignment with a reporting address, and the empty DKIM key
-   `v=DKIM1; p=` at `*._domainkey.<domain>`), whether it publishes a null MX,
-   and the record text read.
+   record `v=spf1 -all`, a `p=reject` DMARC policy with no `sp=` or `np=`
+   weaker than reject, strict alignment with a reporting address, and the
+   empty DKIM key `v=DKIM1; p=` at `*._domainkey.<domain>`), whether it
+   publishes a null MX, and the record text read. The swept names beneath
+   each parked domain have a line of their own, *sub-domains of* the domain,
+   read as in [Read from the sub-domain sweep](#read-from-the-sub-domain-sweep).
    The same readings also appear, marked *(parked)*, in their requirements'
    tables, so an unmet *must* on a parked domain counts like any other.
+   Where an observation holds a parked domain's SPF or DMARC row unmarked as a
+   parked reading (taken while the domain was not listed as parked, say), the
+   row is graded all the same and the explanation says so.
 4. **Not measured, and what would settle it**: every unsettled reading,
    with the evidence that would settle it.
 5. **DNS records read, per domain**: the record text as read for each email
@@ -244,12 +249,15 @@ defaults, are tried. A selector that does not answer proves nothing.
 |---|---|---|---|
 | SGE-NED-SPF-01 a denying SPF record (`v=spf1 -all`) on names that send no mail | must | any swept name lacks it | not measured |
 | SGE-NED-DKIM-01 an empty DKIM key (`v=DKIM1; p=`) on names that send no mail | must | any swept name lacks it | not measured |
-| SGE-NED-DMARC-01 a rejecting DMARC policy on names that send no mail | must | the domain's own record sets `sp=none`; or a swept name's own record, or the domain's record it falls back to, does not reject all failing mail; or a swept name has no record and the domain publishes none for it to fall back to | not measured |
+| SGE-NED-DMARC-01 a rejecting DMARC policy on names that send no mail | must | the email domain's own record sets `sp=none`, or `np=` weaker than `reject` (RFC 9989's policy for names that do not exist); or a swept name's own record, or the domain's record it falls back to (`sp=` for a name that exists, `np=` for one that answers NXDOMAIN), does not reject all failing mail; or a swept name has no record and the domain publishes none for it to fall back to | not measured |
 | SGE-NED-DMARC-R01 strict alignment and a reporting address on those names | recommended | a swept name, on its own record or the one it falls back to, lacks `adkim=s`, `aspf=s` or `rua=`, or has no record and nothing to fall back to | not measured |
 | SGE-DMARC-R05 `sp=` only on organisational domains | recommended | a swept sub-domain publishes its own `sp=` | not measured |
 
 Names the sweep finds sending mail are excluded and listed; names it could
-not read are listed as not read, so not counted either way.
+not read are listed as not read, so not counted either way. The same rows are
+read beneath each parked domain, with the subject *sub-domains of* the domain;
+there the parked domain's own `sp=` and `np=` are graded on its own row, so
+SGE-NED-DMARC-01 beneath it reads only the swept names.
 
 ### Read from the mail hosts
 

@@ -37,7 +37,8 @@ discovery:
   # example.org is in `domains` and not in `email_domains`, so it is read as a
   # parked domain: one that sends and receives no mail. Its SPF, DMARC, DKIM
   # wildcard and MX are read for the blank SPF record, the reject policy, the
-  # empty DKIM key and the null MX such a domain publishes.
+  # empty DKIM key and the null MX such a domain publishes, and the names
+  # certificate transparency finds beneath it are swept for the same records.
 
 # Active probes run only with `--scan`, and only while this record is
 # complete. It is a record of who authorised what, not a technical control.

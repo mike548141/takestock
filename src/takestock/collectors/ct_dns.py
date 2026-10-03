@@ -24,7 +24,9 @@ Two passive readings, neither of which touches the organisation's hosts:
   wildcard DKIM record and MX, the records with which a domain that sends and
   receives no mail says so: ``v=spf1 -all``, ``p=reject``, the empty key
   ``v=DKIM1; p=`` at ``*._domainkey.<domain>`` and a null MX (RFC 7505).
-  Every such row carries ``extra.parked`` True.
+  It then sweeps the sub-domain names the transparency read found beneath
+  each parked domain, exactly as for an email domain. Every such row, the
+  sweep's included, carries ``extra.parked`` True.
 
 Search services limit how often they may be asked. When one says "wait",
 the run can park the remaining domains in a :class:`CTDeferral`, let other
@@ -545,7 +547,7 @@ def collect(
 
     discovered = {str(a.host).lower().strip(".") for a in assets
                   if a.data_state == "discovery" and a.host}
-    parked = deferral is not None and bool(deferral.pending)
+    waiting = deferral is not None and bool(deferral.pending)
     asked = dnsevidence.resolvers(target)
     selectors = dnsevidence.dkim_selectors(target)
 
@@ -554,7 +556,7 @@ def collect(
         rows, unsettled = _email_assets(domain, ref_time, selectors, asked)
         assets.extend(rows)
         failures.extend(unsettled)
-        if not parked:
+        if not waiting:
             assets.extend(_ned_sweep(domain, discovered, ref_time, note, asked))
 
     for domain in dnsevidence.parked_domains(target):
@@ -562,12 +564,15 @@ def collect(
         rows, unsettled = parked_assets(domain, ref_time, asked)
         assets.extend(rows)
         failures.extend(unsettled)
+        if not waiting:
+            assets.extend(_ned_sweep(domain, discovered, ref_time, note, asked, parked=True))
 
-    if parked and deferral is not None:
+    if waiting and deferral is not None:
         deferral.target, deferral.raw_dir = target, raw_dir
         deferral.ref_time, deferral.progress = ref_time, progress
         deferral.discovered = discovered
-        deferral.ned_pending = bool(disc.get("email_domains"))
+        deferral.ned_pending = bool(disc.get("email_domains")
+                                    or dnsevidence.parked_domains(target))
         wait = max(0.0, deferral.resume_at - _now())
         note(f"    ↪ search allowance used; resuming {len(deferral.pending)} "
              f"lookup(s) after ~{wait:.0f}s, other collectors running meanwhile"
@@ -620,6 +625,9 @@ def resume(deferral: CTDeferral) -> tuple[list[CryptoAsset], list[str]]:
         for domain in (deferral.target.get("discovery", {}) or {}).get("email_domains", []) or []:
             assets.extend(_ned_sweep(domain, deferral.discovered, deferral.ref_time, note,
                                      asked))
+        for domain in dnsevidence.parked_domains(deferral.target):
+            assets.extend(_ned_sweep(domain, deferral.discovered, deferral.ref_time, note,
+                                     asked, parked=True))
     return assets, failures
 
 
@@ -661,11 +669,14 @@ def _endpoint_assets(domain: str, names: dict[str, dict], ct_date: str,
 
 
 def _ned_sweep(domain: str, discovered: set[str], ref_time: datetime | None,
-               note: Progress, resolvers: tuple[str, ...] = ("",)) -> list[CryptoAsset]:
+               note: Progress, resolvers: tuple[str, ...] = ("",),
+               parked: bool = False) -> list[CryptoAsset]:
+    """Sweep the discovered names beneath ``domain``; ``parked`` marks each row ``extra.parked``."""
     beneath = sorted(n for n in discovered if n.endswith("." + domain))
-    note(f"    · sub-domain SPF, DKIM and DMARC records under {domain} "
+    note(f"    · sub-domain SPF, DKIM and DMARC records under {domain}"
+         f"{' (parked)' if parked else ''} "
          f"({len(beneath)} name(s), 4 corroborated lookups each) …")
-    return _ned_assets(domain, beneath, ref_time, resolvers)
+    return _ned_assets(domain, beneath, ref_time, resolvers, parked)
 
 
 def _ip_stack(host: str) -> dict[str, str]:
@@ -991,14 +1002,22 @@ NED_DMARC = "ned-dmarc"
 
 def _ned_assets(domain: str, names: list[str],
                 ref_time: datetime | None = None,
-                resolvers: tuple[str, ...] = ("",)) -> list[CryptoAsset]:
+                resolvers: tuple[str, ...] = ("",),
+                parked: bool = False) -> list[CryptoAsset]:
     """Three rows summarising a sub-domain sweep: SPF, DKIM, and DMARC on each name."""
     cap = dnsevidence.capture_subdomains(domain, names, resolvers)
-    return ned_rows(domain, cap, ref_time)
+    return ned_rows(domain, cap, ref_time, parked)
 
 
-def ned_rows(domain: str, cap: dict, ref_time: datetime | None = None) -> list[CryptoAsset]:
-    """The three sub-domain rows from a :func:`dnsevidence.capture_subdomains` result."""
+def ned_rows(domain: str, cap: dict, ref_time: datetime | None = None,
+             parked: bool = False) -> list[CryptoAsset]:
+    """The three sub-domain rows from a :func:`dnsevidence.capture_subdomains` result.
+
+    ``extra.names_nonexistent`` lists the names in scope that came back NXDOMAIN:
+    a receiver applies a parent's ``np=`` policy to those (RFC 9989 §4.7), and
+    its ``sp=`` policy to names that exist. ``parked`` sets ``extra.parked`` on
+    each row, for the sweep beneath a parked domain.
+    """
     collected_at = now_date(ref_time)
     in_scope = [r for r in cap["subdomains"] if not r["email_enabled"] and r["read"]]
     sending = [r["name"] for r in cap["subdomains"] if r["email_enabled"]]
@@ -1016,8 +1035,11 @@ def ned_rows(domain: str, cap: dict, ref_time: datetime | None = None) -> list[C
         "names_unread": unread,
         "names_in_scope": len(in_scope),
         "names_resolving": sum(1 for r in in_scope if r["exists"]),
+        "names_nonexistent": sorted(r["name"] for r in in_scope if not r["exists"]),
         "names_email_enabled": sending,
     }
+    if parked:
+        shared["parked"] = True
     common: dict[str, Any] = {"host": domain, "source": "ct_dns", "source_class": "public",
               "source_name": SOURCE_DNS, "collected_at": collected_at,
               "data_state": "email-auth"}
