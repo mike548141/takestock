@@ -93,7 +93,7 @@ _PIECE = re.compile(r"[^\W\d_]+|\d+")
 
 
 def pieces(text: str, fold: bool = True) -> list[str]:
-    """Letter runs and digit runs, accents (macrons included) stripped, camelCase split."""
+    """Letter runs and digit runs, accents stripped, camelCase split."""
     text = "".join(c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c))
     text = _CAMEL.sub(" ", text)
     return _PIECE.findall(text.casefold() if fold else text)

@@ -92,10 +92,15 @@ for mandated agencies (NZISM §1.2.7 names Cabinet Directive CAB MIN (14)
 39/38), and the GCISO-mandated agencies are those the PSR lists as mandated
 (NZISM §1.2.9).
 
-So for any organisation outside the mandated group, the NZISM is a standard it
-**adopts by choice** or is **asked to meet by contract**, not one imposed by
-law. takestock grades against it either way, and a report should say which of
-the three applies rather than calling it "mandatory".
+That gives two cases, and takestock grades the same way in both:
+
+- an organisation the PSR **mandates**, for which the NZISM is binding by
+  Cabinet direction; and
+- an organisation that **adopts** the NZISM voluntarily, or is **required by a
+  contract** to meet it, for which it is not imposed by law.
+
+A report should say which case applies, and not call the standard "mandatory"
+without saying why.
 
 The PSR draws the same line in its own words: it is *"primarily intended for
 use by organisations that implement the Protective Security Requirements
@@ -784,7 +789,5 @@ in motion:
 | FIRST | CVSS v4.0 User Guide, §2.2 | The FIRST website |
 | CERT/CC | SSVC deployer decision tree | The CERT/CC SSVC documentation |
 | PCI Security Standards Council | PCI DSS v4.0.1; Approved Scanning Vendor Program Guide | The PCI SSC document library |
-| Project Management Institute | *rolling wave planning*, as defined in the PMI lexicon | The PMI website |
-| New Zealand Treasury; Axelos | Gateway review guidance; *Managing Successful Programmes* | The Treasury website; the published MSP guide |
-| US Government | Executive Order 14412 §5(d) (22 June 2026); OMB memorandum M-26-15 (24 June 2026) | The Federal Register; the White House website |
+| US Government | Executive Order 14412 §5(d) (22 June 2026) | The Federal Register |
 | IETF | RFC 2119, RFC 8174, RFC 3207, RFC 7489, RFC 8301, RFC 8461, RFC 9989 | <https://www.rfc-editor.org/rfc/> |

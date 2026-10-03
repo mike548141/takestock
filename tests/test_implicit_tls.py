@@ -10,7 +10,7 @@ from takestock.collectors import implicit_tls, plaintext_scan, tls_scan
 from takestock.model import is_informational_flag
 
 MAIL = "mail-01.example.test"
-WHEN = datetime(2026, 10, 15, tzinfo=UTC)
+WHEN = datetime(2030, 3, 15, tzinfo=UTC)
 
 
 def mail_target(*ports: str, **kw) -> dict:

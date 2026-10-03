@@ -113,9 +113,11 @@ symmetric:
                                  # is a different claim from being a post-quantum algorithm
   chacha20_poly1305: strong
   # CCM is AEAD like GCM; the _8 forms carry a 64-bit tag (RFC 6655).
-  # Camellia, ARIA and SEED have no known practical break but are not on the
-  # NIST or NZISM approved lists, so they are acceptable and due to move to AES.
-  # IDEA, RC2, Blowfish and GOST 28147-89 are 64-bit block ciphers (Sweet32).
+  # Camellia, ARIA, SEED, SM4 and Kuznyechik have no known practical break but
+  # are not on the NIST or NZISM approved lists, so they are acceptable and due
+  # to move to AES.
+  # IDEA, RC2, Blowfish, CAST5 and GOST 28147-89 are 64-bit block ciphers
+  # (Sweet32).
   # Twofish and Serpent are unapproved AES finalists with no known break.
   aes128_ccm: strong
   aes256_ccm: strong
@@ -128,9 +130,12 @@ symmetric:
   aria128_gcm: acceptable
   aria256_gcm: acceptable
   seed_cbc: acceptable
+  sm4: acceptable
+  kuznyechik: acceptable
   idea: weak
   rc2: weak
   blowfish: weak
+  cast5: weak
   gost: weak
   twofish: acceptable
   serpent: acceptable
@@ -138,8 +143,8 @@ symmetric:
 # Classical security strength, in bits, of the symmetric primitives an
 # authority has rated. Grades nothing: it feeds the informational
 # `quantum-symmetric-margin:<bits>` reading. A primitive no authority rates
-# (ChaCha20, Camellia, ARIA, SEED, Twofish, Serpent, RC4) has no row, so it
-# reports no margin rather than a misleading one.
+# (ChaCha20, Camellia, ARIA, SEED, SM4, Kuznyechik, Twofish, Serpent, RC4) has
+# no row, so it reports no margin rather than a misleading one.
 symmetric_strength:
   aes128: 128
   aes192: 192
@@ -1152,6 +1157,18 @@ citations:
         - authority: nist-sp-800-131ar2
           control: §2
           note: not on the approved list; the cipher itself is RFC 4162
+      sm4:
+        - authority: nist-sp-800-131ar2
+          control: §2
+          note: >-
+            Not on the approved list; a 128-bit block cipher with no known practical break. Its use
+            in TLS 1.3 is RFC 8998
+      kuznyechik:
+        - authority: nist-sp-800-131ar2
+          control: §2
+          note: >-
+            Not on the approved list; GOST R 34.12-2015, a 128-bit block cipher with no known
+            practical break, published as RFC 7801
       idea:
         - authority: nist-sp-800-131ar2
           control: §2
@@ -1167,6 +1184,10 @@ citations:
         - authority: nzism
           control: ch.17 §17.2
           note: approves AES only
+      cast5:
+        - authority: nist-sp-800-131ar2
+          control: §2
+          note: not approved, and a 64-bit block cipher (Sweet32); CAST-128 is RFC 2144
       gost:
         - authority: nist-sp-800-131ar2
           control: §2

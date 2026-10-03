@@ -193,9 +193,9 @@ ALIASES: dict[str, str] = {
 #: Advice for a weak management-plane control the port table has not researched.
 FRONTING_REMEDY = (
     "Where the device offers nothing stronger, the remedy is in path rather than in "
-    "place: put this management service behind a secure access edge (a reverse proxy or "
-    "an outbound-only tunnel agent) and segment the device so that edge is its only "
-    "ingress. That removes the exposure, not the weakness: the service still speaks what "
+    "place: put this management service behind a management network or jump host, or a "
+    "reverse proxy, and segment the device so that path is its only ingress. That removes "
+    "the exposure, not the weakness: the service still speaks what "
     "it speaks, so the segmentation is what has to be delivered.")
 
 # The port table's protocol name for each management-plane control.

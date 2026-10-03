@@ -360,7 +360,7 @@ lifecycle:
   support_status:
     end-of-support:
       - {match: '^build-01\.example\.test$', ends: "2029-12-31"}
-  replaced_by: ['^edge-fw-01\.example\.test$']
+  replaced_by: ['^www\.example\.test$']
   retiring_by: ['^files-01\.example\.test$']
 ```
 

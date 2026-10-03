@@ -3,7 +3,9 @@
 # A target profile says what takestock should collect for one organisation.
 # This one is a worked example: every name is a reserved domain (RFC 2606,
 # RFC 6761) and every address is from a documentation range (RFC 5737,
-# RFC 3849), so nothing here is a real host.
+# RFC 3849), so nothing here is a real host. It is graded against the
+# bundled New Zealand standards (NZISM, Secure Government Email, PSR), which
+# are defaults any organisation can adopt as they are or replace with its own.
 #
 # Run it from the repository root, offline (sends nothing over the network):
 #
@@ -92,7 +94,7 @@ lifecycle:
   # migrated off. Each match marks the row for the disposition rules that
   # read these marks; a weak row is never softened by one. Left empty here:
   # a pattern that matched nothing would be reported as a likely typing slip.
-  #   replaced_by: ['^edge-fw-01\.example\.test$']
+  #   replaced_by: ['^www\.example\.test$']
   #   retiring_by: ['^files-01\.example\.test$']
   replaced_by: []
   retiring_by: []

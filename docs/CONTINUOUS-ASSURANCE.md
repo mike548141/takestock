@@ -554,7 +554,7 @@ should be confident that"* or *"prefer a provider that"*:
 | Standard | What it is | Status | What a customer can reasonably ask for |
 |---|---|---|---|
 | **OSCAL** (NIST) | Machine-readable models for catalogues, profiles, component definitions, system security plans, assessment results and POA&Ms | v1.2.3 (August 2026). FedRAMP agencies must be able to ingest it; ASD publishes the ISM in it | An OSCAL *component definition* mapping the service's capabilities to controls, with the customer and provider responsibilities split, and assessment results in OSCAL or JSON. No NZISM OSCAL catalogue was found, so an NZISM mapping is a matter for negotiation |
-| **OpenID Shared Signals, CAEP, RISC** | Push-based security event streams between cooperating parties. CAEP covers changes relevant to sessions and access; RISC covers account and credential risk | Final specifications (August 2025). CAEP events include session revoked, credential change, device compliance change, assurance level change, token claims change and risk level change | Receiving (and ideally sending) named CAEP events, shown working with the customer's identity provider during a trial |
+| **OpenID Shared Signals, CAEP, RISC** | Push-based security event streams between cooperating parties. CAEP covers changes relevant to sessions and access; RISC covers account and credential risk | Final specifications (August 2025). CAEP events include session revoked, credential change, device compliance change, assurance level change, token claims change and risk level change | Receiving (and ideally sending) named CAEP events, shown working with the customer's identity provider |
 | **OCSF** | An open, vendor-neutral schema for log events | v1.9.0 (August 2026) | Native OCSF output, or a published field-level mapping to it |
 | **CSA STAR** | A cloud assurance registry | The current programme page offers Level 1 (self-assessment) and Level 2 (third-party: attestation through SOC 2, which *"expire[s] after one year unless updated"*, and certification through ISO 27001, which *"expire[s] after three years unless updated"*). A continuous level was announced in 2019, but the current page lists none. NZISM 5.8.37 still says *"As at March 2017, the STAR scheme is still to be fully implemented"* | A Level 2 listing that covers the services in scope. A continuous level cannot be asked for |
 | **SOC 2 Type II** and bridge letters | An auditor's report on control design and operating effectiveness over a period | NZISM 5.8.27: a Type 2 report covers *"a period of at least six consecutive calendar months"*; 5.8.16: a Type 1 report *"is of limited use"*. FedRAMP Class A accepts a SOC 2 Type II within 12 months plus a *"bridge or gap letter"*. That a bridge letter is a management assertion carrying no auditor opinion is **unverified** | A current Type II whose system description names each service and the regions serving the customer; no more than about 12 months between period ends; a bridge letter for any gap; the next report date; exceptions disclosed with the provider's response |
@@ -751,25 +751,20 @@ organisation needs:
 4. **What "and/or" permits**: the continuous model for some systems, or some
    controls within one system, and certification and accreditation for the
    rest. NIST explicitly allows a phased, per-subsystem transition.
-5. **Organisations that adopt the NZISM by choice.** Paragraph 185 binds
-   *"Agencies"*; paragraph 184 binds *"An organisation"*. A non-mandated adopter
-   chooses its own route; whether NCSC NZ will recognise that choice, for
-   example through PSR self-assessment or Minimum Standards reporting, is not
-   known.
-6. **Overseas evidence**: whether New Zealand will accept FedRAMP Key Security
+5. **Overseas evidence**: whether New Zealand will accept FedRAMP Key Security
    Indicator data, IRAP, SOC 2 or ISO evidence, and with what mapping effort.
    NZISM 5.8.46 already notes differences between the AU ISM and the NZISM.
-7. **Baseline templates beyond the hyperscale platforms**: whether GCSB will
+6. **Baseline templates beyond the hyperscale platforms**: whether GCSB will
    extend them to software-as-a-service and other cloud services. If
    not, the organisation's own baseline (item 11 above) carries the load.
-8. **Significant-change thresholds**, for an organisation's own changes and for
+7. **Significant-change thresholds**, for an organisation's own changes and for
    a provider's: whether the chapter will adopt FedRAMP-style classes and
    notice periods, or the AU ISM's one-month floor (ISM-1794).
-9. **Evidence format**: whether New Zealand will name a machine-readable format
+8. **Evidence format**: whether New Zealand will name a machine-readable format
    such as OSCAL or JSON, as FedRAMP does. No NZISM OSCAL catalogue was found.
-10. **The PSR Assurance Framework and Minimum Standards reporting**: whether
-    continuous monitoring outputs will feed NCSC NZ's view of agency
-    performance.
+9. **The PSR Assurance Framework and Minimum Standards reporting**: whether
+   continuous monitoring outputs will feed NCSC NZ's view of agency
+   performance.
 
 Evidence asked of a provider is useful under either route: it reduces the
 effort of reaccreditation under certification and accreditation, and it is

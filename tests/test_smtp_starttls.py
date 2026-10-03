@@ -10,7 +10,7 @@ from probe_helpers import FakeRun, fixture, has, never_run, target
 from takestock.collectors import smtp_starttls, tls_scan
 
 GATEWAY = "mail-01.example.test"
-WHEN = datetime(2026, 10, 15, tzinfo=UTC)
+WHEN = datetime(2030, 3, 15, tzinfo=UTC)
 
 # The stub certificate names web-01.example.test and www.example.test only.
 CERT = fixture("nmap-ssl-cert.txt")
@@ -158,7 +158,7 @@ def test_without_authorisation_nothing_is_contacted(monkeypatch):
 def test_the_row_is_an_active_public_measurement(monkeypatch):
     monkeypatch.setattr(tls_scan, "run", mail_answers())
     [a], _ = smtp_starttls.collect(gateway_target(), ref_time=WHEN)
-    assert (a.source, a.source_class, a.collected_at) == ("smtp_starttls", "public", "2026-10-15")
+    assert (a.source, a.source_class, a.collected_at) == ("smtp_starttls", "public", "2030-03-15")
     assert "Example Hosting" in a.role
 
 

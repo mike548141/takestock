@@ -94,7 +94,7 @@ def test_each_version_is_pinned_and_read(monkeypatch, tmp_path):
                for c in fake.calls)
     kept = (tmp_path / f"openssl-versions-{HOST}-443.txt").read_text()
     assert "TLS session ticket:" in kept
-    assert "0000 - 2c 59" not in kept                      # the ticket's hex dump is gone
+    assert "0000 - 70 f5" not in kept                      # the ticket's hex dump is gone
     assert "Master-Key: <redacted by takestock" in kept
 
 
@@ -156,10 +156,10 @@ def test_a_known_safe_block_is_not_marked():
 # ── the certificate and its expiry ──
 
 @pytest.mark.parametrize(("when", "flag"), [
-    (datetime(2026, 10, 15, tzinfo=UTC), None),
-    (datetime(2026, 12, 18, tzinfo=UTC), "expiry-soon"),
-    (datetime(2026, 12, 25, tzinfo=UTC), "renewal-overdue"),
-    (datetime(2027, 1, 5, tzinfo=UTC), "expired"),
+    (datetime(2030, 3, 15, tzinfo=UTC), None),
+    (datetime(2030, 5, 18, tzinfo=UTC), "expiry-soon"),
+    (datetime(2030, 5, 25, tzinfo=UTC), "renewal-overdue"),
+    (datetime(2030, 6, 5, tzinfo=UTC), "expired"),
 ])
 def test_expiry_flags_follow_the_certificate_lifetime(monkeypatch, when, flag):
     from takestock.model import CryptoAsset
@@ -211,7 +211,7 @@ def test_sni_is_withheld_for_an_address(monkeypatch):
 def test_collect_grades_the_endpoint_through_the_policy(monkeypatch, policy, no_negotiation):
     monkeypatch.setattr(tls_scan, "run", scan_answers())
     assets, failures = tls_scan.collect(target(tls_443=[HOST]),
-                                        ref_time=datetime(2026, 10, 15, tzinfo=UTC))
+                                        ref_time=datetime(2030, 3, 15, tzinfo=UTC))
     assert failures == []
     [a] = assets
     assert (a.host, a.port, a.source, a.internet_facing) == (HOST, "443", "tls_scan", True)

@@ -8,9 +8,9 @@
   Secure Government Email framework;
 - requirements derived from the findings.
 
-It is an **open-source tool** intended for public release. The repository is in
-its first stage: the skeleton and the guard exist, and the tool itself does not
-yet.
+It is an **open-source tool** intended for public release. The tool works end to
+end on the bundled sample organisation, and its command line and file formats
+may still change.
 
 ## 🛑 The rule that outranks everything else here
 

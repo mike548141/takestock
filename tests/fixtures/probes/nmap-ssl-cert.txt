@@ -1,4 +1,4 @@
-# Captured with nmap 7.91 from a loopback stub server (synthetic example.test certificate); the banner line is removed; the Initiating/Completed timing lines are removed.
+# Captured with nmap 7.91 from a loopback stub server (synthetic example.test certificate); the banner line, the Initiating/Completed timing lines, the data-file path line and the other-addresses line are removed.
 Host discovery disabled (-Pn). All addresses will be marked 'up' and scan times will be slower.
 NSE: Loaded 1 scripts for scanning.
 NSE: Script Pre-scanning.
@@ -6,7 +6,7 @@ Scanning localhost (127.0.0.1) [1 port]
 Discovered open port 44330/tcp on 127.0.0.1
 NSE: Script scanning 127.0.0.1.
 Nmap scan report for localhost (127.0.0.1)
-Host is up (0.00014s latency).
+Host is up (0.00054s latency).
 
 PORT      STATE SERVICE
 44330/tcp open  unknown
@@ -16,28 +16,28 @@ PORT      STATE SERVICE
 | Public Key type: rsa
 | Public Key bits: 2048
 | Signature Algorithm: sha256WithRSAEncryption
-| Not valid before: 2026-10-01T16:10:17
-| Not valid after:  2026-12-30T16:10:17
-| MD5:   a391 5f21 9149 bc8f 5337 6773 e907 ca58
-| SHA-1: 9eef 2c6d 5596 95d5 0bb8 5fff 5d23 d5c7 b068 9075
+| Not valid before: 2030-03-01T09:00:00
+| Not valid after:  2030-05-30T09:00:00
+| MD5:   783e dbf1 b00b bfa8 d0fb 5fa0 6c16 54ce
+| SHA-1: d035 3076 13f9 b021 6a9a 559c 5c6b ab99 6fc7 5e33
 | -----BEGIN CERTIFICATE-----
-| MIIC8zCCAdugAwIBAgIJANcFZ4F7UcqEMA0GCSqGSIb3DQEBCwUAMB4xHDAaBgNV
-| BAMME3dlYi0wMS5leGFtcGxlLnRlc3QwHhcNMjYxMDAxMTYxMDE3WhcNMjYxMjMw
-| MTYxMDE3WjAeMRwwGgYDVQQDDBN3ZWItMDEuZXhhbXBsZS50ZXN0MIIBIjANBgkq
-| hkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzDuegh+PNwDL2OZgscGrtCzvo1PHSrkJ
-| I8KhRwn3TyoX8u8SAHOGWWmoAMaO12FFwLuiAHgKonaPMn1hBxtmZcR96V52VXPd
-| uGi5RVifmmE6RK9DXH7rQvb0X3szB9PufUUvDeKUrqrUdcJVTVxytB3KDl33XTZE
-| 5xPkToDfeiKuXDJaQFCFz6Y0wrIRE/1UHw4Hx6lfIYUUXcpsBuS1PpnltEs0yqE2
-| 7QKvwOjhazUTxgDyCuf4qVMdxbhGJdrvhrraUk8brZTnBk0E3cMOF2y+avtwGnKg
-| lFyC1wDFPOVXx+6UGwNIJA1HpecsY7L3er8S2o5AeBh2wbDyYpzGtwIDAQABozQw
-| MjAwBgNVHREEKTAnghN3ZWItMDEuZXhhbXBsZS50ZXN0ghB3d3cuZXhhbXBsZS50
-| ZXN0MA0GCSqGSIb3DQEBCwUAA4IBAQAuLAU/rE2yfDZx+/FNELfvv5DO4gmHy2UP
-| eJebV4atZiWqiHeuc4K7BWb/XxLuXc+HsnuHiXDqklE2QCiyhjX52j3r8DPiMaEp
-| lEHO7Z1SIgwtt5rI/HqBQrPHyeJBHZovjDPdvrhGw5fddadyHsc2FT78DRZkmJUm
-| J9eIjZ/juDJU5+PB4M1mTi3ozPNeZ9vBp49OZ4DTQ+EEGlDmNII9/9dt59fry2Dj
-| y4TQrEJRLjh15RvWLKC5jU3rt5qwLUjkZ4bOkzx7ahwX2aMjISAN4ffwPLJALGvA
-| pPEA7W/UCBUQjzJ6iOTB9EOuCNVbWyjOMNechnMx1zGHmIAq1JFi
+| MIIC6zCCAdOgAwIBAgIBATANBgkqhkiG9w0BAQsFADAeMRwwGgYDVQQDDBN3ZWIt
+| MDEuZXhhbXBsZS50ZXN0MB4XDTMwMDMwMTA5MDAwMFoXDTMwMDUzMDA5MDAwMFow
+| HjEcMBoGA1UEAwwTd2ViLTAxLmV4YW1wbGUudGVzdDCCASIwDQYJKoZIhvcNAQEB
+| BQADggEPADCCAQoCggEBAPcklZ/vdYAP7vL6HJeYSdaffPOl2EJVfY/bfu/FcGqQ
+| V0wAQvTbjnyVfqlAZfagnZHr44ilB8583o2/M65f+8fgPcTxifnQJ0nvTwYWXJiM
+| QstbjxWZhKuCAAQe6CHvUYd2Vg20M7vLz1qsCEJylU2s+PySIRHHa5LIiCUlvEQG
+| hfp4SV29dttDyu/m4C79eSA8fheoQ+f3PAKBDxcVIIw8cK/x43iodsT7RL5RQqei
+| YhhjMvmlqH1qVqE+SzIKK3qJ8XEKH9UaS9QtGd/aDrXI0t8gemC4RhvOAMGkgct7
+| uKs+8fyVdQ+xz2dy4H7xtcHuC1KNFYXwd6kTiOJWJ0cCAwEAAaM0MDIwMAYDVR0R
+| BCkwJ4ITd2ViLTAxLmV4YW1wbGUudGVzdIIQd3d3LmV4YW1wbGUudGVzdDANBgkq
+| hkiG9w0BAQsFAAOCAQEA3HfVQhn5OITjQbvfBhIlhUyorfwFG9ckggzJbApld2r2
+| 8duIj0FaDqZcIYgRbmV5Qr3AsfVL1Ebn7KZnWXBXuYBDP/FZIfByrmeh31wxvVxZ
+| UyGan/ZkNjf3o1uDyvCEWuFVXzlsBReppyYnrLQa+cK+IBoE0VEjDnqrCMRvWD3T
+| t0n1tvuRaVWSMTAaXH9DwR5tLUmDtTwvg3WYw+AhYOGP7t7Ig1bLUeNbYKPNWyuO
+| CTrC3lXixEtbH0RgD6NL2+Gp9XQ3cbRq/4Rn0yGWtlvq/hpj6dy6MjdnH0CImkrl
+| HtwJIvu3PmR6Ag9r1WpZSecN4/1jtD6uND5cXc8u9A==
 |_-----END CERTIFICATE-----
 
 NSE: Script Post-scanning.
-Nmap done: 1 IP address (1 host up) scanned in 0.35 seconds
+Nmap done: 1 IP address (1 host up) scanned in 1.60 seconds

@@ -204,11 +204,11 @@ def test_an_alternate_http_listener_on_8081_is_a_cleartext_finding(port_table):
     assert plaintext.CONVENTION_BASIS in a.notes
 
 
-def test_a_database_listener_on_1522_is_a_gap_not_a_finding(port_table):
-    r = port_table["1522/tcp"]
+def test_a_database_listener_on_1521_is_a_gap_not_a_finding(port_table):
+    r = port_table["1521/tcp"]
     assert (r["protocol"], r["posture"]) == ("oracle-net", "opportunistic")
-    assert port_table["1522"] is r              # one transport, so the bare key exists
-    a = listener("1522")
+    assert port_table["1521"] is r              # one transport, so the bare key exists
+    a = listener("1521")
     assert plaintext.apply_posture(a, port_table, "tcp") == "opportunistic"
     assert a.verdict == "unknown"
     assert a.flags == ["unverified-encryption:oracle-net"]

@@ -42,6 +42,11 @@ says which collector needs which, and how to install them.
 `examples/example-widgets/` is a complete workspace for **Example Widgets
 Ltd**, a fictional manufacturer. Every name in it is a reserved domain and
 every address is from a documentation range, so nothing in it is a real host.
+It is graded against the bundled New Zealand standards (the NZISM, Secure
+Government Email and the Protective Security Requirements), which are
+defaults that any organisation, public or private, can adopt as they are or
+replace with its own (see
+[`docs/TARGET-PROFILE.md`](docs/TARGET-PROFILE.md#bundled-data-and-a-workspaces-data)).
 
 Copy it somewhere and work inside the copy, which makes the copy the
 workspace:

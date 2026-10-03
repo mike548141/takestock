@@ -757,8 +757,8 @@ recorded **on** that names no algorithm stays unknown, flagged
 `algorithms-not-recorded`. A control that names only some of the tables it
 should is flagged `algorithms-partial:<table>`; that flag never changes the
 verdict. A weak management service (`ssh-mgmt`, `tls-mgmt`, `snmp`) carries
-advice on putting it behind a secure access edge where the device offers
-nothing stronger.
+advice on putting it behind a management network or jump host, or a reverse
+proxy, where the device offers nothing stronger.
 
 **Coverage.** `netdev_inbox.expect` lists the device classes the export
 should cover (default: switch, router, firewall, wireless, out-of-band).

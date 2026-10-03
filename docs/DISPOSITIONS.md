@@ -277,16 +277,21 @@ settle is reported as a **question**, never a breach.
 dispensations:
   - id: DSP-01
     match:
-      protocol: ike
-      host_pattern: "^vpn\\.example\\.test$"
+      host_pattern: '^build-01\.example\.test$'
+      protocol: ssh
     controls: ["17.2.19.C.01"]
-    authority: Accreditation Authority (Chief Information Security Officer)
-    reason: The gateway's firmware cannot offer a larger Diffie-Hellman group.
-    multi_agency_effect: None; the gateway serves this organisation only.
-    alternative_mitigations: Access limited to managed devices with certificates.
-    mitigation_strength: Strong for the device population it covers.
-    residual_risk: Low, accepted until the gateway is replaced.
-    review_by: 2030-06
+    authority: Accreditation Authority (Example Widgets Ltd, IT manager)
+    reason: >
+      The build server's operating system ships an SSH server that cannot drop
+      the smaller Diffie-Hellman group, and the server is being retired.
+    multi_agency_effect: None; the build server serves Example Widgets Ltd only.
+    alternative_mitigations: >
+      SSH to the build server is accepted only from the administrators' network.
+    mitigation_strength: >
+      Moderate; it narrows who can reach the weak key exchange, not the
+      exchange itself.
+    residual_risk: Low, accepted until the hosted build service replaces the server.
+    review_by: "2030-06"
 ```
 
 | Field | Required by | Means |

@@ -269,15 +269,13 @@ them. They are not a cryptography standard. Their relevance to takestock is
 procedural: requirements derived from findings can be written into any
 procurement that an agency must run properly under the Rules.
 
-- **Who must apply them.** *Application of the Rules* names, as required to
-  apply them: all Public Service departments, New Zealand Police, the New
-  Zealand Defence Force, and *"Crown agents, Autonomous Crown Entities,
-  Independent Crown Entities, Crown Entity Companies – other companies,
-  Public Finance Act 1989 Schedule 4A companies"*. Crown Research Institutes
-  *"must have regard to the Rules"*. The same page lists the agencies
-  expected or encouraged to apply them, and New Zealand Government
-  Procurement keeps a list of mandated agencies by name. Check the
-  organisation's legal form against both before saying the Rules bind it.
+- **Who must apply them.** *Application of the Rules* names the categories
+  required to apply them: Public Service departments, Police, the Defence
+  Force, and several kinds of Crown entity and Crown company. The same page
+  lists the agencies expected or encouraged to apply them. For whether a
+  particular organisation is covered, use New Zealand Government
+  Procurement's published list of mandated agencies, which names them, rather
+  than reasoning from the categories.
 - **How their words are read.** The Rules overview says that where a rule
   uses *must*, *"the Rule is compulsory. Non-compliance is a breach of the
   Rules"*, and that *expected to* *"indicates an expectation that agencies
