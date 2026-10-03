@@ -34,6 +34,15 @@ and never show conformance. Whether a parked domain publishes a null MX (RFC
 7505) is not a framework requirement; it is reported beside them in
 :attr:`Report.parked`, with the guidance that recommends it.
 
+**Discovered sub-domains that handle mail.** The sub-domain sweep sets aside
+the names that show signs of sending or receiving mail. Those are email domains
+to a receiver, so :func:`evaluate` reads them against SGE-SPF-01, SGE-DMARC-01
+(a name with no DMARC record of its own falls back to the organisational
+record's ``sp=``, ``np=`` or ``p=``) and SGE-DMARC-R05, from the records the
+sweep already holds, in rows marked ``discovered`` whose subject is
+:func:`discovered_mail_subject`. Their MTA-STS, TLS-RPT and DKIM records are
+not read. The names are a floor, so these rows can fail and never pass.
+
 **Sub-domains that do not exist.** RFC 9989 (DMARC, which obsoletes RFC 7489)
 adds the ``np=`` tag, the policy for non-existent sub-domains. Wherever a
 root's DMARC record is read for the names beneath it, an ``np=`` weaker than
@@ -90,6 +99,8 @@ class Conformance:
     subject_note: str = ""
     #: True for a reading of a parked domain (see :func:`parked_domains`).
     parked: bool = False
+    #: True for a reading of sub-domains the sweep found, not domains the profile names.
+    discovered: bool = False
 
     @property
     def breaches_must(self) -> bool:
@@ -680,6 +691,16 @@ def _ned_dmarc_from_sweep(req: dict, assets: list[Any], domain: str,
         source=req["source"], subject_note="; ".join(note))
 
 
+def _control_note(extra: dict) -> str:
+    """Said when the sweep's absence control was trusted because a wildcard answered it."""
+    if extra.get("control_basis") != dnsevidence.CONTROL_WILDCARD:
+        return ""
+    return ("the absence control was answered by the published wildcard with exactly the "
+            "wildcard's record, which a wildcard does for every name that does not exist, so "
+            "each name was read for its own response code and agreed records, a wildcard "
+            "answer being the record a receiver is given for it")
+
+
 _SWEEP_INSTRUMENT = (
     "read from public DNS, each name asked of every configured resolver with "
     "retries, and with a name nobody has registered asked in the same batch so "
@@ -750,16 +771,23 @@ def _eval_ned_records(req: dict, assets: list[Any], domains: list[str],
             if missing else
             f"all {in_scope} enumerated sub-domain name(s) beneath this domain carry "
             f"{expected}",
-            (f"the wildcard {wildcard} carries {expected}, which covers every name beneath "
-             "with no record of its own" if wildcard_ok else
+            (f"the wildcard {wildcard} carries {expected}, which a receiver is given for "
+             "every name beneath that does not exist; a name that exists without a record "
+             "of its own is not covered by it" if wildcard_ok else
              f"no wildcard record is published at {wildcard}, so there is no blanket "
              "control and each name answers only for itself"),
             f"read {extra.get('read_at', '')} via {', '.join(extra.get('resolvers') or [])}",
+            _control_note(extra),
         ]
+        note = [x for x in note if x]
         if sending:
-            note.append(f"excluded as email-enabled on the evidence: {', '.join(sending)}")
+            note.append(f"excluded as email-enabled on the evidence, and graded against the "
+                        f"rules for email domains instead: {', '.join(sending)}")
         if unread:
             note.append(f"NOT READ, so not counted either way: {', '.join(unread)}")
+        if extra.get("names_unsettled"):
+            note.append("RESOLVERS DISAGREED, so not counted either way: "
+                        + ", ".join(extra["names_unsettled"]))
         if extra.get("names_dropped_by_cap"):
             note.append(f"{extra['names_dropped_by_cap']} further name(s) were beyond the "
                         "sweep's ceiling and were not read")
@@ -1555,12 +1583,17 @@ def _ned_dmarc_asset(req: dict, assets: list[Any], domain: str
 
 def _ned_scope_note(extra: dict) -> str:
     note = [f"read {extra.get('read_at', '')} via {', '.join(extra.get('resolvers') or [])}"]
+    if _control_note(extra):
+        note.append(_control_note(extra))
     if extra.get("names_email_enabled"):
         note.append("excluded as email-enabled, so not read for this: "
                     + ", ".join(extra["names_email_enabled"]))
     if extra.get("names_unread"):
         note.append("NOT READ, so not counted either way: "
                     + ", ".join(extra["names_unread"]))
+    if extra.get("names_unsettled"):
+        note.append("RESOLVERS DISAGREED, so not counted either way: "
+                    + ", ".join(extra["names_unsettled"]))
     if extra.get("names_dropped_by_cap"):
         note.append(f"{extra['names_dropped_by_cap']} further name(s) were beyond the "
                     "sweep's ceiling and were not read")
@@ -2035,6 +2068,164 @@ def _parked_readings(assets: list[Any], parked: list[str]) -> list[ParkedDomain]
     return out
 
 
+# ── Discovered sub-domains that handle mail ──────────────────────────────
+
+def discovered_mail_subject(domain: str) -> str:
+    """The subject of a row reading the swept names beneath ``domain`` that handle mail."""
+    return f"mail-handling sub-domains of {domain}"
+
+
+#: Said beside every row reading discovered mail-handling sub-domains.
+DISCOVERED_NOTE = ("discovered: names the sub-domain sweep found beneath this domain in "
+                   "certificate-transparency logs and judged to send or receive mail, not "
+                   "domains the profile names; the list is a floor")
+
+
+def _spf_qualifier(record: str) -> str:
+    """How an SPF record ends, read as the collector reads it: -all, ~all, or neither."""
+    return "~all" if "~all" in record else "-all" if "-all" in record else ""
+
+
+def _discovered_rows(req: dict, assets: list[Any], roots: list[str],
+                     judge: Callable[[str, dict, str], str]) -> list[Conformance]:
+    """One row per root whose sweep holds settled mail-handling names, graded by ``judge``.
+
+    ``judge(name, records, root_record)`` returns why the name falls short, or
+    "" when it meets the requirement. A name short of it fails the row. When
+    every name meets it the row is not measured, never met: the names come
+    from certificate transparency, which is a floor, so any number of names
+    meeting the requirement says nothing about the names not seen. A root
+    whose sweep found no such name gets no row.
+    """
+    rows = []
+    for d in roots:
+        found = _by(assets, "subdomain-mail", d)
+        if not found:
+            continue
+        a = found[0]
+        extra = _get(a, "extra") or {}
+        names: dict[str, dict] = dict(extra.get("names") or {})
+        if not names:
+            continue
+        subject = discovered_mail_subject(d)
+        common = {"evidence": str(_get(a, "name") or ""), "source": req["source"]}
+        if not extra.get("control_usable", False):
+            rows.append(Conformance(
+                req["id"], req["title"], req["level"], req["scope"], subject, NOT_MEASURED,
+                reason=INCONCLUSIVE,
+                evidence=("the sweep's control name answered and no published wildcard "
+                          "explains it, so this run cannot tell a record that is absent from "
+                          "a resolver that did not reply; nothing is graded from it"),
+                source=req["source"], discovered=True))
+            continue
+        root = _by(assets, "dmarc", d)
+        root_record = _dmarc_record(root[0]) if root else ""
+        short = {n: why for n in sorted(names) if (why := judge(n, names[n], root_record))}
+        why_mail = "; ".join(f"{n} {names[n].get('because') or 'handles mail'}"
+                             for n in sorted(names))
+        note = "; ".join(x for x in [
+            f"read {extra.get('read_at', '')} via {', '.join(extra.get('resolvers') or [])}",
+            _control_note(extra), f"why each is read as handling mail: {why_mail}"] if x)
+        if short:
+            rows.append(Conformance(
+                req["id"], req["title"], req["level"], req["scope"], subject, FAIL,
+                observed=f"{len(short)} of {len(names)} short of it",
+                reason="; ".join([
+                    "a sub-domain that handles mail is an email domain to a receiver, so the "
+                    "rule for email domains applies to it: "
+                    + "; ".join(f"{n}: {why}" for n, why in short.items()),
+                    _SWEEP_INSTRUMENT]),
+                record="; ".join(f"{n}: {_discovered_record(req, names[n])}" for n in short),
+                subject_note=note, discovered=True, **common))
+        else:
+            rows.append(Conformance(
+                req["id"], req["title"], req["level"], req["scope"], subject, NOT_MEASURED,
+                reason=NOT_COLLECTED, observed=f"all {len(names)} read meet it",
+                evidence=(f"every mail-handling sub-domain read ({', '.join(sorted(names))}) "
+                          "meets it, and that is not the same as every one doing so: "
+                          + _SWEEP_POPULATION + ". No verdict is claimed in either direction"),
+                source=req["source"], subject_note=note, discovered=True))
+    return rows
+
+
+def _discovered_record(req: dict, records: dict) -> str:
+    key = "spf_record" if req["id"].startswith("SGE-SPF") else "dmarc_record"
+    return str(records.get(key) or "none published")
+
+
+def _judge_spf(name: str, records: dict, root_record: str) -> str:
+    spf = str(records.get("spf_record") or "")
+    if not spf:
+        return "publishes no v=spf1 record, so no sender is denied"
+    ends = _spf_qualifier(spf)
+    return ("" if ends == "-all" else
+            "its record ends ~all (softfail), and the standard requires -all" if ends else
+            "its record ends neither -all nor ~all, so no sender is denied")
+
+
+def _judge_dmarc(name: str, records: dict, root_record: str) -> str:
+    """SGE-DMARC-01 on one name: its own record, or the organisational record it falls back to.
+
+    A name with no DMARC record of its own is not failed for that alone. A
+    receiver applies the organisational domain's record to it: its ``sp=``
+    for a name that exists, its ``np=`` for one that does not, and ``p=``
+    when those are absent (RFC 9989 §4.7).
+    """
+    own = str(records.get("dmarc_record") or "")
+    if own:
+        tags = _dmarc_tags(own)
+        if _rejects(tags, "p"):
+            return ""
+        return (f"its own record reads p={tags.get('p') or 'absent'}"
+                + (f", pct={tags['pct']}" if tags.get("pct") else "")
+                + "; the standard requires p=reject on all of its failing mail")
+    if not root_record:
+        return ("publishes no DMARC record of its own, and the organisational domain "
+                "publishes none for it to fall back to")
+    key = "sp" if records.get("exists", True) else "np"
+    tags = _dmarc_tags(root_record)
+    if _rejects(tags, key):
+        return ""
+    policy = next((f"{k}={tags[k]}" for k in _POLICY_FALLBACK[key] if tags.get(k)), "no policy")
+    return (f"publishes no DMARC record of its own, so a receiver applies the organisational "
+            f"record's {key}= policy (falling back as RFC 9989 §4.7 says), which reads "
+            f"{policy}; the standard requires p=reject")
+
+
+def _judge_sp_tag(name: str, records: dict, root_record: str) -> str:
+    own = str(records.get("dmarc_record") or "")
+    sp = _dmarc_tags(own).get("sp", "")
+    return (f"its own record sets sp={sp}, which the DMARC guide says should only ever be set "
+            "on organisation level domains — a recommendation unmet, not a requirement "
+            "breached" if sp else "")
+
+
+#: The judge for each requirement read on discovered mail-handling sub-domains. A
+#: first cut from the records the sweep already holds (SPF, DMARC and MX); the
+#: MTA-STS, TLS-RPT and DKIM records of these names are not read.
+_DISCOVERED_JUDGES: dict[str, Callable[[str, dict, str], str]] = {
+    "SGE-SPF-01": _judge_spf,
+    "SGE-DMARC-01": _judge_dmarc,
+    "SGE-DMARC-R05": _judge_sp_tag,
+}
+
+#: The requirements discovered mail-handling sub-domains are read against.
+DISCOVERED_REQUIREMENTS: tuple[str, ...] = tuple(_DISCOVERED_JUDGES)
+
+
+def _discovered_requirement_rows(req: dict, assets: list[Any], domains: list[str],
+                                 parked: list[str]) -> list[Conformance]:
+    """Rows for ``req`` on the mail-handling sub-domains beneath email and parked domains."""
+    judge = _DISCOVERED_JUDGES.get(req["id"])
+    if judge is None or req.get("measurable") != "observed":
+        return []
+    rows = _discovered_rows(req, assets, list(domains), judge)
+    beneath_parked = _discovered_rows(req, assets, list(parked), judge)
+    for row in [*rows, *beneath_parked]:
+        row.subject_note = "; ".join(x for x in (DISCOVERED_NOTE, row.subject_note) if x)
+    return rows + _as_parked(beneath_parked)
+
+
 #: The evaluator for each observable requirement.
 _EVALUATORS: dict[str, Callable[..., list[Conformance]]] = {
     "SGE-SPF-01": _eval_spf,
@@ -2095,7 +2286,10 @@ def evaluate(assets: list[Any], domains: list[str], standard: dict | None = None
     each is read against the requirements for such domains, in rows marked
     ``parked``, and its null MX reading goes in :attr:`Report.parked`. The
     swept names beneath each are read in further rows marked ``parked``, with
-    :func:`parked_subdomains_subject` as their subject.
+    :func:`parked_subdomains_subject` as their subject. Swept names beneath an
+    email or parked domain that handle mail are read against the rules for
+    email domains, in rows marked ``discovered`` with
+    :func:`discovered_mail_subject` as their subject.
     """
     std = standard or load_standard()
     parked = list(parked)
@@ -2124,6 +2318,7 @@ def evaluate(assets: list[Any], domains: list[str], standard: dict | None = None
             rows.extend(fn(req, assets, domains, bulk_mail_domains))
         else:
             rows.extend(fn(req, assets, domains))
+        rows.extend(_discovered_requirement_rows(req, assets, domains, parked))
         rows.extend(parked_rows)
     cites = {r["id"]: citation(std, r) for r in std.get("requirements", [])}
     for row in rows:
@@ -2189,7 +2384,8 @@ def _format(report: Report, domains: list[str]) -> str:
     ]
     mark = {PASS: "PASS", FAIL: "FAIL", NOT_MEASURED: "----"}
     for row in report.rows:
-        subject = (row.subject or "(organisation)") + (" (parked)" if row.parked else "")
+        subject = ((row.subject or "(organisation)") + (" (parked)" if row.parked else "")
+                   + (" (discovered)" if row.discovered else ""))
         line = f"{mark[row.status]}  {row.requirement:<16} {subject:<26} {row.observed[:44]}"
         out.append(line.rstrip())
         if row.status == NOT_MEASURED:

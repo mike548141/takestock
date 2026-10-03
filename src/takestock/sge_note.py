@@ -149,7 +149,8 @@ def _sentence(text: str) -> str:
 
 
 def _subject(row: sge.Conformance) -> str:
-    return (row.subject or "the organisation") + (" (parked)" if row.parked else "")
+    return ((row.subject or "the organisation") + (" (parked)" if row.parked else "")
+            + (" (discovered)" if row.discovered else ""))
 
 
 def _badge(status: str) -> str:
@@ -216,12 +217,13 @@ class _Note:
         discovered = (target.get("discovery") or {}).get("email_domains") or []
         self.domains = [str(d) for d in discovered] or sorted({
             r.subject for r in results.rows
-            if r.scope in ("email-domain", "non-email-domain") and r.subject and not r.parked})
+            if r.scope in ("email-domain", "non-email-domain") and r.subject and not r.parked
+            and not r.discovered})
         beneath = sge.parked_subdomains_subject("")
         self.parked = list(results.parked) or [
             sge.ParkedDomain(d) for d in dict.fromkeys(
                 r.subject for r in results.rows
-                if r.parked and not r.subject.startswith(beneath))]
+                if r.parked and not r.discovered and not r.subject.startswith(beneath))]
 
     def levels(self) -> list[str]:
         seen = [str(self.reqs[rid].get("level") or "") for rid in self.order]

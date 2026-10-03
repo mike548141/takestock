@@ -379,6 +379,87 @@ def test_a_swept_name_that_does_not_exist_falls_back_to_np():
     assert row.observed.startswith("2 of 2")
 
 
+def test_a_wildcard_explained_control_lets_the_sweep_grade():
+    row = one("SGE-NED-SPF-01", [ned("ned-spf", ["node.example.com"],
+                                     control_basis="wildcard")])
+    assert row.status == sge.FAIL and "answered by the published wildcard" in row.subject_note
+    assert "answered by the published wildcard" not in one(
+        "SGE-NED-SPF-01", [ned("ned-spf", ["node.example.com"])]).subject_note
+
+
+# ── Discovered sub-domains that handle mail ───────────────────────────
+
+SUBJECT = sge.discovered_mail_subject(D)
+
+
+def mail_subs(names: dict, usable: bool = True) -> dict:
+    return {"name": f"Mail-handling sub-domains of {D}", "protocol": "subdomain-mail",
+            "host": D, "extra": {"control_usable": usable, "read_at": "t",
+                                 "resolvers": ["192.0.2.53"], "names": names}}
+
+
+def sub(spf: str = "v=spf1 -all", dmarc: str = "", exists: bool = True) -> dict:
+    return {"spf_record": spf, "dmarc_record": dmarc, "mx_records": ["10 mx.example.net."],
+            "exists": exists, "because": "publishes an MX record"}
+
+
+def discovered(req_id: str, assets: list):
+    [row] = [r for r in rows_for(req_id, assets) if r.subject == SUBJECT]
+    assert row.discovered and sge.DISCOVERED_NOTE in row.subject_note
+    return row
+
+
+def test_a_discovered_mail_sub_domain_is_graded_against_the_email_domain_spf_rule():
+    assets = [mail_subs({"mail.example.com": sub("v=spf1 mx ~all"),
+                         "out.example.com": sub()})]
+    row = discovered("SGE-SPF-01", assets)
+    assert (row.status, row.observed) == (sge.FAIL, "1 of 2 short of it") and row.breaches_must
+    assert "mail.example.com: its record ends ~all" in row.reason
+    assert "out.example.com" not in row.reason
+    # Every name read meeting it settles nothing: the names are a floor.
+    clean = discovered("SGE-SPF-01", [mail_subs({"out.example.com": sub()})])
+    assert (clean.status, clean.reason) == (sge.NOT_MEASURED, sge.NOT_COLLECTED)
+    assert "(discovered)" in sge._format(sge.evaluate(assets, [D], STD), [D])
+
+
+def test_a_discovered_name_without_dmarc_falls_back_to_the_organisational_record():
+    assets = [mail_subs({"mail.example.com": sub()})]
+    # No record of its own is not a failure by itself: p=reject at the root covers it.
+    row = discovered("SGE-DMARC-01", [dmarc("v=DMARC1; p=reject"), *assets])
+    assert row.status == sge.NOT_MEASURED
+    row = discovered("SGE-DMARC-01", [dmarc("v=DMARC1; p=reject; sp=quarantine"), *assets])
+    assert row.status == sge.FAIL and "sp=quarantine" in row.reason
+    # A name that does not exist falls back to np= instead.
+    gone = [mail_subs({"old.example.com": sub(exists=False)})]
+    row = discovered("SGE-DMARC-01", [dmarc("v=DMARC1; p=reject; np=none"), *gone])
+    assert row.status == sge.FAIL and "np=none" in row.reason
+    # No record anywhere is a failure; so is a record of its own short of reject.
+    assert discovered("SGE-DMARC-01", assets).status == sge.FAIL
+    own = [mail_subs({"mail.example.com": sub(dmarc="v=DMARC1; p=none")})]
+    row = discovered("SGE-DMARC-01", [dmarc("v=DMARC1; p=reject"), *own])
+    assert row.status == sge.FAIL and "p=none" in row.reason
+
+
+def test_a_discovered_name_setting_sp_is_a_recommendation_unmet():
+    own = [mail_subs({"mail.example.com": sub(dmarc="v=DMARC1; p=reject; sp=reject")})]
+    row = discovered("SGE-DMARC-R05", own)
+    assert row.status == sge.FAIL and not row.breaches_must
+
+
+def test_no_discovered_row_without_mail_handling_names_and_none_graded_on_a_bad_control():
+    assert not [r for r in rows_for("SGE-SPF-01", [mail_subs({})]) if r.discovered]
+    row = discovered("SGE-SPF-01", [mail_subs({"mail.example.com": sub("")}, usable=False)])
+    assert (row.status, row.reason) == (sge.NOT_MEASURED, sge.INCONCLUSIVE)
+
+
+def test_mail_handling_names_beneath_a_parked_domain_are_marked_parked_and_discovered():
+    assets = [{**mail_subs({"mail.example.com": sub("")}), "host": "example.org"}]
+    report = sge.evaluate(assets, [], STD, parked=["example.org"])
+    [row] = [r for r in report.rows if r.requirement == "SGE-SPF-01"]
+    assert (row.subject, row.parked, row.discovered, row.status) == (
+        sge.discovered_mail_subject("example.org"), True, True, sge.FAIL)
+
+
 # ── TLS on the mail path ──────────────────────────────────────────────
 
 def gateway(host: str, versions: list[str], flags: list[str] | None = None) -> dict:

@@ -15,9 +15,12 @@ Two passive readings, neither of which touches the organisation's hosts:
   it reads MX, SPF, DMARC, MTA-STS (record and policy file), TLS-RPT and the
   DKIM keys under each selector tried, and then sweeps the sub-domain names
   the transparency read found for the denying SPF, empty DKIM and DMARC
-  records a name that sends no mail should publish. A record the resolvers
-  settle as missing is written as a row saying so (a measured absence); a
-  lookup that does not settle is a failure, and claims nothing either way.
+  records a name that sends no mail should publish. The swept names that show
+  signs of handling mail are kept in a row of their own, with their SPF, DMARC
+  and MX records, to be read against the rules for email domains. A record the
+  resolvers settle as missing is written as a row saying so (a measured
+  absence); a lookup that does not settle is a failure, and claims nothing
+  either way.
 * **Parked domains.** For each domain under ``discovery.domains`` that is not
   under ``discovery.email_domains`` (see
   :func:`takestock.dnsevidence.parked_domains`) it reads SPF, DMARC, the
@@ -999,29 +1002,46 @@ NED_SPF = "ned-spf"
 NED_DKIM = "ned-dkim"
 NED_DMARC = "ned-dmarc"
 
+#: Protocol of the row holding the records of the swept names that handle mail,
+#: which are graded against the rules for email domains rather than these.
+SUBDOMAIN_MAIL = "subdomain-mail"
+
 
 def _ned_assets(domain: str, names: list[str],
                 ref_time: datetime | None = None,
                 resolvers: tuple[str, ...] = ("",),
                 parked: bool = False) -> list[CryptoAsset]:
-    """Three rows summarising a sub-domain sweep: SPF, DKIM, and DMARC on each name."""
+    """The rows summarising a sub-domain sweep (see :func:`ned_rows`)."""
     cap = dnsevidence.capture_subdomains(domain, names, resolvers)
     return ned_rows(domain, cap, ref_time, parked)
 
 
 def ned_rows(domain: str, cap: dict, ref_time: datetime | None = None,
              parked: bool = False) -> list[CryptoAsset]:
-    """The three sub-domain rows from a :func:`dnsevidence.capture_subdomains` result.
+    """The sub-domain rows from a :func:`dnsevidence.capture_subdomains` result.
 
-    ``extra.names_nonexistent`` lists the names in scope that came back NXDOMAIN:
-    a receiver applies a parent's ``np=`` policy to those (RFC 9989 §4.7), and
-    its ``sp=`` policy to names that exist. ``parked`` sets ``extra.parked`` on
+    Three rows (SPF, DKIM and DMARC) read the names that show no sign of handling
+    mail, and a :data:`SUBDOMAIN_MAIL` row holds, in ``extra.names``, the SPF,
+    DMARC and MX records of each name that does, with why it was judged to.
+    Only a settled name (every lookup answered, the resolvers agreeing) is
+    counted either way; the others are listed in ``extra.names_unread`` and
+    ``extra.names_unsettled``. ``extra.names_nonexistent`` lists the names in
+    scope that came back NXDOMAIN: a receiver applies a parent's ``np=``
+    policy to those (RFC 9989 §4.7), and its ``sp=`` policy to names that
+    exist. ``extra.control_basis`` says why the absence control was trusted
+    (:func:`dnsevidence.control_reading`). ``parked`` sets ``extra.parked`` on
     each row, for the sweep beneath a parked domain.
     """
     collected_at = now_date(ref_time)
-    in_scope = [r for r in cap["subdomains"] if not r["email_enabled"] and r["read"]]
-    sending = [r["name"] for r in cap["subdomains"] if r["email_enabled"]]
+
+    def settled(r: dict) -> bool:
+        return bool(r.get("settled", r["read"] and r.get("agreed", True)))
+
+    in_scope = [r for r in cap["subdomains"] if not r["email_enabled"] and settled(r)]
+    mail = [r for r in cap["subdomains"] if r["email_enabled"] and settled(r)]
+    sending = [r["name"] for r in mail]
     unread = [r["name"] for r in cap["subdomains"] if not r["read"]]
+    unsettled = [r["name"] for r in cap["subdomains"] if r["read"] and not settled(r)]
     shared = {
         "resolvers": cap["resolvers"],
         "tries": cap["tries"],
@@ -1029,10 +1049,12 @@ def ned_rows(domain: str, cap: dict, ref_time: datetime | None = None,
         "control_name": cap["control"]["name"],
         "control_rcode": cap["control"]["rcode"],
         "control_usable": cap["control"]["usable"],
+        "control_basis": cap["control"].get("basis", ""),
         "names_offered": cap["names_offered"],
         "names_dropped_by_cap": cap["names_dropped_by_cap"],
         "names_read": len(cap["subdomains"]) - len(unread),
         "names_unread": unread,
+        "names_unsettled": unsettled,
         "names_in_scope": len(in_scope),
         "names_resolving": sum(1 for r in in_scope if r["exists"]),
         "names_nonexistent": sorted(r["name"] for r in in_scope if not r["exists"]),
@@ -1089,5 +1111,21 @@ def ned_rows(domain: str, cap: dict, ref_time: datetime | None = None,
             "names_with_sp_tag": with_sp_tag,
             "dmarc_records": {r["name"]: r["dmarc_record"] for r in in_scope
                               if r.get("dmarc_record")},
+        }, **common))
+
+    out.append(CryptoAsset(
+        name=f"Mail-handling sub-domains of {domain}",
+        role=roles.email_record(SUBDOMAIN_MAIL, domain), protocol=SUBDOMAIN_MAIL,
+        notes=(f"{len(mail)} enumerated sub-domain name(s) show signs of handling mail: "
+               + ", ".join(sending) if mail else
+               "no enumerated sub-domain name shows signs of handling mail"),
+        extra={
+            **shared,
+            "names": {r["name"]: {"spf_record": r.get("spf_record", ""),
+                                  "dmarc_record": r.get("dmarc_record", ""),
+                                  "mx_records": list(r.get("mx_records") or []),
+                                  "exists": r["exists"],
+                                  "because": r.get("email_enabled_because", "")}
+                      for r in mail},
         }, **common))
     return out

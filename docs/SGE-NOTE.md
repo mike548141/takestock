@@ -171,9 +171,17 @@ settles the requirement as **not met**, while any number of names carrying it
 leaves it **not measured**. These readings can report a breach and can never
 report conformance.
 
-The sweep also asks for a name nobody has registered in the same batch. If
-that control name answers, the run cannot tell an absent record from a
-resolver that did not reply, and nothing is graded from it.
+The sweep also asks for a name nobody has registered in the same batch. It
+should come back NXDOMAIN. A published wildcard (`*.<domain>`) answers it too,
+because a wildcard answers for every name that does not exist; when the control's
+answer is exactly the wildcard's record, the resolvers agree, and they are seen
+returning real TXT records, the wildcard explains it and the sweep still grades.
+Each name is then read for its own response code and agreed records, a wildcard
+answer being the record a receiver is given for that name, so a compliant
+`*.<domain>` record of `v=spf1 -all` counts for every name it answers. If the
+control answers and no wildcard explains it, the run cannot tell an absent
+record from a resolver that did not reply, and nothing is graded from it. A
+name whose resolvers gave different records is listed and counted neither way.
 
 ## What evidence settles each requirement
 
@@ -258,6 +266,28 @@ not read are listed as not read, so not counted either way. The same rows are
 read beneath each parked domain, with the subject *sub-domains of* the domain;
 there the parked domain's own `sp=` and `np=` are graded on its own row, so
 SGE-NED-DMARC-01 beneath it reads only the swept names.
+
+### Read on discovered sub-domains that handle mail
+
+The sweep sets aside the names that show signs of handling mail: they publish
+MX, the parent's sender policy names them, or their own sender policy
+authorises senders. To a receiver those are email domains, so they are read
+against the rules for email domains, one row per parent domain, with the
+subject *mail-handling sub-domains of* the parent, marked *(discovered)*
+rather than taken from the profile. This is a first cut, read from the SPF,
+DMARC and MX records the sweep already holds; their MTA-STS, TLS-RPT and DKIM
+records are not read.
+
+| Requirement | Level | Not met when | Otherwise |
+|---|---|---|---|
+| SGE-SPF-01 SPF ending `-all` | must | a name publishes no SPF record, or one ending `~all` or neither | not measured |
+| SGE-DMARC-01 `p=reject` | must | a name's own DMARC record does not reject all failing mail; or it has none and the parent's record it falls back to (`sp=` for a name that exists, `np=` for one that does not, then `p=`) does not; or neither publishes one | not measured |
+| SGE-DMARC-R05 `sp=` only on organisational domains | recommended | a name's own DMARC record sets `sp=` | not measured |
+
+A name without a DMARC record of its own is not failed for that alone, because
+a receiver applies the parent's record to it. As with every sweep, the names
+are a floor, so these rows can fail and never pass. A parent whose sweep found
+no such name has no row.
 
 ### Read from the mail hosts
 

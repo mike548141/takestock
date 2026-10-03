@@ -117,6 +117,10 @@ _EMAIL_ROLES = {
     "ned-dmarc": "Fraud policy records on the sub-domains of {domain} — whether each name "
                  "beneath it publishes its own sp= tag, which the standard says should "
                  "only ever appear at the organisational level",
+    # Names beneath the domain that show signs of handling mail.
+    "subdomain-mail": "Mail-handling sub-domains of {domain} — names beneath it that send or "
+                      "receive mail, read for the sender policy and fraud policy an email "
+                      "domain must publish",
 }
 
 

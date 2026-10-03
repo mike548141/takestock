@@ -289,9 +289,10 @@ def test_one_resolver_failing_while_another_answers_is_not_an_absence(monkeypatc
 
 
 def _sub(name: str, *, enabled: bool = False, spf: bool = True, dkim: bool = True,
-         dmarc: str = "", read: bool = True) -> dict:
+         dmarc: str = "", read: bool = True, agreed: bool = True, **more) -> dict:
     return {"name": name, "email_enabled": enabled, "read": read, "exists": True,
-            "spf_conformant": spf, "dkim_conformant": dkim, "dmarc_record": dmarc}
+            "agreed": agreed, "spf_conformant": spf, "dkim_conformant": dkim,
+            "dmarc_record": dmarc, **more}
 
 
 def test_sub_domain_rows_from_a_sweep():
@@ -317,6 +318,35 @@ def test_sub_domain_rows_from_a_sweep():
     assert spf.extra["names_email_enabled"] == ["c.example.com"]
     assert spf.extra["names_unread"] == ["d.example.com"]
     assert dmarc.extra["names_with_sp_tag"] == ["b.example.com"]
+
+
+def test_mail_handling_names_get_a_row_and_unsettled_names_are_counted_neither_way():
+    cap = {
+        "resolvers": ["192.0.2.53", "198.51.100.53"], "tries": 3,
+        "captured_at": "2030-06-15T00:00:00Z",
+        "control": {"name": "x", "rcode": "NOERROR", "usable": True, "basis": "wildcard"},
+        "names_offered": 3, "names_dropped_by_cap": 0,
+        "wildcard_spf": {"name": "*.example.com", "record": "v=spf1 -all", "rcode": "NOERROR",
+                         "agreed": True},
+        "wildcard_dkim": {"name": "*._domainkey.example.com", "record": "",
+                          "rcode": "NXDOMAIN", "agreed": True},
+        "subdomains": [
+            _sub("a.example.com"),
+            _sub("mail.example.com", enabled=True, spf=False,
+                 spf_record="v=spf1 mx ~all", mx_records=["10 mx.example.net."],
+                 email_enabled_because="publishes an MX record"),
+            _sub("split.example.com", agreed=False, spf=False),
+        ],
+    }
+    rows = {a.protocol: a for a in ct_dns.ned_rows("example.com", cap, NOW)}
+    spf, mail = rows["ned-spf"], rows[ct_dns.SUBDOMAIN_MAIL]
+    assert spf.extra["names_in_scope"] == 1 and spf.extra["names_without_record"] == []
+    assert spf.extra["names_unsettled"] == ["split.example.com"]
+    assert spf.extra["control_basis"] == "wildcard"
+    assert mail.name == "Mail-handling sub-domains of example.com" and mail.role
+    assert mail.extra["names"] == {"mail.example.com": {
+        "spf_record": "v=spf1 mx ~all", "dmarc_record": "", "exists": True,
+        "mx_records": ["10 mx.example.net."], "because": "publishes an MX record"}}
 
 
 def test_only_the_domain_and_names_beneath_it_are_kept(monkeypatch):

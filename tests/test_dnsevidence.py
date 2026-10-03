@@ -117,15 +117,69 @@ def test_the_sweep_scopes_names_and_checks_its_control(monkeypatch):
     assert "sender.example.com" not in {r["name"] for r in capped["subdomains"]}
 
 
-def test_a_wildcard_answering_everything_spoils_the_control(monkeypatch):
-    fake = _status_reader({(f"{dnsevidence.CONTROL_LABEL}.example.com", "TXT"):
-                           ("NOERROR", ['"v=spf1 -all"'])})
+CONTROL = f"{dnsevidence.CONTROL_LABEL}.example.com"
+
+
+def _sweep(monkeypatch, table: dict, names: list[str] | None = None) -> dict:
+    fake = _status_reader(table)
     monkeypatch.setattr(dnsevidence, "corroborate", fake)
     monkeypatch.setattr(dnsevidence, "corroborate_status", fake)
-    cap = dnsevidence.capture_subdomains("example.com", [], ("192.0.2.53",))
-    assert not cap["control"]["usable"]
+    return dnsevidence.capture_subdomains("example.com", names or [], ("192.0.2.53",))
+
+
+def test_an_answer_at_the_control_that_no_wildcard_explains_spoils_it(monkeypatch):
+    # Nothing is published at *.example.com, yet the control answers.
+    cap = _sweep(monkeypatch, {(CONTROL, "TXT"): ("NOERROR", ['"v=spf1 -all"'])})
+    assert not cap["control"]["usable"] and cap["control"]["basis"] == ""
     text = "\n".join(dnsevidence.subdomain_transcript([cap]))
     assert "THIS SHOULD HAVE BEEN NXDOMAIN" in text
+    # A wildcard is published, but the control's answer is not the wildcard's.
+    cap = _sweep(monkeypatch, {("*.example.com", "TXT"): ("NOERROR", ['"v=spf1 -all"']),
+                               (CONTROL, "TXT"): ("NOERROR", ['"v=spf1 ~all"'])})
+    assert not cap["control"]["usable"]
+
+
+def test_a_published_wildcard_explains_the_control_and_each_name_is_read_for_itself(
+        monkeypatch):
+    wild = ("NOERROR", ['"v=spf1 -all"'])
+    table = {("*.example.com", "TXT"): wild, (CONTROL, "TXT"): wild,
+             # A name with no node of its own is given the wildcard's record ...
+             ("quiet.example.com", "TXT"): wild,
+             # ... and a name that exists with no TXT record is not.
+             ("node.example.com", "TXT"): ("NOERROR", [])}
+    cap = _sweep(monkeypatch, table, ["quiet.example.com", "node.example.com"])
+    assert cap["control"]["usable"] and cap["control"]["basis"] == dnsevidence.CONTROL_WILDCARD
+    by = {r["name"]: r for r in cap["subdomains"]}
+    assert by["quiet.example.com"]["spf_conformant"]
+    assert not by["node.example.com"]["spf_conformant"] and by["node.example.com"]["settled"]
+    text = "\n".join(dnsevidence.subdomain_transcript([cap]))
+    assert "answered with the wildcard's own record" in text
+
+
+def test_an_empty_wildcard_explains_the_control_only_once_real_records_are_seen(monkeypatch):
+    # A wildcard with no TXT record answers NOERROR with nothing, which is also what a
+    # resolver answering nothing to every question would say.
+    empty = ("NOERROR", [])
+    table = {("*.example.com", "TXT"): empty, (CONTROL, "TXT"): empty}
+    assert not _sweep(monkeypatch, table)["control"]["usable"]
+    table[("example.com", "TXT")] = ("NOERROR", ['"v=spf1 -all"'])
+    assert _sweep(monkeypatch, table)["control"]["basis"] == dnsevidence.CONTROL_WILDCARD
+
+
+def test_a_name_whose_resolvers_disagree_is_not_settled(monkeypatch):
+    def fake(name: str, rtype: str, resolvers: tuple[str, ...] = ("",)) -> Corroborated:
+        answers = {"192.0.2.53": ['"v=spf1 -all"'], "198.51.100.53": []}
+        if name != "split.example.com" or rtype != "TXT":
+            return Corroborated(name, rtype, [Lookup(name, rtype, r, "t", rcode="NXDOMAIN")
+                                              for r in resolvers])
+        return Corroborated(name, rtype, [Lookup(name, rtype, r, "t", answers=answers[r],
+                                                 rcode="NOERROR") for r in resolvers])
+    monkeypatch.setattr(dnsevidence, "corroborate", fake)
+    monkeypatch.setattr(dnsevidence, "corroborate_status", fake)
+    cap = dnsevidence.capture_subdomains("example.com", ["split.example.com"],
+                                         ("192.0.2.53", "198.51.100.53"))
+    [rec] = cap["subdomains"]
+    assert rec["read"] and not rec["agreed"] and not rec["settled"]
 
 
 def test_active_transport_probing_needs_an_authorisation_stanza():

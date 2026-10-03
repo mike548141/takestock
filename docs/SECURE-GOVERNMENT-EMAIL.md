@@ -242,7 +242,33 @@ record, which a receiver applies to it. As with every sweep, the names are a
 floor: a name without the required record is a breach, and any number of names
 carrying it settles nothing, so these rows can fail and never pass. A name the
 sweep finds sending mail (it publishes MX, is named in the parent's sender
-policy, or authorises senders) is excluded from them and listed in the note.
+policy, or authorises senders) is excluded from them and graded against the
+rules for email domains instead (below).
+
+**Sub-domains that handle mail.** A name beneath an email or parked domain that
+publishes MX, is named in the parent's sender policy, or publishes a sender
+policy authorising senders is, to a receiver, an email domain. takestock grades
+these names against SGE-SPF-01, SGE-DMARC-01 and SGE-DMARC-R05, from the SPF,
+DMARC and MX records the sweep already holds, in rows marked *(discovered)*
+whose subject is *mail-handling sub-domains of* the parent. A name with no DMARC
+record of its own falls back to the parent's record, as a receiver applies it:
+its `sp=` for a name that exists, its `np=` for one that does not, then its
+`p=`. Their MTA-STS, TLS-RPT and DKIM records are not read in this first cut.
+The names are a floor, so these rows can fail and never pass.
+
+**Wildcards and the absence control.** Each sweep asks, in the same batch, for
+a name nobody registers, which should come back NXDOMAIN; if it answers, the
+resolvers may not be telling absences apart. A published wildcard answers that
+name too. When the control's answer is exactly the wildcard's record, the
+resolvers agree, and they are seen returning real TXT records, takestock treats
+the wildcard as explaining it, and reads each name for its own response code and
+agreed records, a wildcard answer being that name's effective record. A
+wildcard `*.<domain>` carrying `v=spf1 -all` is therefore graded as the
+compliant record it is, for every name it answers; a name that exists with no
+record of its own is not covered by a wildcard, and is read as missing it. An
+answer at the control that no wildcard explains still stops the batch from
+being graded in either direction. A name whose resolvers gave different records
+is counted neither way.
 
 **An observation whose rows are not marked parked.** The DNS collector marks
 each reading of a parked domain `extra.parked`. An observation taken while the

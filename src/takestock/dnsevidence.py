@@ -194,8 +194,14 @@ SWEEP_TIMEOUT = 8
 SWEEP_WORKERS = 6
 
 #: A label nobody registers, asked in the same batch as the real names: it
-#: must come back NXDOMAIN, or absences in that batch cannot be trusted.
+#: must come back NXDOMAIN, or be answered by a wildcard the batch also read,
+#: or absences in that batch cannot be trusted (see :func:`control_reading`).
 CONTROL_LABEL = "takestock-absence-control"
+
+#: Why a sweep's absence control is trusted: it came back NXDOMAIN, or a
+#: published wildcard answered it with exactly the wildcard's own record.
+CONTROL_NXDOMAIN = "nxdomain"
+CONTROL_WILDCARD = "wildcard"
 
 # dig prints some types under another name: an HTTPS query is shown as TYPE65
 # by older versions.
@@ -442,6 +448,15 @@ class SubdomainRecords:
         return self.rcode != "NXDOMAIN"
 
     @property
+    def settled(self) -> bool:
+        """True when every lookup for the name was answered and the resolvers agreed.
+
+        Only a settled name is counted either way. A name whose resolvers gave
+        different records has no one answer to grade.
+        """
+        return self.read and self.agreed
+
+    @property
     def spf_conformant(self) -> bool:
         return is_denying_spf(self.spf_record)
 
@@ -501,6 +516,46 @@ def _corroborated_block(q: Corroborated, prefix: str) -> dict:
     }
 
 
+def control_reading(control: Corroborated, wildcard: Corroborated,
+                    own: Corroborated) -> tuple[bool, str]:
+    """Whether a sweep's absence control may be trusted, and on what basis.
+
+    The control asks for a label nobody registers. When it comes back
+    NXDOMAIN, the resolvers are telling absences apart, and every name's
+    answer in the batch means what it says (:data:`CONTROL_NXDOMAIN`).
+
+    A published wildcard (``*.<domain>``) answers the control too, because a
+    wildcard answers for every name beneath that does not exist. That answer
+    is explained, and the control is trusted (:data:`CONTROL_WILDCARD`), when
+    all of these hold: the control and the wildcard both come back NOERROR,
+    the resolvers agree on each, the control's records are exactly the
+    wildcard's, and the resolvers are seen returning real TXT records (the
+    wildcard's own, or the domain's). Each name is then read for what it
+    is: its own response code and its agreed records, a wildcard answer
+    being that name's effective record, because that is what a receiver is
+    given for it.
+
+    Guard declaration: this check **forbids the act**. When the control
+    answers and no wildcard explains the answer, nothing in the batch is
+    graded in either direction. What that costs: a domain whose control
+    answers for some other reason (a resolver that invents answers, or a
+    wildcard of a type the TXT probe of ``*.<domain>`` cannot see) is never
+    graded from that run. What the wildcard exception costs: a resolver that
+    returned one fixed, non-empty TXT answer for every question would read as
+    a wildcard; a resolver that returns nothing for every question does not,
+    because the exception needs real TXT records seen. There is no cheap
+    recovery from grading a batch whose absences are false, which is why the
+    guard prevents rather than repairs.
+    """
+    if control.rcode == "NXDOMAIN":
+        return True, CONTROL_NXDOMAIN
+    explained = (control.rcode == "NOERROR" and wildcard.rcode == "NOERROR"
+                 and control.agreed and wildcard.agreed
+                 and sorted(control.value) == sorted(wildcard.value)
+                 and bool(wildcard.value or own.value))
+    return (True, CONTROL_WILDCARD) if explained else (False, "")
+
+
 def capture_subdomains(domain: str, names: list[str],
                        resolvers: tuple[str, ...] = ("",),
                        workers: int = SWEEP_WORKERS,
@@ -508,8 +563,10 @@ def capture_subdomains(domain: str, names: list[str],
     """Read each sub-domain name's SPF, MX, DKIM wildcard and DMARC records.
 
     The wildcards under ``domain`` itself and an absence control are read in
-    the same batch. ``control.usable`` is False when the control name did not
-    come back NXDOMAIN, and then no absence in the batch means anything.
+    the same batch. ``control.usable`` is False when the control name neither
+    came back NXDOMAIN nor was answered by a published wildcard
+    (:func:`control_reading`), and then no absence in the batch means anything;
+    ``control.basis`` says which of the two made it usable.
     """
     own_spf = corroborate(domain, "TXT", resolvers)
     own_record = _pick_txt(own_spf.value, "v=spf1")
@@ -518,6 +575,7 @@ def capture_subdomains(domain: str, names: list[str],
     wildcard_spf = corroborate_status(spf_wildcard_name(domain), "TXT", resolvers)
     wildcard_dkim = corroborate_status(dkim_wildcard_name(domain), "TXT", resolvers)
     control = corroborate_status(f"{CONTROL_LABEL}.{domain}", "TXT", resolvers)
+    usable, basis = control_reading(control, wildcard_spf, own_spf)
 
     wanted = sorted(dict.fromkeys(n.lower().strip(".") for n in names if n))
     truncated = max(0, len(wanted) - max_names)
@@ -539,8 +597,8 @@ def capture_subdomains(domain: str, names: list[str],
         "wildcard_spf": _corroborated_block(wildcard_spf, "v=spf1"),
         "wildcard_dkim": _corroborated_block(wildcard_dkim, "v=DKIM1"),
         "control": {**_corroborated_block(control, "v=spf1"),
-                    "usable": control.rcode == "NXDOMAIN"},
-        "subdomains": [asdict(r) | {"exists": r.exists,
+                    "usable": usable, "basis": basis},
+        "subdomains": [asdict(r) | {"exists": r.exists, "settled": r.settled,
                                     "spf_conformant": r.spf_conformant,
                                     "dkim_conformant": r.dkim_conformant}
                        for r in read],
@@ -660,11 +718,15 @@ def subdomain_transcript(captures: list[dict]) -> list[str]:
         ctl = cap["control"]
         out.append(f"  {'control':<14} {ctl['name']}")
         out.append(f"    [{ctl['at']}] {ctl['rcode'] or 'no agreed status'} — "
-                   + ("absence is distinguishable, so the readings below mean what they say"
+                   + ("answered with the wildcard's own record, which a wildcard does for "
+                      "every name that does not exist; each name below is read for its own "
+                      "response code and records, a wildcard answer being its effective record"
+                      if ctl["usable"] and ctl.get("basis") == CONTROL_WILDCARD else
+                      "absence is distinguishable, so the readings below mean what they say"
                       if ctl["usable"] else
-                      "⚠ THIS SHOULD HAVE BEEN NXDOMAIN. Either a wildcard answers for every "
-                      "name under this domain, or the resolver is not telling absences apart "
-                      "— the readings below are not evidence of absence"))
+                      "⚠ THIS SHOULD HAVE BEEN NXDOMAIN, and no published wildcard explains "
+                      "the answer, so the resolver may not be telling absences apart — the "
+                      "readings below are not evidence of absence"))
         if cap.get("names_dropped_by_cap"):
             out.append(f"  ⚠ {cap['names_dropped_by_cap']} name(s) beyond the sweep ceiling "
                        f"were not read")

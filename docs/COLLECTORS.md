@@ -162,6 +162,16 @@ hosts:
   answered NXDOMAIN. A receiver gives such a name the parent's DMARC `np=`
   policy (RFC 9989 §4.7) rather than its `sp=` policy.
 
+  Each sweep also writes a row of protocol `subdomain-mail`, named
+  `Mail-handling sub-domains of <domain>`, whose `extra.names` holds, for each
+  swept name that shows signs of handling mail, its SPF, DMARC and MX records,
+  whether it exists, and why it was judged to handle mail. Only a name whose
+  lookups were all answered and whose resolvers agreed is counted either way;
+  the rest are listed in `extra.names_unread` and `extra.names_unsettled`.
+  The sweep's absence control is trusted when it comes back NXDOMAIN, or when a
+  published wildcard answered it with exactly the wildcard's own record;
+  `extra.control_basis` says which (`nxdomain` or `wildcard`).
+
 **Missing records.** The SPF, DMARC, MTA-STS and TLS-RPT records are each
 asked of every configured resolver, keeping each resolver's response code.
 

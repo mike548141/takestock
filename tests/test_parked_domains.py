@@ -160,7 +160,8 @@ def test_a_sweep_beneath_a_parked_domain_marks_its_rows_and_lists_names_that_do_
            "wildcard_dkim": {"name": DKIM_AT, "record": "", "rcode": "NXDOMAIN", "agreed": True},
            "subdomains": [sub(f"www.{P}"), sub(f"old.{P}", exists=False)]}
     rows = ct_dns.ned_rows(P, cap, NOW, parked=True)
-    assert [r.protocol for r in rows] == ["ned-spf", "ned-dkim", "ned-dmarc"]
+    assert [r.protocol for r in rows] == ["ned-spf", "ned-dkim", "ned-dmarc",
+                                          ct_dns.SUBDOMAIN_MAIL]
     assert all(r.extra["parked"] is True and r.host == P for r in rows)
     assert rows[2].extra["names_nonexistent"] == [f"old.{P}"]
     assert "parked" not in ct_dns.ned_rows(P, cap, NOW)[0].extra
