@@ -1078,11 +1078,27 @@ def test_policy_discovery_is_named_only_when_the_observation_holds_the_walk():
     assert row.status == sge.FAIL
     assert "policy discovery" not in row.subject_note
     assert "read against the organisational domain's record" in row.subject_note
-    assert "any name between them and the domain was not looked up" in row.subject_note
+    assert ("no record at a name between them and the domain was consulted as their policy"
+            in row.subject_note)
     reject = one("SGE-NED-DMARC-01", [soft, unwalked])
     assert reject.status == sge.FAIL
     assert "policy discovery" not in reject.subject_note
-    assert "was not looked up" in reject.subject_note
+    assert "holds no policy walk for them" in reject.subject_note
+
+
+def test_an_unwalked_note_does_not_say_the_names_between_were_never_read():
+    # A name between the sub-domain and the domain may have been read in its own right
+    # as a sub-domain; what the observation lacks is the walk that consults a record
+    # there as the sub-domain's policy. The old wording said the name was "not looked up".
+    weak = dmarc("v=DMARC1; p=reject; sp=none")
+    row = one("SGE-NED-DMARC-R01", [weak, _unused_tag_sweep({}, 1)])
+    flat = " ".join(row.subject_note.split())
+    assert "not looked up" not in flat
+    assert "holds no policy walk for them" in flat
+    for text in (sge.NO_WALK_HELD, sge._UNWALKED):
+        text = " ".join(text.split())
+        assert "not looked up" not in text
+        assert "no policy walk" in text and "consulted as" in text and "policy" in text
 
 
 def test_a_discovered_name_without_a_walk_is_read_against_the_organisational_record():
@@ -1091,7 +1107,40 @@ def test_a_discovered_name_without_a_walk_is_read_against_the_organisational_rec
     row = discovered("SGE-DMARC-01", [root, mail_subs(names)])
     assert row.status == sge.FAIL
     assert "policy discovery" not in row.reason
-    assert "organisational domain's record" in row.reason and "not looked up" in row.reason
+    assert "organisational domain's record" in row.reason and "consulted as" in row.reason
     walked = walked_sweep({}, [], intermediate_dmarc={"mail.example.com": ""})
     row = discovered("SGE-DMARC-01", [root, walked, mail_subs(names)])
-    assert f"record at {D}" in row.reason and "not looked up" not in row.reason
+    assert f"record at {D}" in row.reason and "consulted as" not in row.reason
+
+
+def _strings(value):
+    if isinstance(value, str):
+        yield " ".join(value.split())
+    elif isinstance(value, dict):
+        for v in value.values():
+            yield from _strings(v)
+    elif isinstance(value, list):
+        for v in value:
+            yield from _strings(v)
+
+
+def test_the_standard_says_names_read_are_drawn_from_those_the_observation_holds():
+    # A sweep may read only some of the names an observation holds (for instance those one
+    # source supplied), so a requirement's text must not say it read all of them.
+    said = [t for r in STD["requirements"] for t in _strings(r)
+            if "the observation knows of" in t]
+    assert said
+    for t in said:
+        assert "are the ones the observation knows of" not in t, t
+        assert "are those the observation knows of" not in t, t
+        assert "drawn from those the observation knows of" in t, t
+
+
+def test_the_limits_note_says_names_read_are_drawn_from_those_the_observation_holds():
+    from takestock import sge_note
+    said = [" ".join(body.split()) for _, body in sge_note._LIMITS
+            if "the observation knows of" in body]
+    assert len(said) == 1
+    assert "are those the observation knows of" not in said[0]
+    assert "drawn from those the observation knows of" in said[0]
+    assert "need not be all of them" in said[0]

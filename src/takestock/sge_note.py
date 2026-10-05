@@ -73,7 +73,8 @@ _LIMITS = [
     ("A published key is not a signed message.",
      "A DKIM key in DNS shows that signing is possible, not that every service signs."),
     ("Sub-domain checks can fail, and pass only on an attested zone file.",
-     "The sub-domains read are those the observation knows of. The sweep can draw them "
+     "The sub-domains read are drawn from those the observation knows of, which "
+     "need not be all of them. The sweep can draw them "
      "from certificate-transparency logs, supplied zone files, the profile and the names "
      "sender policies point at, and each row names the sources that supplied its names, "
      "or says they were not recorded. That is a floor, not the full set. One name short "

@@ -43,8 +43,8 @@ domains, in rows marked ``discovered`` whose subject is
 SGE-DMARC-R02, SGE-DMARC-R03 and SGE-DMARC-R05 (a name with no DMARC record of
 its own takes the record RFC 9989 policy discovery finds, :func:`policy_record`,
 and its ``sp=``, ``np=`` or ``p=``; an observation that holds no walk is read
-against the organisational domain's record, and the row says the names between
-were not looked up); SGE-MTASTS-01 and SGE-MTASTS-02 (the
+against the organisational domain's record, and the row says no record at a name
+between was consulted as their policy); SGE-MTASTS-01 and SGE-MTASTS-02 (the
 ``_mta-sts`` record and the policy file, RFC 8461); SGE-TLSRPT-01 (the
 ``_smtp._tls`` record, RFC 8460); and SGE-DKIM-R01 and SGE-DKIM-R02 (the keys
 under the selectors tried, RFC 6376; with no key found, the name is counted
@@ -837,8 +837,9 @@ def _ned_dmarc_from_sweep(req: dict, assets: list[Any], domain: str,
                           "no record at or above them publishes one for them to fall back to"
                           if walked is not None else
                           "the organisational domain publishes no record for them to fall "
-                          "back to; any name between them and the domain was not looked up "
-                          "for a DMARC record (RFC 9989 §4.10)"))
+                          "back to; this observation holds no policy walk for them, so no "
+                          "record at a name between them and the domain was consulted as "
+                          "their policy, and one there could govern them (RFC 9989 §4.10)"))
     if own_bad:
         note.insert(0, f"{len(own_bad)} publish a record of their own that does not reject "
                        f"all failing mail: {', '.join(own_bad)}")
@@ -920,9 +921,10 @@ def _walk_notes(elsewhere: dict[str, str], unread: list[str]) -> list[str]:
 #: organisational domain's record because the observation holds no walk: the
 #: sweep row lists no ``names_without_own_dmarc`` to walk, so the DMARC lookups
 #: of the names in between (``intermediate_dmarc``) were never consulted.
-NO_WALK_HELD = ("the only record this observation holds for them: any name between them "
-                "and the domain was not looked up for a DMARC record, and one there could "
-                "govern them (RFC 9989 §4.10)")
+NO_WALK_HELD = ("the only record this observation holds for them, because it holds no policy "
+                "walk for them: no record at a name between them and the domain was "
+                "consulted as their policy, and one there could govern them "
+                "(RFC 9989 §4.10)")
 
 
 def _fallback_words(walked: bool) -> str:
@@ -2902,8 +2904,9 @@ def _judge_spf(req: dict, name: str, records: dict, root_record: str) -> str:
 
 
 #: Said of a discovered name read without a policy walk (no ``records["policy"]``).
-_UNWALKED = ("any name between it and the domain was not looked up for a DMARC record, "
-             "and one there could govern it (RFC 9989 §4.10)")
+_UNWALKED = ("this observation holds no policy walk for it, so no record at a name between "
+             "it and the domain was consulted as its policy, and one there could govern "
+             "it (RFC 9989 §4.10)")
 
 
 def _governing_dmarc(records: dict, root_record: str) -> tuple[str, str] | Unsettled:

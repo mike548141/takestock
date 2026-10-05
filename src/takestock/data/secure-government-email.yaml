@@ -450,9 +450,9 @@ requirements:
       zones themselves rather than from certificate logs, with each name that
       sends no mail read for a v=spf1 -all record.
     partial: >-
-      Which sub-domains exist. The names read are the ones the observation knows
-      of, and the row's note names the sources that supplied them, or says the
-      observation did not record them. Names drawn from certificate logs lean
+      Which sub-domains exist. The names read are drawn from those the
+      observation knows of, and the row's note names the sources that supplied
+      them, or says the observation did not record them. Names drawn from certificate logs lean
       away from the very names this requirement is about, because a sub-domain
       needing a denying record is usually one nobody serves web traffic on.
       Unless a zone file the profile attests complete is supplied, the count of
@@ -488,9 +488,9 @@ requirements:
     # grade a domain where they differ.
     record: "*._domainkey.<domain>"
     partial: >-
-      Which sub-domains exist. The names read are the ones the observation knows
-      of, and the row's note names the sources that supplied them, or says the
-      observation did not record them. Names drawn from certificate logs lean
+      Which sub-domains exist. The names read are drawn from those the
+      observation knows of, and the row's note names the sources that supplied
+      them, or says the observation did not record them. Names drawn from certificate logs lean
       away from the very names this requirement is about, because a sub-domain
       needing a denying record is usually one nobody serves web traffic on.
       Unless a zone file the profile attests complete is supplied, the count of
@@ -526,8 +526,9 @@ requirements:
     partial: >-
       Whether every sub-domain rejects. The root domain's sub-domain policy tag
       decides it for sub-domains that carry no DMARC record of their own. The
-      sub-domains read for a record of their own are the ones the observation
-      knows of and show no sign of sending mail, so a sub-domain outside that
+      sub-domains read for a record of their own are drawn from those the
+      observation knows of, and only those that show no sign of sending mail
+      are read, so a sub-domain outside that
       list is not seen, and every name read rejecting cannot show that every
       sub-domain does, unless a zone file the profile attests complete is
       supplied.
@@ -557,8 +558,8 @@ requirements:
       its own DMARC record or the one it falls back to.
     partial: >-
       Which sub-domains exist, and the ones that send mail. The names read are
-      the ones the observation knows of, and only those that show no sign of
-      sending mail are read, so the count of names short of the record is a
+      drawn from those the observation knows of, and only those that show no
+      sign of sending mail are read, so the count of names short of the record is a
       floor unless a zone file the profile attests complete is supplied. A sub-domain with no DMARC record of its own is read
       through the organisational domain's record, which a receiver applies to
       it.
@@ -701,8 +702,8 @@ requirements:
       DMARC record of its own.
     partial: >-
       Which sub-domains exist, and the ones that send mail. The names read are
-      the ones the observation knows of, and only those that show no sign of
-      sending mail are read, so a sub-domain setting sp= that is not among
+      drawn from those the observation knows of, and only those that show no
+      sign of sending mail are read, so a sub-domain setting sp= that is not among
       them is not seen, unless a zone file the profile attests complete is
       supplied.
 
