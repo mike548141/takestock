@@ -254,11 +254,31 @@ policy authorising senders is, to a receiver, an email domain. takestock grades
 these names against SGE-SPF-01, SGE-DMARC-01 and SGE-DMARC-R05, from the SPF,
 DMARC and MX records the sweep already holds, in rows marked *(discovered)*
 whose subject is *mail-handling sub-domains of* the parent. A name with no DMARC
-record of its own falls back to the parent's record, as a receiver applies it:
-its `sp=` for a name that exists, its `np=` for one that does not, then its
-`p=`. Their own DMARC records are also read for the tags SGE-DMARC-R03 says not
-to use. Their MTA-STS, TLS-RPT and DKIM records are not read in this first cut.
+record of its own takes the record a receiver's policy discovery finds for it
+(see *DMARC policy discovery* below): its `sp=` for a name that exists, its
+`np=` for one that does not, then its `p=`. Their own DMARC records are also
+read for the tags SGE-DMARC-R03 says not to use. Their MTA-STS, TLS-RPT and DKIM records are not read in this first cut.
 The names are a floor, so these rows can fail and never pass.
+
+**DMARC policy discovery.** RFC 9989, which obsoletes RFC 7489, replaces RFC
+7489's reliance on a public suffix list with a *DNS Tree Walk* (§4.10). For a name with no DMARC
+record of its own, a receiver walks up the tree and applies the record of the
+name's *Organizational Domain* (§4.10.1), chosen from the records the walk
+finds, longest name first (§4.10.2): a record carrying `psd=n` is the
+Organizational Domain; one carrying `psd=y` makes the name one label below it
+the Organizational Domain; otherwise it is the record at the name with the
+fewest labels. So a record at an intermediate name, such as
+`mail.example.com`, governs `a.mail.example.com` only when it carries `psd=n`,
+when the record above it carries `psd=y`, or when nothing above it publishes a
+record. The sweep reads the DMARC record of every name a walk from a swept name
+passes on the way to the domain, including names the certificate logs never
+listed, and takestock applies the walk to the swept names that publish no
+record of their own (SGE-NED-DMARC-01, SGE-NED-DMARC-R01, and SGE-DMARC-01 on
+names that handle mail). A name whose walk passes a name that could not be read
+is counted neither way. The walk is read no higher than the domain the profile
+names, so a public suffix domain's record is not read. An observation taken
+before the sweep read these intermediate names is read as before: each name
+falls back to the domain's own record.
 
 **Wildcards and the absence control.** Each sweep asks, in the same batch, for
 a name nobody registers, which should come back NXDOMAIN; if it answers, the

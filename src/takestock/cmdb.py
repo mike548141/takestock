@@ -744,6 +744,36 @@ def _is_name_row(asset: Mapping[str, Any]) -> bool:
             or asset.get("protocol") in _NAME_PROTOCOLS)
 
 
+_RUA = re.compile(r"(?:^|;)\s*rua\s*=\s*([^;]*)", re.IGNORECASE)
+
+
+def _name_record_facts(asset: Mapping[str, Any], extra: Mapping[str, Any]) -> dict[str, Any]:
+    """A DNS name's name servers, from an ``ns`` row, or DMARC reporting address, from ``dmarc``.
+
+    A name with neither row is left absent, which the register shows as
+    *not collected*. A lookup that settled with nothing to report is
+    *not applicable*, with a note saying what was read.
+    """
+    protocol = asset.get("protocol")
+    if protocol == "ns":
+        servers = [str(s) for s in extra.get("name_servers") or []]
+        return {"name_servers": ", ".join(servers) if servers else Absence(
+            "not-applicable", note="the NS lookup settled with no NS record: the name is not "
+                                   "the top of its own zone, so its parent zone serves it")}
+    if protocol == "dmarc":
+        record = str(extra.get("record") or "")
+        if not record:
+            return {"dmarc_report_address": Absence(
+                "not-applicable", note="the DMARC lookup settled and no record is published "
+                                       "at this name")}
+        rua = _RUA.search(record)
+        address = rua.group(1).strip() if rua else ""
+        return {"dmarc_report_address": address or Absence(
+            "not-applicable", note="the DMARC record has no rua= tag, so receivers send this "
+                                   "domain no aggregate reports (RFC 9989 §4.7)")}
+    return {}
+
+
 def _third_party_identity(extra: Mapping[str, Any]) -> tuple[str, str, str] | None:
     vendor = str(extra.get("vendor") or "").strip()
     if vendor:
@@ -1147,6 +1177,7 @@ class _Builder:
         elif _is_name_row(asset):
             out["name"] = host
             out["internet_facing"] = asset.get("internet_facing")
+            out.update(_name_record_facts(asset, extra))
         if state == "at-rest":
             out["disk_encryption_state"] = str(asset.get("verdict") or "")
             out["key_custody"] = (str(extra["key_custody"]) if extra.get("key_custody")

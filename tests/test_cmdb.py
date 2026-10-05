@@ -290,6 +290,37 @@ def test_a_name_carries_its_addresses_and_exposure(built):
     assert attrs["internet_facing"].value is True
 
 
+def test_a_domain_carries_its_name_servers_and_dmarc_reporting_address(tmp_path):
+    def mail_row(protocol, host, **extra):
+        return cmdbfake._row(name=f"{protocol} {host}", data_state="email-auth",
+                             protocol=protocol, host=host, source="ct_dns",
+                             source_name="Public DNS", verdict="n/a", extra=extra)
+    extra = [
+        mail_row("ns", "example.test", name_servers=["ns1.example.net", "ns2.example.net"]),
+        mail_row("dmarc", "example.test",
+                 record="v=DMARC1; p=reject; rua=mailto:reports@example.test"),
+        mail_row("ns", "mail.example.test", name_servers=[]),
+        mail_row("dmarc", "mail.example.test", record="v=DMARC1; p=reject"),
+        mail_row("dmarc", "old.example.test", present=False, record=""),
+    ]
+    register = cmdb.build(cmdbfake.write_observation(tmp_path, assets=cmdbfake.rows() + extra))
+    assert _value(register, "example.test", "name_servers").value == (
+        "ns1.example.net, ns2.example.net")
+    assert _value(register, "example.test", "dmarc_report_address").value == (
+        "mailto:reports@example.test")
+    not_apex = _value(register, "mail.example.test", "name_servers").value
+    assert not_apex.reason == "not-applicable" and "parent zone" in not_apex.note
+    no_rua = _value(register, "mail.example.test", "dmarc_report_address").value
+    assert no_rua.reason == "not-applicable" and "no rua= tag" in no_rua.note
+    assert _value(register, "old.example.test", "dmarc_report_address").value.reason == (
+        "not-applicable")
+    # A name nothing read for either is left open, never blank.
+    [www] = [i for i in cmdb.register_payload(register)["items"]
+             if i["class"] == "DNS Name" and i["name"] == "www.example.test"]
+    for attribute in ("name_servers", "dmarc_report_address"):
+        assert www["attributes"][attribute]["absent"] == "not-collected"
+
+
 def test_relationships_drawn(built):
     kinds = {e.kind for e in built.edges}
     assert kinds == {"contains", "installed-on", "release-of", "presents", "member-of"}

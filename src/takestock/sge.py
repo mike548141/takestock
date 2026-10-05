@@ -37,11 +37,12 @@ and never show conformance. Whether a parked domain publishes a null MX (RFC
 **Discovered sub-domains that handle mail.** The sub-domain sweep sets aside
 the names that show signs of sending or receiving mail. Those are email domains
 to a receiver, so :func:`evaluate` reads them against SGE-SPF-01, SGE-DMARC-01
-(a name with no DMARC record of its own falls back to the organisational
-record's ``sp=``, ``np=`` or ``p=``) and SGE-DMARC-R05, from the records the
-sweep already holds, in rows marked ``discovered`` whose subject is
-:func:`discovered_mail_subject`. Their MTA-STS, TLS-RPT and DKIM records are
-not read. The names are a floor, so these rows can fail and never pass.
+(a name with no DMARC record of its own takes the ``sp=``, ``np=`` or ``p=``
+of the record RFC 9989 policy discovery finds, :func:`policy_record`) and
+SGE-DMARC-R05, from the records the sweep already holds, in rows marked
+``discovered`` whose subject is :func:`discovered_mail_subject`. Their
+MTA-STS, TLS-RPT and DKIM records are not read. The names are a floor, so
+these rows can fail and never pass.
 
 **Sub-domains that do not exist.** RFC 9989 (DMARC, which obsoletes RFC 7489)
 adds the ``np=`` tag, the policy for non-existent sub-domains. Wherever a
@@ -637,6 +638,102 @@ def _np_weaker_than_reject(tags: dict[str, str]) -> str:
             "all new domains")
 
 
+@dataclass
+class HeldRecords:
+    """The DMARC records an observation holds at and beneath one domain.
+
+    ``records`` maps each name read to its record ("" for a settled read
+    that found none); ``unsettled`` are names whose read did not settle.
+    ``walkable`` is False for an observation whose sweep did not read the
+    names a walk passes, and then only the domain's own record is applied.
+    """
+
+    domain: str
+    records: dict[str, str] = field(default_factory=dict)
+    unsettled: set[str] = field(default_factory=set)
+    walkable: bool = False
+
+
+def held_dmarc(assets: list[Any], domain: str) -> HeldRecords:
+    """Every DMARC record the observation read at or beneath ``domain``.
+
+    From the domain's own DMARC row, the sub-domain sweep's names (both the
+    names that send no mail and those that do) and the intermediate names the
+    sweep read for policy discovery (``extra.intermediate_dmarc``). An
+    observation taken before the sweep read intermediate names holds none,
+    and is marked not ``walkable``.
+    """
+    held = HeldRecords(domain.lower().strip("."))
+    root = _by(assets, "dmarc", domain)
+    if root:
+        held.records[held.domain] = _dmarc_record(root[0])
+    for a in _by(assets, "ned-dmarc", domain):
+        extra = _get(a, "extra") or {}
+        held.walkable = held.walkable or "names_without_own_dmarc" in extra
+        for n in extra.get("names_without_own_dmarc") or []:
+            held.records.setdefault(str(n), "")
+        held.records.update({str(n): str(r) for n, r in (extra.get("dmarc_records") or {}).items()})
+        for n, rec in (extra.get("intermediate_dmarc") or {}).items():
+            held.records[str(n)] = str(rec)
+        held.unsettled.update(str(n) for n in [*(extra.get("names_unread") or []),
+                                               *(extra.get("names_unsettled") or []),
+                                               *(extra.get("intermediate_unsettled") or [])])
+    for a in _by(assets, "subdomain-mail", domain):
+        for n, rec in ((_get(a, "extra") or {}).get("names") or {}).items():
+            held.records[str(n)] = str((rec or {}).get("dmarc_record") or "")
+    return held
+
+
+#: What :func:`policy_record` returns when a walk passes a name it holds no reading of.
+UNREAD = None
+
+#: What a discovered-name judge returns when what it needs was not read: the
+#: name is counted neither way (:func:`_discovered_rows`).
+NOT_SETTLED = "not settled"
+
+
+def policy_record(name: str, held: HeldRecords) -> tuple[str, str] | None:
+    """The DMARC record a receiver applies to ``name``, and the name it is published at.
+
+    RFC 9989 §4.10.1: the record at ``name`` itself, else the record of its
+    Organizational Domain, else the record of its public suffix domain (PSD).
+    The Organizational Domain comes from the DNS Tree Walk
+    (:func:`takestock.dnsevidence.tree_walk`) by §4.10.2, reading the records
+    found from the longest name to the shortest: one with ``psd=n`` is the Organizational Domain; one with
+    ``psd=y`` makes the name one label below it the Organizational Domain;
+    otherwise it is the name with the fewest labels that publishes a record.
+    So a record at an intermediate name governs the names beneath it only
+    when it says ``psd=n``, when the record above it says ``psd=y``, or when
+    nothing above it publishes one.
+
+    The walk is read only as far as ``held.domain``: the names above it are
+    not read. Returns ``("", "")`` when no record is found, and
+    :data:`UNREAD` when the walk passes a name between ``name`` and the
+    domain that was not read or did not settle, since that name's record
+    could change the answer.
+    """
+    name = name.lower().strip(".")
+    own = held.records.get(name, "")
+    if own:
+        return name, own
+    path = [n for n in dnsevidence.tree_walk(name)
+            if n == held.domain or n.endswith("." + held.domain)]
+    if any(n in held.unsettled or n not in held.records for n in path):
+        return UNREAD
+    found = [(n, held.records[n]) for n in path if held.records[n]]
+    if not found:
+        return "", ""
+    by_name = dict(found)
+    for n, rec in found:
+        psd = _dmarc_tags(rec).get("psd", "").lower()
+        if psd == "n":
+            return n, rec
+        if psd == "y":
+            org = ".".join(name.split(".")[-(n.count(".") + 2):])
+            return (org, by_name[org]) if by_name.get(org) else (n, rec)
+    return found[-1]
+
+
 def _rejects(tags: dict[str, str], policy_key: str) -> bool:
     """True when ``policy_key``, or the tag a receiver falls back to, is reject at pct=100."""
     policy = next((tags[k] for k in _POLICY_FALLBACK[policy_key] if tags.get(k)), "")
@@ -674,22 +771,35 @@ def _ned_dmarc_from_sweep(req: dict, assets: list[Any], domain: str,
     own_bad = sorted(n for n, rec in records.items()
                      if not _rejects(_dmarc_tags(str(rec)), "p"))
     without_own = in_scope - len(records)
-    # A name that came back NXDOMAIN takes the root's np= (RFC 9989 §4.7), and one
-    # that exists takes its sp=. An observation without the list treats every
-    # name as existing.
-    gone = len([n for n in extra.get("names_nonexistent") or [] if n not in records])
-    root_tags = _dmarc_tags(root_record)
-    fallback_bad = ((without_own - gone) if not _rejects(root_tags, "sp") else 0) + (
-        gone if not _rejects(root_tags, "np") else 0)
+    # A name that came back NXDOMAIN takes np= from the record that governs it
+    # (RFC 9989 §4.7 and §4.10.1), and one that exists takes its sp=. An
+    # observation without the list treats every name as existing.
+    gone_names = set(extra.get("names_nonexistent") or [])
+    gone = len([n for n in gone_names if n not in records])
+    walked = _walked_policies(assets, domain, extra)
+    unread: list[str] = []
+    elsewhere: dict[str, str] = {}
+    if walked is None:
+        root_tags = _dmarc_tags(root_record)
+        fallback_bad = ((without_own - gone) if not _rejects(root_tags, "sp") else 0) + (
+            gone if not _rejects(root_tags, "np") else 0)
+    else:
+        governed, unread = walked
+        fallback_bad = sum(1 for n, (_at, rec) in governed.items()
+                           if not _rejects(_dmarc_tags(rec), "np" if n in gone_names else "sp"))
+        elsewhere = {n: at for n, (at, _rec) in governed.items()
+                     if at and at != domain.lower().strip(".")}
     limit = f"what this row does NOT read: {partial}" if partial else ""
     note = [f"read {extra.get('read_at', '')} via {', '.join(extra.get('resolvers') or [])}"]
+    note[:0] = _walk_notes(elsewhere, unread)
     if fallback_bad:
         note.insert(0, f"{fallback_bad} of the {in_scope} enumerated sub-domain(s) that show "
                        "no sign of sending mail publish no DMARC record of their own and "
-                       + ("fall back to the root record, which does not reject all failing "
-                          "mail for them (sp= for a name that exists, np= for one that does "
-                          "not)" if root_record else
-                          "the root domain publishes none for them to fall back to"))
+                       + ("take the record policy discovery finds for them (RFC 9989 "
+                          "§4.10.1), which does not reject all failing mail for them (sp= for "
+                          "a name that exists, np= for one that does not)"
+                          if root_record or elsewhere else
+                          "no record at or above them publishes one for them to fall back to"))
     if own_bad:
         note.insert(0, f"{len(own_bad)} publish a record of their own that does not reject "
                        f"all failing mail: {', '.join(own_bad)}")
@@ -700,7 +810,7 @@ def _ned_dmarc_from_sweep(req: dict, assets: list[Any], domain: str,
                      "reject policy",
             reason="; ".join(x for x in [
                 ("a sub-domain that sends no mail is left without a reject policy, on its "
-                 "own record or on the root record it falls back to; the DMARC guide says "
+                 "own record or on the record it falls back to; the DMARC guide says "
                  "all domains must have a p=reject policy"),
                 _SWEEP_INSTRUMENT, limit] if x),
             evidence=str(_get(a, "name") or ""), source=req["source"],
@@ -710,14 +820,52 @@ def _ned_dmarc_from_sweep(req: dict, assets: list[Any], domain: str,
             subject_note="; ".join(note))
     return Conformance(
         req["id"], req["title"], req["level"], req["scope"], domain, NOT_MEASURED,
-        observed=f"all {in_scope} sub-domains read reject",
+        observed=f"all {in_scope - len(unread)} sub-domains read reject",
         reason=NOT_COLLECTED,
         evidence=("every enumerated sub-domain that shows no sign of sending mail rejects, "
-                  "on its own record or through the root record's sub-domain policy, and "
+                  "on its own record or through the record policy discovery finds for it, "
+                  "and "
                   "that is not the same as every sub-domain doing so: " + _SWEEP_POPULATION
                   + ". No verdict is claimed in either direction"
                   + (f". What this row does not read either: {partial}" if partial else "")),
         source=req["source"], subject_note="; ".join(note))
+
+
+def _walked_policies(assets: list[Any], domain: str, extra: dict
+                     ) -> tuple[dict[str, tuple[str, str]], list[str]] | None:
+    """The record governing each swept name with none of its own, by :func:`policy_record`.
+
+    Returns ``(governed, unread)``: each such name's ``(published at, record)``,
+    and the names whose walk passes a name that was not read. ``None`` when
+    the sweep row does not list those names (an observation taken before it
+    did), and then only the domain's own record is read for them.
+    """
+    names = extra.get("names_without_own_dmarc")
+    if names is None:
+        return None
+    held = held_dmarc(assets, domain)
+    governed: dict[str, tuple[str, str]] = {}
+    unread: list[str] = []
+    for n in names:
+        got = policy_record(str(n), held)
+        if got is UNREAD:
+            unread.append(str(n))
+        else:
+            governed[str(n)] = got
+    return governed, unread
+
+
+def _walk_notes(elsewhere: dict[str, str], unread: list[str]) -> list[str]:
+    """Notes naming the swept names a walk did not settle at the domain's own record."""
+    out = []
+    if elsewhere:
+        out.append("governed by a record below the domain (RFC 9989 §4.10.2): " + "; ".join(
+            f"{n} by {at}" for n, at in sorted(elsewhere.items())))
+    if unread:
+        out.append(f"{len(unread)} name(s) counted neither way, because a name between them "
+                   "and the domain was not read, and its DMARC record could govern them "
+                   "(RFC 9989 §4.10): " + ", ".join(sorted(unread)))
+    return out
 
 
 def _control_note(extra: dict) -> str:
@@ -1027,6 +1175,78 @@ _ITLS_GLOSS = (
 
 def _eval_implicit_tls(req: dict, assets: list[Any],
                        domains: list[str]) -> list[Conformance]:
+    return [_implicit_tls_paths(req, assets), *_implicit_tls_receiving(req, assets, domains)]
+
+
+#: Why no ``implicit_tls`` row is read for SGE-ITLS-01. That collector reads
+#: TLS from the first byte on ports 465, 993 and 995, which is RFC 8314's
+#: Implicit TLS for message submission and mailbox access; RFC 8314 §1 says it
+#: "does not address the use of TLS with SMTP for message relay". No Secure
+#: Government Email document names a port. The framework's own route to the
+#: requirement on the receiving side is a rule that rejects inbound connections
+#: without TLS, and inbound mail from another organisation arrives by relay on
+#: port 25 (RFC 5321 §4.5.4), negotiated by STARTTLS (RFC 3207).
+_ITLS_PORTS_NOT_READ = (
+    "TLS rows on ports 465, 993 and 995 are not read for this requirement: they show "
+    "RFC 8314 Implicit TLS for mail submission and mailbox access, which RFC 8314 §1 "
+    "says does not cover relay between mail servers, and no Secure Government Email "
+    "document names a port")
+
+_ITLS_RECEIVING_UNSEEN = (
+    "whether the host refuses a sender that does not start TLS cannot be seen by a "
+    "probe that delivers no mail, so this row never passes; whether the requirement "
+    "binds the organisation also turns on SGE Restricted Group membership, which "
+    "nothing read here establishes")
+
+
+def _implicit_tls_receiving(req: dict, assets: list[Any],
+                            domains: list[str]) -> list[Conformance]:
+    """SGE-ITLS-01's receiving side: one row per MX host, from its port-25 probe.
+
+    A host that offers no STARTTLS on port 25 cannot receive mail from another
+    organisation under TLS at all, which no reading of the requirement allows;
+    one that offers it shows a necessary condition only. Neither is graded
+    either way: the requirement's binding force depends on Restricted Group
+    membership (TLS Deployment Guide §4.5), as for the sending side, and the
+    same no-STARTTLS host already fails SGE-TLS-01. A host with no port-25
+    probe is *not collected*. See :data:`_ITLS_PORTS_NOT_READ` for why
+    ``implicit_tls`` rows are not read.
+    """
+    named = _mx_named(assets, domains)
+    hosts = _mail_hosts(assets, domains)
+    rows = []
+    for host in sorted(named):
+        a = hosts.get(host)
+        if a is None:
+            row = _unprobed_mx(req, host, named[host], assets)
+            row.evidence += f". {_ITLS_PORTS_NOT_READ}"
+            rows.append(row)
+            continue
+        if _no_encryption_offered(a):
+            observed = "no STARTTLS offered on port 25"
+            detail = ("the gateway answered EHLO on port 25 without advertising STARTTLS, so "
+                      "mail delivered to it by another organisation crosses the network in "
+                      "clear or not at all, and TLS cannot be required on that path; the "
+                      "same reading fails SGE-TLS-01 for this host. ")
+        elif _get(a, "protocol_versions"):
+            observed = "STARTTLS offered on port 25"
+            detail = ("the gateway offers STARTTLS on port 25, which is necessary for "
+                      "receiving mail under TLS and is not the requirement itself: ")
+        else:
+            rows.append(_unmeasured(req, host, INCONCLUSIVE,
+                                    "the host was reached on port 25 but offered no version "
+                                    f"list. {_ITLS_PORTS_NOT_READ}"))
+            continue
+        rows.append(Conformance(
+            req["id"], req["title"], req["level"], req["scope"], host, NOT_MEASURED,
+            reason=INCONCLUSIVE, observed=observed,
+            evidence=f"{detail}{_ITLS_RECEIVING_UNSEEN}. {_ITLS_PORTS_NOT_READ}",
+            source=req["source"], record=str(_get(a, "name") or "")))
+    return rows
+
+
+def _implicit_tls_paths(req: dict, assets: list[Any]) -> Conformance:
+    """SGE-ITLS-01 on the mail the organisation exchanged with government organisations."""
     transport = [a for a in assets
                  if _get(a, "source") == _SENDING_SOURCE
                  and str((_get(a, "extra") or {}).get("direction", "")).strip()]
@@ -1034,20 +1254,20 @@ def _eval_implicit_tls(req: dict, assets: list[Any],
              if "govt_messages" in (_get(a, "extra") or {})]
     if not paths:
         if transport:
-            return [_unmeasured(
+            return _unmeasured(
                 req, _ITLS_SUBJECT, NOT_COLLECTED,
                 f"this observation carries the per-message mail transport export "
                 f"in {len(transport)} path rows, but none of them carries the "
                 f"government-counterparty split this requirement is read against; "
-                f"reading the same export with that split produces the population")]
-        return [_unmeasured(
+                f"reading the same export with that split produces the population")
+        return _unmeasured(
             req, _ITLS_SUBJECT, NOT_COLLECTED,
             "the per-message mail transport export is not in this observation, so "
             "the mail exchanged with government organisations — the population "
             "the TLS Deployment Guide narrows this requirement to — has not been "
             "read at all. " + _ITLS_GLOSS + ", and no external probe can see "
             "either one on a path the organisation sends over; the export is what "
-            "puts a measured population under the requirement")]
+            "puts a measured population under the requirement")
 
     totals: dict[str, int] = {}
     clear: dict[str, int] = {}
@@ -1084,12 +1304,12 @@ def _eval_implicit_tls(req: dict, assets: list[Any],
     window = _sending_window(assets)
     evidence_names = EVIDENCE_SEPARATOR.join(str(_get(a, "name") or "") for a in paths)
     if not total:
-        return [_unmeasured(
+        return _unmeasured(
             req, _ITLS_SUBJECT, INCONCLUSIVE,
             "the per-message mail transport export was read and carries no message "
             "to or from a government counterparty" + window + ", identified by "
             + (classifier or "counterparty domain") + " — so this requirement's "
-            "population is empty in what was read rather than measured and clean")]
+            "population is empty in what was read rather than measured and clean")
 
     split = ", ".join(f"{n:,} {d}" for d, n in sorted(totals.items(),
                                                       key=lambda kv: -kv[1]))
@@ -1137,13 +1357,13 @@ def _eval_implicit_tls(req: dict, assets: list[Any],
         "definitions of the routes carrying government traffic, including the relay "
         "hosts and ports, which is the record that says how the session is "
         "established. Both are administrative reads, not probes.")
-    return [Conformance(
+    return Conformance(
         req["id"], req["title"], req["level"], req["scope"], _ITLS_SUBJECT,
         NOT_MEASURED, reason=INCONCLUSIVE,
         observed=(f"{total:,} messages with government organisations, "
                   f"{total_clear:,} with no TLS"),
         evidence=measured + shortfall + applicability + enforcement + closes,
-        source=req["source"], record=distribution)]
+        source=req["source"], record=distribution)
 
 
 def _int(value: Any) -> int:
@@ -1819,16 +2039,29 @@ def _eval_subdomain_dmarc_alignment(req: dict, assets: list[Any],
         without_own = in_scope - len(records)
         inherited = short(root_tags) if root_record else ["no DMARC record at all"]
         failing_by_fallback = without_own if (without_own and inherited) else 0
+        walked = _walked_policies(assets, d, extra)
+        walk_notes: list[str] = []
+        if walked is not None:
+            governed, unread = walked
+            by_record = {n: (at, short(_dmarc_tags(rec)) if rec else ["no DMARC record at all"])
+                         for n, (at, rec) in governed.items()}
+            failing_by_fallback = sum(1 for _at, s in by_record.values() if s)
+            elsewhere = {n: at for n, (at, _s) in by_record.items() if at and at != d}
+            walk_notes = _walk_notes(elsewhere, unread)
+            if elsewhere:
+                inherited = sorted({x for n in elsewhere for x in by_record[n][1]}
+                                   | (set(short(root_tags)) if root_record else set()))
 
         if own_failing or failing_by_fallback:
             parts = []
             if failing_by_fallback:
                 parts.append(
-                    f"{without_own} of the {in_scope} enumerated sub-domain(s) that show no "
-                    "sign of sending mail publish no DMARC record of their own, so a receiver "
-                    "applies the organisational domain's record to them, which reads "
-                    f"{', '.join(inherited)}"
-                    if root_record else
+                    f"{failing_by_fallback} of the {in_scope} enumerated sub-domain(s) that "
+                    "show no sign of sending mail publish no DMARC record of their own, so a "
+                    "receiver applies the record policy discovery finds for them (RFC 9989 "
+                    f"§4.10.1), which reads {', '.join(inherited)}"
+                    if root_record or (walked and any(at for at, _r in walked[0].values()))
+                    else
                     f"{without_own} of the {in_scope} enumerated sub-domain(s) publish no "
                     "DMARC record of their own and "
                     + ("the organisational domain publishes no DMARC record for them to "
@@ -1854,18 +2087,20 @@ def _eval_subdomain_dmarc_alignment(req: dict, assets: list[Any],
                 record="; ".join(filter(None, [
                     f"organisational record: {root_record}" if root_record else "",
                     *(f"{n}: {records[n]}" for n in own_failing)])),
-                subject_note="; ".join([*parts, _ned_scope_note(extra)])))
+                subject_note="; ".join([*parts, *walk_notes, _ned_scope_note(extra)])))
             continue
         rows.append(Conformance(
             req["id"], req["title"], req["level"], req["scope"], d, NOT_MEASURED,
-            observed=f"all {in_scope} sub-domains read meet it",
+            observed=f"all {in_scope - len(walked[1] if walked else [])} sub-domains read "
+                     "meet it",
             reason=NOT_COLLECTED,
             evidence=("every enumerated sub-domain that shows no sign of sending mail "
                       "carries strict alignment and a reporting address, on its own "
                       "record or the organisational one it falls back to, and that is not "
                       "the same as every sub-domain doing so. " + _partial(req)
                       + " No verdict is claimed in either direction."),
-            source=req["source"], subject_note=_ned_scope_note(extra)))
+            source=req["source"],
+            subject_note="; ".join([*walk_notes, _ned_scope_note(extra)])))
     return rows
 
 
@@ -2276,12 +2511,14 @@ def _discovered_rows(req: dict, assets: list[Any], roots: list[str],
                      judge: Callable[[dict, str, dict, str], str]) -> list[Conformance]:
     """One row per root whose sweep holds settled mail-handling names, graded by ``judge``.
 
-    ``judge(req, name, records, root_record)`` returns why the name falls short, or
-    "" when it meets the requirement. A name short of it fails the row. When
-    every name meets it the row is not measured, never met: the names come
-    from certificate transparency, which is a floor, so any number of names
-    meeting the requirement says nothing about the names not seen. A root
-    whose sweep found no such name gets no row.
+    ``judge(req, name, records, root_record)`` returns why the name falls short,
+    "" when it meets the requirement, or :data:`NOT_SETTLED` when what it
+    needs was not read. A name short of it fails the row. A name not settled
+    is counted neither way: it is left out of the names read and listed in the
+    row's note. When every name read meets it the row is not measured, never
+    met: the names come from certificate transparency, which is a floor, so
+    any number of names meeting the requirement says nothing about the names
+    not seen. A root whose sweep found no such name gets no row.
     """
     rows = []
     for d in roots:
@@ -2306,16 +2543,34 @@ def _discovered_rows(req: dict, assets: list[Any], roots: list[str],
             continue
         root = _by(assets, "dmarc", d)
         root_record = _dmarc_record(root[0]) if root else ""
-        short = {n: why for n in sorted(names) if (why := judge(req, n, names[n], root_record))}
+        held = held_dmarc(assets, d)
+        verdicts = {n: judge(req, n, {**names[n], **({"policy": policy_record(n, held)}
+                                                     if held.walkable else {})},
+                             root_record)
+                    for n in sorted(names)}
+        unsettled = [n for n, why in verdicts.items() if why == NOT_SETTLED]
+        short = {n: why for n, why in verdicts.items() if why and why != NOT_SETTLED}
+        settled = [n for n in sorted(names) if n not in unsettled]
         why_mail = "; ".join(f"{n} {names[n].get('because') or 'handles mail'}"
                              for n in sorted(names))
         note = "; ".join(x for x in [
+            (f"{len(unsettled)} of the {len(names)} name(s) counted neither way, because a "
+             "name between them and the domain was not read, and its DMARC record could "
+             f"govern them (RFC 9989 §4.10): {', '.join(unsettled)}" if unsettled else ""),
             f"read {extra.get('read_at', '')} via {', '.join(extra.get('resolvers') or [])}",
             _control_note(extra), f"why each is read as handling mail: {why_mail}"] if x)
+        if not short and not settled:
+            rows.append(Conformance(
+                req["id"], req["title"], req["level"], req["scope"], subject, NOT_MEASURED,
+                reason=INCONCLUSIVE, observed=f"none of {len(names)} settled",
+                evidence=("no mail-handling sub-domain could be read against this "
+                          "requirement, so nothing is graded in either direction"),
+                source=req["source"], subject_note=note, discovered=True))
+            continue
         if short:
             rows.append(Conformance(
                 req["id"], req["title"], req["level"], req["scope"], subject, FAIL,
-                observed=f"{len(short)} of {len(names)} short of it",
+                observed=f"{len(short)} of {len(settled)} short of it",
                 reason="; ".join([
                     "a sub-domain that handles mail is an email domain to a receiver, so the "
                     "rule for email domains applies to it: "
@@ -2326,8 +2581,8 @@ def _discovered_rows(req: dict, assets: list[Any], roots: list[str],
         else:
             rows.append(Conformance(
                 req["id"], req["title"], req["level"], req["scope"], subject, NOT_MEASURED,
-                reason=NOT_COLLECTED, observed=f"all {len(names)} read meet it",
-                evidence=(f"every mail-handling sub-domain read ({', '.join(sorted(names))}) "
+                reason=NOT_COLLECTED, observed=f"all {len(settled)} read meet it",
+                evidence=(f"every mail-handling sub-domain read ({', '.join(settled)}) "
                           "meets it, and that is not the same as every one doing so: "
                           + _SWEEP_POPULATION + ". No verdict is claimed in either direction"),
                 source=req["source"], subject_note=note, discovered=True))
@@ -2350,12 +2605,14 @@ def _judge_spf(req: dict, name: str, records: dict, root_record: str) -> str:
 
 
 def _judge_dmarc(req: dict, name: str, records: dict, root_record: str) -> str:
-    """SGE-DMARC-01 on one name: its own record, or the organisational record it falls back to.
+    """SGE-DMARC-01 on one name: its own record, or the record policy discovery finds.
 
     A name with no DMARC record of its own is not failed for that alone. A
-    receiver applies the organisational domain's record to it: its ``sp=``
-    for a name that exists, its ``np=`` for one that does not, and ``p=``
-    when those are absent (RFC 9989 §4.7).
+    receiver applies the record RFC 9989 §4.10.1 discovery finds for it
+    (``records["policy"]``, from :func:`policy_record`; the organisational
+    record when that is absent): its ``sp=`` for a name that exists, its
+    ``np=`` for one that does not, and ``p=`` when those are absent (§4.7).
+    A name whose walk passes a name that was not read is :data:`NOT_SETTLED`.
     """
     own = str(records.get("dmarc_record") or "")
     if own:
@@ -2365,17 +2622,23 @@ def _judge_dmarc(req: dict, name: str, records: dict, root_record: str) -> str:
         return (f"its own record reads p={tags.get('p') or 'absent'}"
                 + (f", pct={tags['pct']}" if tags.get("pct") else "")
                 + "; the standard requires p=reject on all of its failing mail")
-    if not root_record:
-        return ("publishes no DMARC record of its own, and the organisational domain "
-                "publishes none for it to fall back to")
+    at, governing = "", root_record
+    if "policy" in records:
+        if records["policy"] is UNREAD:
+            return NOT_SETTLED
+        at, governing = records["policy"]
+    if not governing:
+        return ("publishes no DMARC record of its own, and no record at or above it "
+                "publishes one for it to fall back to")
     key = "sp" if records.get("exists", True) else "np"
-    tags = _dmarc_tags(root_record)
+    tags = _dmarc_tags(governing)
     if _rejects(tags, key):
         return ""
     policy = next((f"{k}={tags[k]}" for k in _POLICY_FALLBACK[key] if tags.get(k)), "no policy")
-    return (f"publishes no DMARC record of its own, so a receiver applies the organisational "
-            f"record's {key}= policy (falling back as RFC 9989 §4.7 says), which reads "
-            f"{policy}; the standard requires p=reject")
+    return (f"publishes no DMARC record of its own, so a receiver applies the {key}= policy "
+            f"of the record {'at ' + at if at else 'policy discovery finds'} (RFC 9989 "
+            f"§4.10.1, falling back as §4.7 says), which reads {policy}; the standard "
+            "requires p=reject")
 
 
 def _judge_sp_tag(req: dict, name: str, records: dict, root_record: str) -> str:

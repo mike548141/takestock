@@ -627,8 +627,11 @@ def capture_subdomains(domain: str, names: list[str],
     """Read each sub-domain name's SPF, MX, DKIM wildcard and DMARC records.
 
     The wildcards under ``domain`` itself and an absence control are read in
-    the same batch. ``control.usable`` is False when the control name neither
-    came back NXDOMAIN nor was answered by a published wildcard
+    the same batch, and so is the DMARC record of each name a policy walk
+    from a swept name passes on its way to ``domain``
+    (:func:`intermediate_names`), in ``intermediate_dmarc``.
+    ``control.usable`` is False when the control name neither came back
+    NXDOMAIN nor was answered by a published wildcard
     (:func:`control_reading`), and then no absence in the batch means anything;
     ``control.basis`` says which of the two made it usable.
     """
@@ -646,9 +649,13 @@ def capture_subdomains(domain: str, names: list[str],
     wanted = wanted[:max_names]
 
     read: list[SubdomainRecords] = []
+    between = intermediate_names(domain, wanted)
+    intermediate: list[Corroborated] = []
     if wanted:
         with futures.ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
             read = list(pool.map(lambda n: _read_subdomain(n, resolvers), wanted))
+            intermediate = list(pool.map(
+                lambda n: corroborate_status(f"_dmarc.{n}", "TXT", resolvers), between))
     for rec in read:
         _scope(rec, named_senders)
 
@@ -666,9 +673,46 @@ def capture_subdomains(domain: str, names: list[str],
                                     "spf_conformant": r.spf_conformant,
                                     "dkim_conformant": r.dkim_conformant}
                        for r in read],
+        "intermediate_dmarc": [
+            {"name": n, "dmarc_name": q.name, "dmarc_record": _pick_txt(q.value, "v=DMARC1"),
+             "settled": q.agreed and any(not lk.error for lk in q.lookups)}
+            for n, q in zip(between, intermediate, strict=True)],
         "names_offered": len(names),
         "names_dropped_by_cap": truncated,
     }
+
+
+def intermediate_names(domain: str, names: list[str]) -> list[str]:
+    """The names between each of ``names`` and ``domain`` that a DMARC policy walk passes.
+
+    A record at such a name can govern the names beneath it (RFC 9989
+    §4.10.2), so the sweep reads its DMARC record even when no certificate
+    log listed the name. Names already in ``names``, and ``domain`` itself,
+    are left out; nothing above ``domain`` is read.
+    """
+    root = domain.lower().strip(".")
+    have = set(names)
+    return sorted({w for n in names for w in tree_walk(n)
+                   if w.endswith("." + root) and w not in have})
+
+
+#: Labels a DNS Tree Walk keeps when it shortens a long name (RFC 9989 §4.10, step 4).
+_TREE_WALK_LABELS = 7
+
+
+def tree_walk(name: str) -> list[str]:
+    """The names a DNS Tree Walk from ``name`` queries after ``name`` itself, nearest first.
+
+    RFC 9989 §4.10 and §4.10.1: a name of eight labels or fewer is followed by
+    its immediate parent; a longer one jumps to its right-most seven labels.
+    Each step then removes the left-most label until none remain.
+    """
+    labels = [x for x in name.lower().strip(".").split(".") if x]
+    if len(labels) > 8:
+        labels = labels[-_TREE_WALK_LABELS:]
+    else:
+        labels = labels[1:]
+    return [".".join(labels[i:]) for i in range(len(labels))]
 
 
 def _rsa_bits(b64: str) -> int:

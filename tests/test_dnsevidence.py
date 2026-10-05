@@ -127,6 +127,18 @@ def _sweep(monkeypatch, table: dict, names: list[str] | None = None) -> dict:
     return dnsevidence.capture_subdomains("example.com", names or [], ("192.0.2.53",))
 
 
+def test_the_sweep_reads_the_dmarc_record_of_each_name_a_policy_walk_passes(monkeypatch):
+    table = {("_dmarc.mail.example.com", "TXT"): ("NOERROR", ['"v=DMARC1; p=reject; psd=n"'])}
+    cap = _sweep(monkeypatch, table, ["a.mail.example.com", "b.deep.mail.example.com"])
+    # Neither intermediate name came from the logs; the domain itself is not repeated.
+    assert [r["name"] for r in cap["intermediate_dmarc"]] == [
+        "deep.mail.example.com", "mail.example.com"]
+    by = {r["name"]: r for r in cap["intermediate_dmarc"]}
+    assert by["mail.example.com"]["dmarc_record"] == "v=DMARC1; p=reject; psd=n"
+    assert by["deep.mail.example.com"]["settled"] and by["deep.mail.example.com"][
+        "dmarc_record"] == ""
+
+
 def test_an_answer_at_the_control_that_no_wildcard_explains_spoils_it(monkeypatch):
     # Nothing is published at *.example.com, yet the control answers.
     cap = _sweep(monkeypatch, {(CONTROL, "TXT"): ("NOERROR", ['"v=spf1 -all"'])})

@@ -7,7 +7,7 @@ import re
 
 import pytest
 
-from takestock import sge
+from takestock import dnsevidence, sge
 from takestock.model import CryptoAsset
 
 D = "example.com"
@@ -422,6 +422,111 @@ def test_a_wildcard_explained_control_lets_the_sweep_grade():
         "SGE-NED-SPF-01", [ned("ned-spf", ["node.example.com"])]).subject_note
 
 
+# ── Policy discovery: the DNS Tree Walk (RFC 9989 §4.10) ──────────────
+
+def held(records: dict, unsettled: tuple[str, ...] = ()) -> sge.HeldRecords:
+    return sge.HeldRecords(D, dict(records), set(unsettled))
+
+
+def test_the_tree_walk_follows_rfc_9989_section_4_10():
+    assert dnsevidence.tree_walk("a.mail.example.com") == ["mail.example.com", "example.com",
+                                                           "com"]
+    # More than eight labels: the walk jumps to the right-most seven (§4.10 step 4).
+    assert dnsevidence.tree_walk("a.b.c.d.e.f.g.h.i.j.mail.example.com")[:2] == [
+        "g.h.i.j.mail.example.com", "h.i.j.mail.example.com"]
+    assert dnsevidence.intermediate_names(D, ["a.mail.example.com", "b.example.com"]) == [
+        "mail.example.com"]
+
+
+def test_the_shortest_record_governs_unless_an_intermediate_says_psd_n():
+    root, mid = "v=DMARC1; p=reject; sp=none", "v=DMARC1; p=reject"
+    name = "a.mail.example.com"
+    base = {D: root, "mail.example.com": mid, name: ""}
+    # §4.10.2 step 3: the record with the fewest labels is the Organizational Domain's.
+    assert sge.policy_record(name, held(base)) == (D, root)
+    # Step 1: psd=n makes the intermediate name the Organizational Domain.
+    psd_n = "v=DMARC1; p=reject; psd=n"
+    assert sge.policy_record(name, held({**base, "mail.example.com": psd_n})) == (
+        "mail.example.com", psd_n)
+    # With nothing at the domain, the intermediate record is the shortest found.
+    assert sge.policy_record(name, held({D: "", "mail.example.com": mid, name: ""})) == (
+        "mail.example.com", mid)
+    # Step 2: psd=y at the domain makes the name one label below it the Organizational Domain.
+    psd_y = "v=DMARC1; p=none; psd=y"
+    assert sge.policy_record(name, held({**base, D: psd_y})) == ("mail.example.com", mid)
+    # A name's own record is always the one applied.
+    assert sge.policy_record("mail.example.com", held(base)) == ("mail.example.com", mid)
+    # Nothing found, and a walk through a name that was not read, are kept apart.
+    assert sge.policy_record(name, held({D: "", "mail.example.com": "", name: ""})) == ("", "")
+    assert sge.policy_record(name, held({D: root, name: ""})) is sge.UNREAD
+    assert sge.policy_record(name, held(base, ("mail.example.com",))) is sge.UNREAD
+
+
+def walked_sweep(records: dict, without: list[str], **extra) -> dict:
+    return {"name": f"DMARC on sub-domains of {D}", "protocol": "ned-dmarc", "host": D,
+            "extra": {"control_usable": True, "names_in_scope": len(records) + len(without),
+                      "dmarc_records": records, "names_without_own_dmarc": without,
+                      "read_at": "t", "resolvers": ["192.0.2.53"], **extra}}
+
+
+def test_a_psd_n_intermediate_record_governs_the_swept_names_beneath_it():
+    weak_root = dmarc("v=DMARC1; p=reject; sp=none")
+    names = ["a.mail.example.com", "b.mail.example.com"]
+    strict = "v=DMARC1; p=reject; psd=n; adkim=s; aspf=s; rua=mailto:d@example.com"
+    sweep = walked_sweep({}, names, intermediate_dmarc={"mail.example.com": strict})
+    rows = {r.requirement: r for r in sge.evaluate([weak_root, sweep], [D], STD).rows
+            if r.subject == D and r.requirement in ("SGE-NED-DMARC-01", "SGE-NED-DMARC-R01")}
+    # The root's own sp=none still fails the root's row; the names beneath are covered.
+    assert rows["SGE-NED-DMARC-01"].observed == "sp=none"
+    beneath = one("SGE-NED-DMARC-01",
+                  [dmarc("v=DMARC1; p=reject; sp=quarantine; np=reject"), sweep])
+    assert beneath.status == sge.NOT_MEASURED
+    assert "a.mail.example.com by mail.example.com" in beneath.subject_note
+    # Without psd=n the root governs them, as before.
+    plain = walked_sweep({}, names, intermediate_dmarc={"mail.example.com": "v=DMARC1; p=reject"})
+    row = one("SGE-NED-DMARC-01", [dmarc("v=DMARC1; p=reject; sp=quarantine; np=reject"), plain])
+    assert (row.status, row.observed) == (sge.FAIL, "2 of 2 sub-domains without a reject policy")
+    align = one("SGE-NED-DMARC-R01", [dmarc("v=DMARC1; p=reject"), sweep])
+    assert align.status == sge.NOT_MEASURED
+
+
+def test_a_name_whose_walk_passes_an_unread_name_is_counted_neither_way():
+    sweep = walked_sweep({}, ["a.mail.example.com", "b.example.com"],
+                         intermediate_unsettled=["mail.example.com"])
+    row = one("SGE-NED-DMARC-01", [dmarc("v=DMARC1; p=reject; sp=quarantine"), sweep])
+    assert (row.status, row.observed) == (sge.FAIL, "1 of 2 sub-domains without a reject policy")
+    assert "1 name(s) counted neither way" in row.subject_note
+    assert "a.mail.example.com" in row.subject_note
+
+
+def test_a_mail_handling_name_takes_the_record_discovery_finds():
+    names = {"a.mail.example.com": sub()}
+    root = dmarc("v=DMARC1; p=reject; sp=quarantine")
+    governed = walked_sweep({}, [], intermediate_dmarc={"mail.example.com": "v=DMARC1; p=reject; "
+                                                                           "psd=n"})
+    assert discovered("SGE-DMARC-01", [root, governed, mail_subs(names)]).status == (
+        sge.NOT_MEASURED)
+    plain = walked_sweep({}, [], intermediate_dmarc={"mail.example.com": ""})
+    row = discovered("SGE-DMARC-01", [root, plain, mail_subs(names)])
+    assert row.status == sge.FAIL and f"record at {D}" in row.reason
+
+
+def test_a_mail_handling_name_whose_walk_is_unread_is_counted_neither_way():
+    names = {"a.mail.example.com": sub(), "b.example.com": sub()}
+    sweep = walked_sweep({}, [], intermediate_unsettled=["mail.example.com"])
+    row = discovered("SGE-DMARC-01", [dmarc("v=DMARC1; p=reject"), sweep, mail_subs(names)])
+    # Only the settled name is read; the other is listed, never counted as meeting it.
+    assert (row.status, row.observed) == (sge.NOT_MEASURED, "all 1 read meet it")
+    assert "1 of the 2 name(s) counted neither way" in row.subject_note
+    assert "a.mail.example.com" not in row.evidence
+    weak = discovered("SGE-DMARC-01", [dmarc("v=DMARC1; p=reject; sp=quarantine"), sweep,
+                                       mail_subs(names)])
+    assert (weak.status, weak.observed) == (sge.FAIL, "1 of 1 short of it")
+    alone = discovered("SGE-DMARC-01", [dmarc("v=DMARC1; p=reject"), sweep,
+                                        mail_subs({"a.mail.example.com": sub()})])
+    assert (alone.status, alone.reason) == (sge.NOT_MEASURED, sge.INCONCLUSIVE)
+
+
 # ── Discovered sub-domains that handle mail ───────────────────────────
 
 SUBJECT = sge.discovered_mail_subject(D)
@@ -582,6 +687,24 @@ def test_the_sending_clause_reads_the_transport_export():
     assert "10 of the 1,000" in dirty[-1].reason and "TLS1.0" in dirty[-1].reason
     inbound_only = rows_for("SGE-TLS-01", [transport("inbound", 5, 5, "No TLS=5")])
     assert inbound_only[-1].reason == sge.NOT_COLLECTED
+
+
+def test_implicit_tls_on_the_receiving_side_reads_port_25_and_never_passes():
+    base = [mx_row("mx1.example.com", "mx2.example.com", "mx3.example.com")]
+    rows = {r.subject: r for r in rows_for("SGE-ITLS-01", base + [
+        gateway("mx1.example.com", [], ["plaintext:smtp"]),
+        gateway("mx2.example.com", ["TLSv1.2"]),
+        gateway("mx3.example.com", ["TLSv1.2"], port="465")])}
+    assert sge.PASS not in {r.status for r in rows.values()}
+    assert (rows["mx1.example.com"].reason, rows["mx1.example.com"].observed) == (
+        sge.INCONCLUSIVE, "no STARTTLS offered on port 25")
+    assert "fails SGE-TLS-01" in rows["mx1.example.com"].evidence
+    assert rows["mx2.example.com"].observed == "STARTTLS offered on port 25"
+    # A port-465 row is RFC 8314 submission, not relay: the host reads as not probed.
+    unprobed = rows["mx3.example.com"]
+    assert unprobed.reason == sge.NOT_COLLECTED and "RFC 8314" in unprobed.evidence
+    # The organisation's own row (the transport export) is still there.
+    assert rows[sge._ITLS_SUBJECT].reason == sge.NOT_COLLECTED
 
 
 def test_implicit_tls_is_never_passed():

@@ -49,6 +49,7 @@ CLEAN = {
     (f"_dmarc.{P}", "TXT"): ['"v=DMARC1; p=reject; adkim=s; aspf=s; rua=mailto:d@example.com"'],
     (DKIM_AT, "TXT"): ['"v=DKIM1; p="'],
     (P, "MX"): ["0 ."],
+    (P, "NS"): ["ns2.example.net.", "ns1.example.net."],
 }
 
 
@@ -61,7 +62,10 @@ def parked(monkeypatch, table: dict, status: dict | None = None):
 def test_a_parked_domain_yields_spf_dmarc_dkim_and_null_mx_rows(monkeypatch):
     rows, failures = parked(monkeypatch, CLEAN)
     assert failures == []
-    assert set(rows) == {"spf", "dmarc", ct_dns.DKIM_WILDCARD, ct_dns.NULL_MX}
+    assert set(rows) == {"spf", "dmarc", ct_dns.NAME_SERVERS, ct_dns.DKIM_WILDCARD,
+                         ct_dns.NULL_MX}
+    assert rows[ct_dns.NAME_SERVERS].extra["name_servers"] == ["ns1.example.net",
+                                                              "ns2.example.net"]
     assert all(r.extra["parked"] is True and r.host == P for r in rows.values())
     assert rows["spf"].extra["record"].strip('"') == "v=spf1 -all"
     assert "dmarc-reject" in rows["dmarc"].flags
@@ -409,7 +413,7 @@ def test_names_beneath_fall_back_to_the_parked_domains_own_dmarc_record():
     weak = _rows(dmarc="v=DMARC1; p=reject; sp=none")
     row = beneath(weak + [_ned("ned-dmarc", dmarc_records={})])["SGE-NED-DMARC-01"]
     assert (row.status, row.observed) == (sge.FAIL, "2 of 2 sub-domains without a reject policy")
-    assert "fall back to the root record" in row.subject_note
+    assert "take the record policy discovery finds for them" in row.subject_note
     # A name that does not exist takes np= instead of sp= (RFC 9989 §4.7).
     split = _rows(dmarc="v=DMARC1; p=reject; sp=reject; np=none")
     row = beneath(split + [_ned("ned-dmarc", dmarc_records={},

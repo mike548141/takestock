@@ -295,7 +295,10 @@ requirements:
       government organisations, from a per-message transport export. The
       evaluator never returns a pass for this row, because such an export
       records the protocol version negotiated and not the port or how the
-      session was established.
+      session was established. Each MX host's port-25 STARTTLS probe is read
+      too, as a necessary condition on the receiving side, and never passes
+      either: a probe that delivers no mail cannot see a sender without TLS
+      being refused.
 
   - id: SGE-DLP-01
     title: Data Loss Prevention enforced

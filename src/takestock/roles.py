@@ -99,6 +99,8 @@ _EMAIL_ROLES = {
                "encrypt when they deliver here",
     "caa": "Certificate issuing policy for {domain} — which certificate providers are "
            "allowed to issue certificates for it",
+    "ns": "Name servers for {domain} — the DNS servers that publish its records, which "
+          "is who hosts its DNS",
     "tls-rpt": "Encryption failure reporting for {domain} — where other mail servers send "
                "word when they could not deliver to it securely",
     "dane": "Mail server certificate records for {domain} — whether its own DNS names the "

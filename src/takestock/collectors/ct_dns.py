@@ -85,6 +85,10 @@ NULL_MX = "null-mx"
 #: empty key that says "no mail from here is ever signed" is published.
 DKIM_WILDCARD = "dkim-wildcard"
 
+#: Protocol of the row naming a domain's name servers: the hosts its NS records
+#: say are authoritative for it (RFC 1035 §3.3.11), which is who serves its DNS.
+NAME_SERVERS = "ns"
+
 #: The null MX states (RFC 7505), each also a ``null-mx:<state>`` flag on the row.
 NULL_MX_PUBLISHED = "published"
 NULL_MX_WITH_OTHERS = "alongside-other-mx"
@@ -812,7 +816,7 @@ def mta_sts_policy_faults(fetch: dict[str, Any]) -> list[str]:
 def _email_assets(domain: str, ref_time: datetime | None = None,
                   selectors: list[str] | None = None,
                   resolvers: tuple[str, ...] = ("",)) -> tuple[list[CryptoAsset], list[str]]:
-    """MX, SPF, DMARC, MTA-STS, TLS-RPT and DKIM rows for one email domain, and any failures.
+    """MX, SPF, DMARC, NS, MTA-STS, TLS-RPT and DKIM rows for one email domain, and any failures.
 
     A settled lookup that returns no SPF or DMARC record still yields a row,
     with ``extra.present`` False and the resolver replies in ``extra.lookup``:
@@ -836,6 +840,9 @@ def _email_assets(domain: str, ref_time: datetime | None = None,
     rows, spf_dmarc_unsettled = _spf_dmarc_rows(domain, common, resolvers)
     out += rows
     unsettled += spf_dmarc_unsettled
+    ns_rows, ns_unsettled = _name_server_rows(domain, common, resolvers)
+    out += ns_rows
+    unsettled += ns_unsettled
 
     sts = read_txt(f"_mta-sts.{domain}", resolvers)
     if not sts.measured:
@@ -963,6 +970,28 @@ def _spf_dmarc_rows(domain: str, common: dict[str, Any],
     return out, unsettled
 
 
+def _name_server_rows(domain: str, common: dict[str, Any],
+                      resolvers: tuple[str, ...]) -> tuple[list[CryptoAsset], list[str]]:
+    """The :data:`NAME_SERVERS` row for ``domain``, or a label when its NS lookup did not settle.
+
+    ``extra.name_servers`` lists the host names the NS records at ``domain``
+    name, lower-cased and sorted. A settled lookup with no NS record in the
+    answer (a name that is not the top of its own zone, so its parent zone
+    serves it) gives an empty list, and the resolver replies stay in
+    ``extra.lookup``.
+    """
+    ns = read_txt(domain, resolvers, rtype="NS")
+    if not ns.measured:
+        return [], [f"NS ({ns.name}: {ns.why_unsettled()})"]
+    servers = sorted({a.strip().rstrip(".").lower() for a in ns.answers if a.strip()})
+    return [CryptoAsset(
+        name=f"NS {domain}", role=roles.email_record(NAME_SERVERS, domain),
+        protocol=NAME_SERVERS,
+        notes=(", ".join(servers) if servers else
+               "no NS record in the answer: the name is not the top of its own zone"),
+        extra={"name_servers": servers, "lookup": ns.evidence()}, **common)], []
+
+
 def _is_null_mx(record: str) -> bool:
     """True for the null MX of RFC 7505 §3: preference 0 and the root as exchange."""
     parts = record.split()
@@ -1005,7 +1034,7 @@ _NULL_MX_NOTES = {
 
 def parked_assets(domain: str, ref_time: datetime | None = None,
                   resolvers: tuple[str, ...] = ("",)) -> tuple[list[CryptoAsset], list[str]]:
-    """The SPF, DMARC, wildcard DKIM and null-MX rows for one parked domain, and any failure.
+    """The SPF, DMARC, NS, wildcard DKIM and null-MX rows for one parked domain, and any failure.
 
     Read the same way as an email domain's SPF and DMARC rows (a settled
     lookup with no record is a measured absence). The TXT record at
@@ -1018,6 +1047,9 @@ def parked_assets(domain: str, ref_time: datetime | None = None,
                               "source_name": SOURCE_DNS, "collected_at": now_date(ref_time),
                               "data_state": "email-auth"}
     out, unsettled = _spf_dmarc_rows(domain, common, resolvers)
+    ns_rows, ns_unsettled = _name_server_rows(domain, common, resolvers)
+    out += ns_rows
+    unsettled += ns_unsettled
     dkim = read_txt(dnsevidence.dkim_wildcard_name(domain), resolvers)
     if not dkim.measured:
         unsettled.append(f"DKIM ({dkim.name}: {dkim.why_unsettled()})")
@@ -1078,9 +1110,14 @@ def ned_rows(domain: str, cap: dict, ref_time: datetime | None = None,
     ``extra.names_unsettled``. ``extra.names_nonexistent`` lists the names in
     scope that came back NXDOMAIN: a receiver applies a parent's ``np=``
     policy to those (RFC 9989 §4.7), and its ``sp=`` policy to names that
-    exist. ``extra.control_basis`` says why the absence control was trusted
-    (:func:`dnsevidence.control_reading`). ``parked`` sets ``extra.parked`` on
-    each row, for the sweep beneath a parked domain.
+    exist. The DMARC row also lists ``extra.names_without_own_dmarc``, and
+    holds in ``extra.intermediate_dmarc`` the DMARC record ("" for none) of
+    each name between a swept name and ``domain`` that the sweep read for
+    policy discovery (RFC 9989 §4.10), with the reads that did not settle in
+    ``extra.intermediate_unsettled``. ``extra.control_basis`` says why the
+    absence control was trusted (:func:`dnsevidence.control_reading`).
+    ``parked`` sets ``extra.parked`` on each row, for the sweep beneath a
+    parked domain.
     """
     collected_at = now_date(ref_time)
 
@@ -1161,6 +1198,13 @@ def ned_rows(domain: str, cap: dict, ref_time: datetime | None = None,
             "names_with_sp_tag": with_sp_tag,
             "dmarc_records": {r["name"]: r["dmarc_record"] for r in in_scope
                               if r.get("dmarc_record")},
+            "names_without_own_dmarc": sorted(r["name"] for r in in_scope
+                                              if not r.get("dmarc_record")),
+            "intermediate_dmarc": {r["name"]: r["dmarc_record"]
+                                   for r in cap.get("intermediate_dmarc") or [] if r["settled"]},
+            "intermediate_unsettled": sorted(r["name"]
+                                             for r in cap.get("intermediate_dmarc") or []
+                                             if not r["settled"]),
         }, **common))
 
     out.append(CryptoAsset(

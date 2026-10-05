@@ -107,6 +107,15 @@ A machine row that names a port (`extra.service` such as `443/tcp`, or
 that names software also creates a **Software Product** and a **Software
 Release**, and records that the release is installed on the machine.
 
+A **DNS Name** for a domain the target profile names also carries two facts
+read from public DNS by `ct_dns`. `name_servers` lists the hosts its NS
+records say are authoritative for it (RFC 1035 §3.3.11), which is who hosts
+its DNS. `dmarc_report_address` is the `rua=` tag of the DMARC record
+published at the name itself, as published (RFC 9989 §4.7). Each is *not
+applicable*, with a note, when the lookup settled with nothing to report: no NS
+record because the name is not the top of its own zone, or no DMARC record or
+no `rua=` in it. A name nothing read for them shows *not collected*.
+
 ## What the register holds
 
 ### Classes

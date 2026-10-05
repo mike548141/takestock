@@ -138,6 +138,12 @@ hosts:
   DKIM records, then sweeps the sub-domain names the transparency read found
   for the denying SPF, empty DKIM and DMARC records a name that sends no mail
   should publish.
+- **Name servers.** For every email and parked domain it reads the NS
+  records, in a row of protocol `ns` named `NS <domain>`, whose
+  `extra.name_servers` lists the hosts named (lower case, sorted): who hosts
+  the domain's DNS. A settled lookup with no NS record in the answer (a name
+  that is not the top of its own zone) gives an empty list. The lookup settles
+  or fails as the SPF and DMARC lookups do.
 - **The MTA-STS policy fetch.** When `_mta-sts.<domain>` answers, the policy
   is fetched from `https://mta-sts.<domain>/.well-known/mta-sts.txt` with
   `curl`, which validates the certificate and does not follow redirects. The
@@ -175,6 +181,14 @@ hosts:
   Each sweep's rows list in `extra.names_nonexistent` the names read that
   answered NXDOMAIN. A receiver gives such a name the parent's DMARC `np=`
   policy (RFC 9989 §4.7) rather than its `sp=` policy.
+
+  Each sweep also reads the DMARC record of every name between a swept name
+  and the domain, which a receiver's policy discovery passes (the DNS Tree
+  Walk of RFC 9989 §4.10), whether or not the logs listed that name. The
+  `ned-dmarc` row keeps them in `extra.intermediate_dmarc` (name to record,
+  `""` for none), the reads that did not settle in
+  `extra.intermediate_unsettled`, and the swept names with no DMARC record of
+  their own in `extra.names_without_own_dmarc`.
 
   Each sweep also writes a row of protocol `subdomain-mail`, named
   `Mail-handling sub-domains of <domain>`, whose `extra.names` holds, for each

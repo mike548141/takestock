@@ -265,8 +265,8 @@ defaults, are tried. A selector that does not answer proves nothing.
 |---|---|---|---|
 | SGE-NED-SPF-01 a denying SPF record (`v=spf1 -all`) on names that send no mail | must | any swept name lacks it | not measured |
 | SGE-NED-DKIM-01 an empty DKIM key (`v=DKIM1; p=`) on names that send no mail | must | any swept name lacks it | not measured |
-| SGE-NED-DMARC-01 a rejecting DMARC policy on names that send no mail | must | the email domain's own record sets `sp=none`, or `np=` weaker than `reject` (RFC 9989's policy for names that do not exist); or a swept name's own record, or the domain's record it falls back to (`sp=` for a name that exists, `np=` for one that answers NXDOMAIN), does not reject all failing mail; or a swept name has no record and the domain publishes none for it to fall back to | not measured |
-| SGE-NED-DMARC-R01 strict alignment and a reporting address on those names | recommended | a swept name, on its own record or the one it falls back to, lacks `adkim=s`, `aspf=s` or `rua=`, or has no record and nothing to fall back to | not measured |
+| SGE-NED-DMARC-01 a rejecting DMARC policy on names that send no mail | must | the email domain's own record sets `sp=none`, or `np=` weaker than `reject` (RFC 9989's policy for names that do not exist); or a swept name's own record, or the record policy discovery finds for it (RFC 9989 §4.10; `sp=` for a name that exists, `np=` for one that answers NXDOMAIN), does not reject all failing mail; or a swept name has no record and none is found for it | not measured |
+| SGE-NED-DMARC-R01 strict alignment and a reporting address on those names | recommended | a swept name, on its own record or the one policy discovery finds for it, lacks `adkim=s`, `aspf=s` or `rua=`, or has no record and none is found for it | not measured |
 | SGE-DMARC-R05 `sp=` only on organisational domains | recommended | a swept sub-domain publishes its own `sp=` | not measured |
 | SGE-DMARC-R03 unwanted DMARC tags absent | recommended | a swept sub-domain's own record carries `ruf`, `fo`, `pct`, `rf` or `ri` | not measured |
 
@@ -276,10 +276,17 @@ in scope; a name without a record of its own is given the domain's record,
 which the domain's own row already reads.
 
 Names the sweep finds sending mail are excluded and listed; names it could
-not read are listed as not read, so not counted either way. The same rows are
-read beneath each parked domain, with the subject *sub-domains of* the domain;
-there the parked domain's own `sp=` and `np=` are graded on its own row, so
-SGE-NED-DMARC-01 beneath it reads only the swept names.
+not read are listed as not read, so not counted either way. A name with no
+DMARC record of its own is read against the record RFC 9989's policy
+discovery finds for it (§4.10): usually the domain's own, and a record at a
+name between them only where §4.10.2 makes that name the Organizational
+Domain (see [`SECURE-GOVERNMENT-EMAIL.md`](SECURE-GOVERNMENT-EMAIL.md), *DMARC
+policy discovery*). The note beside the row names each swept name governed by
+such a record, and each counted neither way because a name on its walk could
+not be read. The same rows are read beneath each parked domain, with the
+subject *sub-domains of* the domain; there the parked domain's own `sp=` and
+`np=` are graded on its own row, so SGE-NED-DMARC-01 beneath it reads only the
+swept names.
 
 ### Read on discovered sub-domains that handle mail
 
@@ -295,13 +302,15 @@ records are not read.
 | Requirement | Level | Not met when | Otherwise |
 |---|---|---|---|
 | SGE-SPF-01 SPF ending `-all` | must | a name publishes no SPF record, or one ending `~all` or neither | not measured |
-| SGE-DMARC-01 `p=reject` | must | a name's own DMARC record does not reject all failing mail; or it has none and the parent's record it falls back to (`sp=` for a name that exists, `np=` for one that does not, then `p=`) does not; or neither publishes one | not measured |
+| SGE-DMARC-01 `p=reject` | must | a name's own DMARC record does not reject all failing mail; or it has none and the record policy discovery finds for it (`sp=` for a name that exists, `np=` for one that does not, then `p=`) does not; or none is found | not measured |
 | SGE-DMARC-R05 `sp=` only on organisational domains | recommended | a name's own DMARC record sets `sp=` | not measured |
 | SGE-DMARC-R03 unwanted DMARC tags absent | recommended | a name's own DMARC record carries `ruf`, `fo`, `pct`, `rf` or `ri` | not measured |
 
 A name without a DMARC record of its own is not failed for that alone, because
-a receiver applies the parent's record to it. As with every sweep, the names
-are a floor, so these rows can fail and never pass. A parent whose sweep found
+a receiver applies to it the record its policy discovery finds. A name whose
+policy discovery passes a name that could not be read is counted neither way:
+it is left out of the names read, and the note beside the row lists it. As with
+every sweep, the names are a floor, so these rows can fail and never pass. A parent whose sweep found
 no such name has no row.
 
 ### Read from the mail hosts
@@ -340,6 +349,17 @@ crossed in clear. But no per-message record shows the port or how the
 session was set up, so a forced-STARTTLS path and an Implicit TLS path look
 the same. Whether the requirement applies also depends on membership of the
 SGE Restricted Group, which nothing read here establishes.
+
+The **receiving** side gets one row per MX host, read from the same port-25
+STARTTLS probe as SGE-TLS-01, and it too is never better than *not measured*.
+A host offering no STARTTLS cannot receive another organisation's mail under
+TLS at all, and the row says so (the same host fails SGE-TLS-01); a host
+offering it shows a necessary condition only, because whether it refuses a
+sender that does not start TLS cannot be seen without delivering mail. A host
+with no port-25 probe is *not collected*. No Secure Government Email document
+names a port. The `implicit_tls` collector's rows (ports 465, 993 and 995) are
+not read here: they show RFC 8314 Implicit TLS for mail submission and mailbox
+access, which RFC 8314 §1 says does not cover relay between mail servers.
 
 ### Not observable from outside
 

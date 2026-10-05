@@ -396,7 +396,8 @@ classes:
 
   DNS Name:
     family: Network and Naming
-    attributes: [name, address, ip_stack, internet_facing, lifecycle_state, last_seen]
+    attributes: [name, address, ip_stack, internet_facing, name_servers,
+                 dmarc_report_address, lifecycle_state, last_seen]
     built_from: discovery and mail-authentication rows, and DNS-layer readings of a name
     answers: What names exist, and what is behind them.
 
@@ -717,6 +718,21 @@ attributes:
   serial_number: {refresh_interval_days: null, expected_strength: measured}
   ip_stack: {refresh_interval_days: 7, expected_strength: measured}
   internet_facing: {refresh_interval_days: 7, expected_strength: inferred}
+  name_servers:
+    refresh_interval_days: 30
+    expected_strength: measured
+    note: >-
+      The hosts the name's NS records say are authoritative for it (RFC 1035
+      §3.3.11), which is who hosts its DNS. Read for each domain the target
+      profile names. A name that is not the top of its own zone has no NS
+      records; its parent zone serves it.
+  dmarc_report_address:
+    refresh_interval_days: 30
+    expected_strength: measured
+    note: >-
+      The aggregate reporting addresses in the rua= tag of the DMARC record
+      published at the name itself, as published (RFC 9989 §4.7). Without
+      rua=, receivers send the domain no aggregate reports.
   port: {refresh_interval_days: 30, expected_strength: measured}
   transport: {refresh_interval_days: 30, expected_strength: measured}
   protocol: {refresh_interval_days: 30, expected_strength: measured}

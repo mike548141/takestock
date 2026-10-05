@@ -347,6 +347,42 @@ def test_sub_domain_rows_from_a_sweep():
     assert spf.extra["names_email_enabled"] == ["c.example.com"]
     assert spf.extra["names_unread"] == ["d.example.com"]
     assert dmarc.extra["names_with_sp_tag"] == ["b.example.com"]
+    assert dmarc.extra["names_without_own_dmarc"] == ["a.example.com"]
+    assert dmarc.extra["intermediate_dmarc"] == {} and dmarc.extra["intermediate_unsettled"] == []
+
+
+def test_the_sweep_row_keeps_the_intermediate_dmarc_reads():
+    cap = {
+        "resolvers": ["192.0.2.53"], "tries": 3, "captured_at": "2030-06-15T00:00:00Z",
+        "control": {"name": "x", "rcode": "NXDOMAIN", "usable": True},
+        "names_offered": 1, "names_dropped_by_cap": 0,
+        "wildcard_spf": {"name": "*.example.com", "record": "", "rcode": "NXDOMAIN",
+                         "agreed": True},
+        "wildcard_dkim": {"name": "*._domainkey.example.com", "record": "", "rcode": "NXDOMAIN",
+                          "agreed": True},
+        "subdomains": [_sub("a.b.example.com")],
+        "intermediate_dmarc": [
+            {"name": "b.example.com", "dmarc_record": "v=DMARC1; p=reject; psd=n",
+             "settled": True},
+            {"name": "c.example.com", "dmarc_record": "", "settled": False}],
+    }
+    dmarc = {a.protocol: a for a in ct_dns.ned_rows("example.com", cap, NOW)}["ned-dmarc"]
+    assert dmarc.extra["intermediate_dmarc"] == {"b.example.com": "v=DMARC1; p=reject; psd=n"}
+    assert dmarc.extra["intermediate_unsettled"] == ["c.example.com"]
+
+
+def test_the_name_servers_are_read_for_an_email_domain(monkeypatch):
+    table = {**DNS, ("example.com", "NS"): ["ns1.example.net.", "NS2.example.net."]}
+    rows, _, failures = email_rows(monkeypatch, table)
+    assert failures == []
+    ns = rows[ct_dns.NAME_SERVERS]
+    assert ns.extra["name_servers"] == ["ns1.example.net", "ns2.example.net"]
+    assert ns.notes == "ns1.example.net, ns2.example.net" and ns.role
+    # A name that is not the top of its own zone answers with no NS record.
+    rows, _, _ = email_rows(monkeypatch, DNS)
+    assert rows[ct_dns.NAME_SERVERS].extra["name_servers"] == []
+    rows, _, failures = email_rows(monkeypatch, DNS, {"example.com": "SERVFAIL"})
+    assert ct_dns.NAME_SERVERS not in rows and "NS (example.com: SERVFAIL)" in failures[0]
 
 
 def test_mail_handling_names_get_a_row_and_unsettled_names_are_counted_neither_way():
