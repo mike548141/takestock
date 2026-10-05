@@ -27,11 +27,12 @@ apply to it: the blank SPF record ``v=spf1 -all``, the empty DKIM key
 ``v=DKIM1; p=`` and a ``p=reject`` DMARC policy (with no ``sp=`` or ``np=``
 weaker than reject), all stated as must. :func:`evaluate` reads each parked
 domain against those requirements, on its own records, in rows marked ``parked``. The names
-beneath a parked domain that certificate transparency found are swept and read
-as an email domain's sub-domains are, in rows marked ``parked`` whose subject is
+beneath a parked domain are swept and read as an email domain's sub-domains
+are, in rows marked ``parked`` whose subject is
 :func:`parked_subdomains_subject`; like every sweep row, they can find a breach
-and never show conformance. Whether a parked domain publishes a null MX (RFC
-7505) is not a framework requirement; it is reported beside them in
+and show conformance only over a population known to be complete (below).
+Whether a parked domain publishes a null MX (RFC 7505) is not a framework
+requirement; it is reported beside them in
 :attr:`Report.parked`, with the guidance that recommends it.
 
 **Discovered sub-domains that handle mail.** The sub-domain sweep sets aside
@@ -41,8 +42,18 @@ to a receiver, so :func:`evaluate` reads them against SGE-SPF-01, SGE-DMARC-01
 of the record RFC 9989 policy discovery finds, :func:`policy_record`) and
 SGE-DMARC-R05, from the records the sweep already holds, in rows marked
 ``discovered`` whose subject is :func:`discovered_mail_subject`. Their
-MTA-STS, TLS-RPT and DKIM records are not read. The names are a floor, so
-these rows can fail and never pass.
+MTA-STS, TLS-RPT and DKIM records are not read, so these rows can fail and
+never pass.
+
+**Which names the sweep reads, and when a sweep may pass.** The sweep reads
+every name the observation knows beneath a domain: certificate transparency,
+the owner names in supplied zone files, the profile's domain lists and scan
+targets, and the names sender policies point at, each kept with its source.
+Those are a floor, so a sweep row can fail and otherwise stays not measured.
+Where the target profile attests a domain's zone file complete
+(``dns_zones.complete_zones``), and every name was read, settled and agreed
+with the file, the rows for names that send no mail may pass, and say on what
+attestation (:func:`_whole_population`). The mail-handling rows stay fail-only.
 
 **Sub-domains that do not exist.** RFC 9989 (DMARC, which obsoletes RFC 7489)
 adds the ``np=`` tag, the policy for non-existent sub-domains. Wherever a
@@ -756,11 +767,7 @@ def _ned_dmarc_from_sweep(req: dict, assets: list[Any], domain: str,
     a = found[0]
     extra = _get(a, "extra") or {}
     if not extra.get("control_usable", False):
-        return _unmeasured(
-            req, domain, INCONCLUSIVE,
-            "the sweep's control name answered when it should not have, so this run "
-            "cannot tell a record that is absent from a resolver that did not reply; "
-            "nothing is graded against this domain from it")
+        return _unmeasured(req, domain, INCONCLUSIVE, _control_unusable(extra))
     in_scope = _int(extra.get("names_in_scope"))
     if not in_scope:
         return _unmeasured(
@@ -791,6 +798,8 @@ def _ned_dmarc_from_sweep(req: dict, assets: list[Any], domain: str,
                      if at and at != domain.lower().strip(".")}
     limit = f"what this row does NOT read: {partial}" if partial else ""
     note = [f"read {extra.get('read_at', '')} via {', '.join(extra.get('resolvers') or [])}"]
+    if _sources_note(extra):
+        note.append(_sources_note(extra))
     note[:0] = _walk_notes(elsewhere, unread)
     if fallback_bad:
         note.insert(0, f"{fallback_bad} of the {in_scope} enumerated sub-domain(s) that show "
@@ -818,6 +827,16 @@ def _ned_dmarc_from_sweep(req: dict, assets: list[Any], domain: str,
                 f"root record: {root_record or 'none published'}",
                 *(f"{n}: {records[n]}" for n in own_bad)])),
             subject_note="; ".join(note))
+    whole, why_not = _whole_population(extra, unread)
+    if whole:
+        return Conformance(
+            req["id"], req["title"], req["level"], req["scope"], domain, PASS,
+            observed=f"all {in_scope} sub-domains reject",
+            reason="; ".join([
+                "every sub-domain that shows no sign of sending mail rejects, on its own "
+                "record or through the record policy discovery finds for it", whole]),
+            evidence=str(_get(a, "name") or ""), source=req["source"],
+            subject_note="; ".join(note))
     return Conformance(
         req["id"], req["title"], req["level"], req["scope"], domain, NOT_MEASURED,
         observed=f"all {in_scope - len(unread)} sub-domains read reject",
@@ -826,7 +845,7 @@ def _ned_dmarc_from_sweep(req: dict, assets: list[Any], domain: str,
                   "on its own record or through the record policy discovery finds for it, "
                   "and "
                   "that is not the same as every sub-domain doing so: " + _SWEEP_POPULATION
-                  + ". No verdict is claimed in either direction"
+                  + ". No verdict is claimed in either direction" + _floor_note(why_not)
                   + (f". What this row does not read either: {partial}" if partial else "")),
         source=req["source"], subject_note="; ".join(note))
 
@@ -891,8 +910,61 @@ _SWEEP_POPULATION = (
     "only one: the framework asks for the record on every sub-domain, so a single "
     "name without it is the answer, while any number of names carrying it says "
     "nothing about the names not seen. That is why this row can report a "
-    "breach and can never report conformance"
+    "breach and, unless the profile attests a zone file complete, can never "
+    "report conformance"
 )
+
+
+def _control_unusable(extra: dict) -> str:
+    """Why nothing is graded from a sweep whose absence control was not trusted."""
+    if extra.get("control_basis") == dnsevidence.RESOLVER_SYNTHESISES:
+        return ("a resolver answered, with records, a random name under a domain that "
+                "publishes nothing (RFC 6761 §6.4; RFC 8020 §2), so it invents answers: "
+                "this is an unusable resolver reading, not a wildcard, and nothing is "
+                "graded against this domain from it")
+    return ("the sweep's control name answered when it should not have, so this run "
+            "cannot tell a record that is absent from a resolver that did not reply; "
+            "nothing is graded against this domain from it")
+
+
+def _whole_population(extra: dict, unread: list[str] | None = None) -> tuple[str, str]:
+    """Whether a sweep read the whole population of names, not a floor.
+
+    Returns ``(basis, "")`` when it did: the profile attests a zone file
+    complete (:func:`takestock.collectors.ct_dns.zone_population`), and every
+    name was read and settled, none was beyond the ceiling, none of ``unread``
+    (names a policy walk could not settle) is left, and the live reading
+    agrees with the files. Returns ``("", why)`` when a zone file is attested
+    and one of those fails, and ``("", "")`` when none is attested.
+    """
+    pop = extra.get("population") or {}
+    if not pop:
+        return "", ""
+    zones = ", ".join(pop.get("zones") or [pop.get("zone", "")])
+    head = f"a zone file is attested complete for {pop.get('zone', '')}, but "
+    if not pop.get("complete"):
+        return "", head + str(pop.get("why_not") or "the attestation was not accepted")
+    blockers = [
+        (extra.get("names_unread"), "some names were not read"),
+        (extra.get("names_unsettled"), "the resolvers disagreed on some names"),
+        (_int(extra.get("names_dropped_by_cap")), "some names were beyond the sweep's ceiling"),
+        (unread, "some names' policy walk passed a name that was not read"),
+        (extra.get("names_disagreeing_with_zone"),
+         "the live reading and the zone files disagree on "
+         + ", ".join(extra.get("names_disagreeing_with_zone") or [])
+         + ", so the files no longer describe the zone"),
+    ]
+    for present, why in blockers:
+        if present:
+            return "", head + why + ", so the names read are still a floor"
+    return (f"the names read are the whole population, not a floor: they include every "
+            f"name in the zone file(s) for {zones}, which {pop.get('attested_by')} attested "
+            f"complete on {pop.get('attested_on')} (dns_zones.complete_zones in the target "
+            "profile), and every name was read, settled, and agreed with the files"), ""
+
+
+def _floor_note(why_not: str) -> str:
+    return f". {why_not[0].upper()}{why_not[1:]}" if why_not else ""
 
 
 def _eval_ned_records(req: dict, assets: list[Any], domains: list[str],
@@ -921,11 +993,7 @@ def _eval_ned_records(req: dict, assets: list[Any], domains: list[str],
                   f"({extra.get('wildcard_rcode') or 'no agreed status'})")
 
         if not extra.get("control_usable", False):
-            rows.append(_unmeasured(
-                req, d, INCONCLUSIVE,
-                "the sweep's control name answered when it should not have, so this run "
-                "cannot tell a record that is absent from a resolver that did not reply; "
-                "nothing is graded against this domain from it"))
+            rows.append(_unmeasured(req, d, INCONCLUSIVE, _control_unusable(extra)))
             continue
         declared = str(req.get("record") or "").replace("<domain>", d)
         if declared and wildcard and declared.lower() != wildcard.lower():
@@ -955,6 +1023,7 @@ def _eval_ned_records(req: dict, assets: list[Any], domains: list[str],
              f"no wildcard record is published at {wildcard}, so there is no blanket "
              "control and each name answers only for itself"),
             f"read {extra.get('read_at', '')} via {', '.join(extra.get('resolvers') or [])}",
+            _sources_note(extra),
             _control_note(extra),
         ]
         note = [x for x in note if x]
@@ -970,6 +1039,7 @@ def _eval_ned_records(req: dict, assets: list[Any], domains: list[str],
             note.append(f"{extra['names_dropped_by_cap']} further name(s) were beyond the "
                         "sweep's ceiling and were not read")
 
+        whole, why_not = _whole_population(extra)
         if missing:
             rows.append(Conformance(
                 req["id"], req["title"], req["level"], req["scope"], d, FAIL,
@@ -980,9 +1050,20 @@ def _eval_ned_records(req: dict, assets: list[Any], domains: list[str],
                      "covered by the parent domain's, because a receiver asks the name "
                      "itself and stops there"),
                     _SWEEP_INSTRUMENT,
-                    _SWEEP_POPULATION,
-                    (f"what this row does NOT read: {partial}" if partial else ""),
+                    *([whole] if whole else [
+                        _SWEEP_POPULATION,
+                        (f"what this row does NOT read: {partial}" if partial else "")]),
                 ] if x),
+                evidence=str(_get(a, "name") or ""), source=req["source"],
+                record=record, subject_note="; ".join(note)))
+            continue
+        if whole:
+            rows.append(Conformance(
+                req["id"], req["title"], req["level"], req["scope"], d, PASS,
+                observed=f"all {in_scope} sub-domains carry {expected}",
+                reason="; ".join([
+                    f"every sub-domain that shows no sign of sending mail carries {expected}",
+                    whole, _SWEEP_INSTRUMENT]),
                 evidence=str(_get(a, "name") or ""), source=req["source"],
                 record=record, subject_note="; ".join(note)))
             continue
@@ -990,7 +1071,7 @@ def _eval_ned_records(req: dict, assets: list[Any], domains: list[str],
             req, d, NOT_COLLECTED,
             f"every sub-domain name read for this domain carries {expected}, and that "
             "is not the same as every sub-domain carrying it: " + _SWEEP_POPULATION
-            + ". No verdict is claimed in either direction"
+            + ". No verdict is claimed in either direction" + _floor_note(why_not)
             + (f". What this row does not read either: {partial}" if partial else "")))
     return rows
 
@@ -1886,11 +1967,7 @@ def _ned_dmarc_asset(req: dict, assets: list[Any], domain: str
     a = found[0]
     extra = _get(a, "extra") or {}
     if not extra.get("control_usable", False):
-        return _unmeasured(
-            req, domain, INCONCLUSIVE,
-            "the sweep's control name answered when it should not have, so this run "
-            "cannot tell a record that is absent from a resolver that did not reply; "
-            "nothing is graded against this domain from it")
+        return _unmeasured(req, domain, INCONCLUSIVE, _control_unusable(extra))
     if not _int(extra.get("names_in_scope")):
         return _unmeasured(
             req, domain, NOT_COLLECTED,
@@ -1899,8 +1976,17 @@ def _ned_dmarc_asset(req: dict, assets: list[Any], domain: str
     return a, extra
 
 
+def _sources_note(extra: dict) -> str:
+    """Where the swept names came from, counted by source (a name can have several)."""
+    counts = extra.get("names_by_source") or {}
+    return ("names from " + ", ".join(f"{src} ({n})" for src, n in counts.items())
+            if counts else "")
+
+
 def _ned_scope_note(extra: dict) -> str:
     note = [f"read {extra.get('read_at', '')} via {', '.join(extra.get('resolvers') or [])}"]
+    if _sources_note(extra):
+        note.append(_sources_note(extra))
     if _control_note(extra):
         note.append(_control_note(extra))
     if extra.get("names_email_enabled"):
@@ -1945,13 +2031,24 @@ def _eval_subdomain_sp(req: dict, assets: list[Any], domains: list[str]) -> list
                 subject_note="; ".join([f"sub-domains setting sp=: {', '.join(with_sp)}",
                                         _ned_scope_note(extra)])))
             continue
+        whole, why_not = _whole_population(extra)
+        if whole:
+            rows.append(Conformance(
+                req["id"], req["title"], req["level"], req["scope"], d, PASS,
+                observed=f"none of {in_scope} sub-domains sets sp=",
+                reason="; ".join(["no sub-domain that shows no sign of sending mail "
+                                  "publishes its own sp= tag", whole]),
+                evidence=str(_get(a, "name") or ""), source=req["source"],
+                subject_note=_ned_scope_note(extra)))
+            continue
         rows.append(Conformance(
             req["id"], req["title"], req["level"], req["scope"], d, NOT_MEASURED,
             observed=f"none of {in_scope} sub-domains sets sp=",
             reason=NOT_COLLECTED,
             evidence=("no enumerated sub-domain that shows no sign of sending mail "
                       "publishes its own sp= tag, and that is not the same as none doing "
-                      "so. " + _partial(req) + " No verdict is claimed in either direction."),
+                      "so. " + _partial(req) + " No verdict is claimed in either direction"
+                      + _floor_note(why_not) + "."),
             source=req["source"], subject_note=_ned_scope_note(extra)))
     return rows
 
@@ -1997,6 +2094,17 @@ def _eval_subdomain_unused_tags(req: dict, assets: list[Any],
                 record="; ".join(f"{n}: {records[n]}" for n in carrying),
                 subject_note=_ned_scope_note(extra)))
             continue
+        whole, why_not = _whole_population(extra)
+        if whole:
+            rows.append(Conformance(
+                req["id"], req["title"], req["level"], req["scope"], d, PASS,
+                observed=f"none of {len(records)} sub-domain records carries them",
+                reason="; ".join([
+                    "no DMARC record published by a sub-domain that shows no sign of "
+                    f"sending mail carries {', '.join(unwanted)}", whole]),
+                evidence=str(_get(a, "name") or ""), source=req["source"],
+                subject_note=_ned_scope_note(extra)))
+            continue
         rows.append(Conformance(
             req["id"], req["title"], req["level"], req["scope"], d, NOT_MEASURED,
             observed=f"none of {len(records)} sub-domain records carries them",
@@ -2004,7 +2112,8 @@ def _eval_subdomain_unused_tags(req: dict, assets: list[Any],
             evidence=("no DMARC record published by an enumerated sub-domain that shows no "
                       f"sign of sending mail carries {', '.join(unwanted)}, and that is not "
                       "the same as none doing so: " + _SWEEP_POPULATION
-                      + ". No verdict is claimed in either direction."),
+                      + ". No verdict is claimed in either direction"
+                      + _floor_note(why_not) + "."),
             source=req["source"], subject_note=_ned_scope_note(extra)))
     return rows
 
@@ -2089,6 +2198,18 @@ def _eval_subdomain_dmarc_alignment(req: dict, assets: list[Any],
                     *(f"{n}: {records[n]}" for n in own_failing)])),
                 subject_note="; ".join([*parts, *walk_notes, _ned_scope_note(extra)])))
             continue
+        whole, why_not = _whole_population(extra, walked[1] if walked else None)
+        if whole:
+            rows.append(Conformance(
+                req["id"], req["title"], req["level"], req["scope"], d, PASS,
+                observed=f"all {in_scope} sub-domains meet it",
+                reason="; ".join([
+                    "every sub-domain that shows no sign of sending mail carries strict "
+                    "alignment and a reporting address, on its own record or the one it "
+                    "falls back to", whole]),
+                evidence=str(_get(a, "name") or ""), source=req["source"],
+                subject_note="; ".join([*walk_notes, _ned_scope_note(extra)])))
+            continue
         rows.append(Conformance(
             req["id"], req["title"], req["level"], req["scope"], d, NOT_MEASURED,
             observed=f"all {in_scope - len(walked[1] if walked else [])} sub-domains read "
@@ -2098,7 +2219,8 @@ def _eval_subdomain_dmarc_alignment(req: dict, assets: list[Any],
                       "carries strict alignment and a reporting address, on its own "
                       "record or the organisational one it falls back to, and that is not "
                       "the same as every sub-domain doing so. " + _partial(req)
-                      + " No verdict is claimed in either direction."),
+                      + " No verdict is claimed in either direction"
+                      + _floor_note(why_not) + "."),
             source=req["source"],
             subject_note="; ".join([*walk_notes, _ned_scope_note(extra)])))
     return rows
@@ -2438,9 +2560,9 @@ _PARKED_EVALUATORS: dict[str, Callable[..., list[Conformance]]] = {
 
 #: The evaluator for each requirement read over the swept names beneath a parked
 #: domain. These are the evaluators an email domain's sub-domains are read with,
-#: so they keep the same one-directional honesty: the names come from
-#: certificate transparency, which is a floor, so a missing record proves a
-#: breach and any number of conformant names proves nothing.
+#: so they keep the same honesty: the names known are a floor, so a missing
+#: record proves a breach and any number of conformant names proves nothing,
+#: unless the profile attests a zone file complete (:func:`_whole_population`).
 _PARKED_SUBDOMAIN_EVALUATORS: dict[str, Callable[..., list[Conformance]]] = {
     "SGE-NED-SPF-01": _eval_ned_spf,
     "SGE-NED-DKIM-01": _eval_ned_dkim,
@@ -2497,9 +2619,10 @@ def discovered_mail_subject(domain: str) -> str:
 
 
 #: Said beside every row reading discovered mail-handling sub-domains.
-DISCOVERED_NOTE = ("discovered: names the sub-domain sweep found beneath this domain in "
-                   "certificate-transparency logs and judged to send or receive mail, not "
-                   "domains the profile names; the list is a floor")
+DISCOVERED_NOTE = ("discovered: names the sub-domain sweep found beneath this domain (in "
+                   "certificate-transparency logs, supplied zone files, the profile or "
+                   "sender policies) and judged to send or receive mail, not domains the "
+                   "profile names as email domains; the list is a floor")
 
 
 def _spf_qualifier(record: str) -> str:
@@ -2516,9 +2639,11 @@ def _discovered_rows(req: dict, assets: list[Any], roots: list[str],
     needs was not read. A name short of it fails the row. A name not settled
     is counted neither way: it is left out of the names read and listed in the
     row's note. When every name read meets it the row is not measured, never
-    met: the names come from certificate transparency, which is a floor, so
-    any number of names meeting the requirement says nothing about the names
-    not seen. A root whose sweep found no such name gets no row.
+    met: these rows read only part of what an email domain must publish (no
+    MTA-STS, TLS-RPT or DKIM), and the names are a floor unless a zone file is
+    attested complete, so any number of names meeting the requirement says
+    nothing about the names not seen. A root whose sweep found no such name
+    gets no row.
     """
     rows = []
     for d in roots:
@@ -2536,7 +2661,9 @@ def _discovered_rows(req: dict, assets: list[Any], roots: list[str],
             rows.append(Conformance(
                 req["id"], req["title"], req["level"], req["scope"], subject, NOT_MEASURED,
                 reason=INCONCLUSIVE,
-                evidence=("the sweep's control name answered and no published wildcard "
+                evidence=(_control_unusable(extra)
+                          if extra.get("control_basis") == dnsevidence.RESOLVER_SYNTHESISES
+                          else "the sweep's control name answered and no published wildcard "
                           "explains it, so this run cannot tell a record that is absent from "
                           "a resolver that did not reply; nothing is graded from it"),
                 source=req["source"], discovered=True))

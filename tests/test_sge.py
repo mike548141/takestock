@@ -360,7 +360,7 @@ def test_a_missing_denying_record_fails_and_a_full_set_never_passes():
     row = one("SGE-NED-SPF-01", [ned("ned-spf", ["a.example.com"])])
     assert row.status == sge.FAIL and row.breaches_must
     assert "1 of the 3 enumerated" in row.subject_note
-    assert "true number is higher" in row.reason
+    assert "true number may be higher" in row.reason
     assert one("SGE-NED-SPF-01", [ned("ned-spf", [])]).status == sge.NOT_MEASURED
     assert one("SGE-NED-SPF-01", [ned("ned-spf", ["a"], usable=False)]).reason == sge.INCONCLUSIVE
 
@@ -420,6 +420,55 @@ def test_a_wildcard_explained_control_lets_the_sweep_grade():
     assert row.status == sge.FAIL and "answered by the published wildcard" in row.subject_note
     assert "answered by the published wildcard" not in one(
         "SGE-NED-SPF-01", [ned("ned-spf", ["node.example.com"])]).subject_note
+
+
+WHOLE = {"population": {"zone": D, "zones": [D], "complete": True,
+                         "attested_by": "Example Widgets Ltd, DNS administrator",
+                         "attested_on": "2030-01-31"},
+         "names_disagreeing_with_zone": []}
+
+
+def test_an_attested_complete_zone_lets_the_sweep_pass():
+    row = one("SGE-NED-SPF-01", [ned("ned-spf", [], **WHOLE)])
+    assert row.status == sge.PASS
+    assert "whole population, not a floor" in row.reason
+    assert "Example Widgets Ltd, DNS administrator attested complete on 2030-01-31" in row.reason
+    # A failing row over the whole population says so instead of calling its count a floor.
+    failing = one("SGE-NED-SPF-01", [ned("ned-spf", ["a.example.com"], **WHOLE)])
+    assert failing.status == sge.FAIL and "true number" not in failing.reason
+    rejecting_root = dmarc("v=DMARC1; p=reject; adkim=s; aspf=s; rua=mailto:d@example.com")
+    sweep = walked_sweep({}, ["a.example.com", "b.example.com"], **WHOLE)
+    for req_id in ("SGE-NED-DMARC-01", "SGE-NED-DMARC-R01", "SGE-DMARC-R05"):
+        assert one(req_id, [rejecting_root, sweep]).status == sge.PASS, req_id
+
+
+@pytest.mark.parametrize("spoiler, words", [
+    ({"names_unread": ["c.example.com"]}, "some names were not read"),
+    ({"names_unsettled": ["c.example.com"]}, "the resolvers disagreed"),
+    ({"names_dropped_by_cap": 4}, "beyond the sweep's ceiling"),
+    ({"names_disagreeing_with_zone": ["new.example.com"]}, "no longer describe the zone"),
+    ({"population": {**WHOLE["population"], "complete": False,
+                     "why_not": "no zone file for example.com was supplied"}},
+     "no zone file for example.com was supplied"),
+])
+def test_an_attested_zone_still_leaves_a_floor_when_the_reading_falls_short(spoiler, words):
+    row = one("SGE-NED-SPF-01", [ned("ned-spf", [], **{**WHOLE, **spoiler})])
+    assert row.status == sge.NOT_MEASURED and words in row.evidence
+    assert "A zone file is attested complete for example.com" in row.evidence
+
+
+def test_a_resolver_that_invents_answers_is_named_not_read_as_a_wildcard():
+    row = one("SGE-NED-SPF-01", [ned("ned-spf", ["a"], usable=False,
+                                     control_basis=dnsevidence.RESOLVER_SYNTHESISES)])
+    assert row.reason == sge.INCONCLUSIVE and "unusable resolver reading" in row.evidence
+    assert "control name answered" in one(
+        "SGE-NED-SPF-01", [ned("ned-spf", ["a"], usable=False)]).evidence
+
+
+def test_the_rows_say_where_the_swept_names_came_from():
+    row = one("SGE-NED-SPF-01", [ned("ned-spf", ["a.example.com"], names_by_source={
+        "certificate transparency": 2, "zone file": 3})])
+    assert "names from certificate transparency (2), zone file (3)" in row.subject_note
 
 
 # ── Policy discovery: the DNS Tree Walk (RFC 9989 §4.10) ──────────────

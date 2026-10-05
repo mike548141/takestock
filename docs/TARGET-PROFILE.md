@@ -184,7 +184,7 @@ discovery:
 
 | Field | Means |
 |---|---|
-| `domains` | Domains whose certificates (from certificate-transparency logs) and DNSSEC are read. A domain here and not under `email_domains` is a **parked domain**: one that sends and receives no mail. Its SPF, DMARC, wildcard DKIM record and MX are read, and the sub-domain names certificate transparency finds beneath it are swept, and both are graded against Secure Government Email's rules for domains that send no mail |
+| `domains` | Domains whose certificates (from certificate-transparency logs) and DNSSEC are read. A domain here and not under `email_domains` is a **parked domain**: one that sends and receives no mail. Its SPF, DMARC, wildcard DKIM record and MX are read, and the sub-domain names known beneath it are swept, and both are graded against Secure Government Email's rules for domains that send no mail |
 | `email_domains` | Domains whose mail-authentication records (SPF, DKIM, DMARC, MTA-STS, TLS-RPT) are read and graded against Secure Government Email. `takestock sge-note` refuses a profile with none and no parked domain |
 | `dkim_selectors` | The organisation's own DKIM selector names, tried before a short list of common defaults. DNS offers no way to list selectors |
 
@@ -334,6 +334,9 @@ all optional:
 | `resolved_names_column` | That CSV's column of names (default `name`) |
 | `proof_prefixes` | Ownership-proof TXT record prefixes, mapped to the service each names |
 | `second_level_labels` | Further labels that sit directly under a country code as part of a public suffix (`co`, `com`, `net`, `org`, `ac` and `gov` are built in) |
+| `complete_zones` | Zone files the organisation attests list every name in the zone: a list of `{zone, attested_by, attested_on}`. Over a domain whose zone file is attested complete, the sub-domain sweep's rows for names that send no mail may pass rather than only fail (see [`SECURE-GOVERNMENT-EMAIL.md`](SECURE-GOVERNMENT-EMAIL.md)) |
+
+The supplied zone files' names also feed the `ct_dns` sub-domain sweep.
 
 ### `third_party` and `infrastructure`
 

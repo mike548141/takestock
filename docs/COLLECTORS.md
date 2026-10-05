@@ -135,9 +135,17 @@ hosts:
   `raw/ct-<domain>.json`, with a page record beside them.
 - **Mail authentication.** For each domain under `discovery.email_domains`,
   it reads the MX, SPF, DMARC, MTA-STS (record and policy file), TLS-RPT and
-  DKIM records, then sweeps the sub-domain names the transparency read found
-  for the denying SPF, empty DKIM and DMARC records a name that sends no mail
-  should publish.
+  DKIM records, then sweeps the sub-domain names beneath the domain for the
+  denying SPF, empty DKIM and DMARC records a name that sends no mail should
+  publish. The names come from the transparency read, the zone files supplied
+  in `inbox/dns-zones/` (owner names, and the names between an owner and the
+  domain), the profile's `discovery` lists and `scan_targets`, and the names
+  sender policies point at (`a:`, `mx:`, `include:`, `redirect=`). Each row
+  keeps every name's sources in `extra.name_sources` and counts them in
+  `extra.names_by_source`. Where the profile attests a domain's zone file
+  complete (`dns_zones.complete_zones`), the rows carry that reading in
+  `extra.population` and list in `extra.names_disagreeing_with_zone` any name
+  the live reading and the files disagree on.
 - **Name servers.** For every email and parked domain it reads the NS
   records, in a row of protocol `ns` named `NS <domain>`, whose
   `extra.name_servers` lists the hosts named (lower case, sorted): who hosts
@@ -197,8 +205,11 @@ hosts:
   lookups were all answered and whose resolvers agreed is counted either way;
   the rest are listed in `extra.names_unread` and `extra.names_unsettled`.
   The sweep's absence control is trusted when it comes back NXDOMAIN, or when a
-  published wildcard answered it with exactly the wildcard's own record;
-  `extra.control_basis` says which (`nxdomain` or `wildcard`).
+  published wildcard answered it with exactly the wildcard's own record and a
+  random name under the reserved `invalid` domain came back NXDOMAIN;
+  `extra.control_basis` says which (`nxdomain` or `wildcard`). A resolver that
+  answers that reserved name with records invents answers, and the basis is
+  then `resolver-synthesises`, with the control untrusted.
 
 **Missing records.** The SPF, DMARC, MTA-STS and TLS-RPT records are each
 asked of every configured resolver, keeping each resolver's response code.

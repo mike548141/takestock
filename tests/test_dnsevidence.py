@@ -178,6 +178,93 @@ def test_an_empty_wildcard_explains_the_control_only_once_real_records_are_seen(
     assert _sweep(monkeypatch, table)["control"]["basis"] == dnsevidence.CONTROL_WILDCARD
 
 
+def _everything_answers(record: str, outside: tuple[str, list[str]] | None = None):
+    """A resolver that answers every TXT question with ``record`` (or ``outside`` under .invalid)."""
+    def fake(name: str, rtype: str, resolvers: tuple[str, ...] = ("",)) -> Corroborated:
+        rcode, answers = ("NOERROR", [f'"{record}"'] if rtype == "TXT" else [])
+        if outside is not None and name.endswith(".invalid"):
+            rcode, answers = outside
+        return Corroborated(name, rtype, [Lookup(name, rtype, r, "2030-01-01T00:00:00Z",
+                                                 answers=list(answers), rcode=rcode)
+                                          for r in resolvers])
+    return fake
+
+
+def test_a_resolver_answering_one_record_to_every_question_is_not_a_wildcard(monkeypatch):
+    # Control, wildcard and domain all get "v=spf1 -all": on those alone it reads as a
+    # wildcard. The random name under the reserved .invalid domain gives it away.
+    fake = _everything_answers("v=spf1 -all")
+    monkeypatch.setattr(dnsevidence, "corroborate", fake)
+    monkeypatch.setattr(dnsevidence, "corroborate_status", fake)
+    cap = dnsevidence.capture_subdomains("example.com", ["quiet.example.com"], ("192.0.2.53",))
+    ctl = cap["control"]
+    assert not ctl["usable"] and ctl["basis"] == dnsevidence.RESOLVER_SYNTHESISES
+    assert ctl["outside"]["name"].endswith(".invalid") and ctl["outside"]["record"]
+    text = "\n".join(dnsevidence.subdomain_transcript([cap]))
+    assert "A RESOLVER INVENTS ANSWERS" in text
+
+
+def test_a_wildcard_needs_the_reserved_name_denied(monkeypatch):
+    wild = ("NOERROR", ['"v=spf1 -all"'])
+    table = {("*.example.com", "TXT"): wild, (CONTROL, "TXT"): wild}
+
+    def reader(outside: tuple[str, list[str]]):
+        base = _status_reader(table)
+
+        def fake(name: str, rtype: str, resolvers: tuple[str, ...] = ("",)) -> Corroborated:
+            if name.endswith(".invalid"):
+                return _status_reader({(name, rtype): outside})(name, rtype, resolvers)
+            return base(name, rtype, resolvers)
+        return fake
+
+    for outside, usable, basis in ((("NXDOMAIN", []), True, dnsevidence.CONTROL_WILDCARD),
+                                   (("SERVFAIL", []), False, "")):
+        fake = reader(outside)
+        monkeypatch.setattr(dnsevidence, "corroborate", fake)
+        monkeypatch.setattr(dnsevidence, "corroborate_status", fake)
+        ctl = dnsevidence.capture_subdomains("example.com", [], ("192.0.2.53",))["control"]
+        assert (ctl["usable"], ctl["basis"]) == (usable, basis)
+    # A control that comes back NXDOMAIN needs no second question.
+    monkeypatch.setattr(dnsevidence, "corroborate_status", _status_reader({}))
+    assert dnsevidence.capture_subdomains("example.com", [])["control"]["outside"] is None
+
+
+def test_names_a_message_cannot_come_from_are_not_swept():
+    assert dnsevidence.mail_domain_name("a-1.example.com")
+    for name in ("_dmarc.example.com", "*.example.com", "s1._domainkey.example.com", "com",
+                 "-a.example.com"):
+        assert not dnsevidence.mail_domain_name(name), name
+
+
+def test_sender_policy_names():
+    record = ("v=spf1 a:out.example.com mx:mx.example.com/24 include:_spf.example.net "
+              "-include:x.example.org exists:%{i}.example.com a:%{d}.example.com "
+              "redirect=policy.example.com")
+    assert dnsevidence.sender_policy_names(record) == [
+        "_spf.example.net", "mx.example.com", "out.example.com", "policy.example.com",
+        "x.example.org"]
+
+
+def test_the_sweep_keeps_where_each_name_came_from(monkeypatch):
+    table = {("example.com", "TXT"): ("NOERROR", [
+        '"v=spf1 a:out.example.com include:spf.example.com include:x.example.net -all"'])}
+    cap = _sweep_with(monkeypatch, table, ["www.example.com", "_sip.example.com"],
+                      {"www.example.com": [dnsevidence.NAME_FROM_ZONE]})
+    by = {r["name"]: r["found_in"] for r in cap["subdomains"]}
+    assert by == {"www.example.com": [dnsevidence.NAME_FROM_ZONE],
+                  "out.example.com": [dnsevidence.NAME_FROM_SPF],
+                  "spf.example.com": [dnsevidence.NAME_FROM_SPF]}
+    assert cap["names_offered"] == 3
+
+
+def _sweep_with(monkeypatch, table: dict, names: list[str], sources: dict) -> dict:
+    fake = _status_reader(table)
+    monkeypatch.setattr(dnsevidence, "corroborate", fake)
+    monkeypatch.setattr(dnsevidence, "corroborate_status", fake)
+    return dnsevidence.capture_subdomains("example.com", names, ("192.0.2.53",),
+                                          sources=sources)
+
+
 def test_a_name_whose_resolvers_disagree_is_not_settled(monkeypatch):
     def fake(name: str, rtype: str, resolvers: tuple[str, ...] = ("",)) -> Corroborated:
         answers = {"192.0.2.53": ['"v=spf1 -all"'], "198.51.100.53": []}

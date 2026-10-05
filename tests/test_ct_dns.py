@@ -420,3 +420,117 @@ def test_only_the_domain_and_names_beneath_it_are_kept(monkeypatch):
     monkeypatch.setattr(ct_dns, "http_json", fake)
     read = ct_dns._ct_names("widgets.test", None, API)
     assert sorted(read.names) == ["widgets.test", "www.widgets.test"]
+
+
+# ── The sweep's names, and a population attested complete ────────────
+
+ZONE = """$ORIGIN example.com.
+@            IN SOA  ns1.example.com. hostmaster.example.com. 2030010101 3600 600 604800 300
+@            IN NS   ns1.example.com.
+@            IN TXT  "v=spf1 include:spf.example.com -all"
+_dmarc       IN TXT  "v=DMARC1; p=reject"
+*            IN TXT  "v=spf1 -all"
+www          IN A    192.0.2.80
+x.deep       IN A    192.0.2.81
+s1._domainkey.mail IN TXT "v=DKIM1; p="
+lab          IN NS   ns1.example.net.
+"""
+
+LAB = """$ORIGIN lab.example.com.
+@            IN SOA  ns1.example.net. hostmaster.example.com. 2030010101 3600 600 604800 300
+@            IN NS   ns1.example.net.
+bench        IN A    192.0.2.90
+"""
+
+
+def zones(*texts: tuple[str, str]):
+    from takestock import zonefile
+    return [zonefile.parse(text, origin) for origin, text in texts]
+
+
+def test_the_sweep_reads_every_name_the_observation_knows():
+    target = {"discovery": {"domains": ["example.com", "shop.example.com"]},
+              "scan_targets": {"tls_443": ["portal.example.com", "203.0.113.5"],
+                               "smtp_25": [{"host": "mx1.example.com"}],
+                               "ssh_22": ["jump.example.com:2222"]}}
+    got = ct_dns.sweep_names("example.com", {"api.example.com", "www.example.com",
+                                             "api.example.net"}, target,
+                             zones(("example.com", ZONE)))
+    zone, ct = dnsevidence.NAME_FROM_ZONE, dnsevidence.NAME_FROM_CT
+    assert got == {
+        "api.example.com": [ct],
+        # deep.example.com owns nothing, and exists as an empty non-terminal.
+        "deep.example.com": [zone], "x.deep.example.com": [zone],
+        "jump.example.com": [dnsevidence.NAME_FROM_SCAN],
+        "lab.example.com": [zone],
+        # The DKIM key's owner is not a mail domain; the name above it is.
+        "mail.example.com": [zone],
+        "mx1.example.com": [dnsevidence.NAME_FROM_SCAN],
+        "portal.example.com": [dnsevidence.NAME_FROM_SCAN],
+        "shop.example.com": [dnsevidence.NAME_FROM_PROFILE],
+        "spf.example.com": [dnsevidence.NAME_FROM_SPF],
+        "www.example.com": [ct, zone],
+    }
+
+
+ATTESTED = {"zone": "example.com", "attested_by": "Example Widgets Ltd, DNS administrator",
+            "attested_on": "2030-01-31"}
+
+
+def test_a_zone_is_complete_only_on_a_full_attestation_of_it_and_what_it_delegates():
+    held = zones(("example.com", ZONE), ("lab.example.com", LAB))
+    lab = {**ATTESTED, "zone": "lab.example.com"}
+
+    def pop(entries: list[dict], files=held) -> dict:
+        return ct_dns.zone_population("example.com",
+                                      {"dns_zones": {"complete_zones": entries}}, files)
+
+    assert pop([]) == {}
+    whole = pop([ATTESTED, lab])
+    assert whole["complete"] and whole["zones"] == ["example.com", "lab.example.com"]
+    assert whole["wildcard"] and whole["attested_by"] == ATTESTED["attested_by"]
+    assert "lab.example.com is delegated" in pop([ATTESTED])["why_not"]
+    assert "no zone file for lab.example.com" in pop([ATTESTED, lab], held[:1])["why_not"]
+    assert "who made it and when" in pop([{**ATTESTED, "attested_on": ""}, lab])["why_not"]
+    broken = zones(("example.com", ZONE + "odd line nobody can place\n"),
+                   ("lab.example.com", LAB))
+    assert "not understood" in pop([ATTESTED, lab], broken)["why_not"]
+
+
+def _swept(name: str, found_in: list[str], exists: bool = True) -> dict:
+    return _sub(name, found_in=found_in, exists=exists)
+
+
+def test_the_rows_carry_the_sources_and_where_the_live_reading_disagrees_with_the_files():
+    cap = {
+        "resolvers": ["192.0.2.53"], "tries": 3, "captured_at": "2030-06-15T00:00:00Z",
+        "control": {"name": "x", "rcode": "NXDOMAIN", "usable": True},
+        "names_offered": 3, "names_dropped_by_cap": 0,
+        "wildcard_spf": {"name": "*.example.com", "record": "", "rcode": "NXDOMAIN",
+                         "agreed": True},
+        "wildcard_dkim": {"name": "*._domainkey.example.com", "record": "",
+                          "rcode": "NXDOMAIN", "agreed": True},
+        "subdomains": [
+            _swept("www.example.com", [dnsevidence.NAME_FROM_CT, dnsevidence.NAME_FROM_ZONE]),
+            _swept("gone.example.com", [dnsevidence.NAME_FROM_ZONE], exists=False),
+            _swept("new.example.com", [dnsevidence.NAME_FROM_CT]),
+            _swept("old.example.com", [dnsevidence.NAME_FROM_CT], exists=False),
+        ],
+    }
+    population = {"zone": "example.com", "complete": True, "wildcard": False}
+    rows = {a.protocol: a for a in ct_dns.ned_rows("example.com", cap, NOW,
+                                                   population=population)}
+    spf = rows["ned-spf"].extra
+    assert spf["name_sources"]["www.example.com"] == [dnsevidence.NAME_FROM_CT,
+                                                      dnsevidence.NAME_FROM_ZONE]
+    assert spf["names_by_source"] == {dnsevidence.NAME_FROM_CT: 3,
+                                      dnsevidence.NAME_FROM_ZONE: 2}
+    assert spf["population"] == population
+    assert spf["names_disagreeing_with_zone"] == ["gone.example.com", "new.example.com"]
+    # A wildcard in the files answers names they do not list.
+    rows = {a.protocol: a for a in ct_dns.ned_rows(
+        "example.com", cap, NOW, population={**population, "wildcard": True})}
+    assert rows["ned-spf"].extra["names_disagreeing_with_zone"] == ["gone.example.com"]
+    # No attestation, no population and nothing compared.
+    plain = {a.protocol: a for a in ct_dns.ned_rows("example.com", cap, NOW)}["ned-spf"].extra
+    assert "population" not in plain and "names_disagreeing_with_zone" not in plain

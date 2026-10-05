@@ -14,8 +14,9 @@ Two passive readings, neither of which touches the organisation's hosts:
 * **Mail authentication.** For each domain under ``discovery.email_domains``
   it reads MX, SPF, DMARC, MTA-STS (record and policy file), TLS-RPT and the
   DKIM keys under each selector tried, and then sweeps the sub-domain names
-  the transparency read found for the denying SPF, empty DKIM and DMARC
-  records a name that sends no mail should publish. The swept names that show
+  known beneath it (from the transparency read, supplied zone files, the
+  profile and sender policies, :func:`sweep_names`) for the denying SPF,
+  empty DKIM and DMARC records a name that sends no mail should publish. The swept names that show
   signs of handling mail are kept in a row of their own, with their SPF, DMARC
   and MX records, to be read against the rules for email domains. A record the
   resolvers settle as missing is written as a row saying so (a measured
@@ -27,8 +28,8 @@ Two passive readings, neither of which touches the organisation's hosts:
   wildcard DKIM record and MX, the records with which a domain that sends and
   receives no mail says so: ``v=spf1 -all``, ``p=reject``, the empty key
   ``v=DKIM1; p=`` at ``*._domainkey.<domain>`` and a null MX (RFC 7505).
-  It then sweeps the sub-domain names the transparency read found beneath
-  each parked domain, exactly as for an email domain. Every such row, the
+  It then sweeps the sub-domain names known beneath each parked domain,
+  exactly as for an email domain. Every such row, the
   sweep's included, carries ``extra.parked`` True.
 
 Search services limit how often they may be asked. When one says "wait",
@@ -54,7 +55,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-from .. import coverage, ctcache, dnsevidence, roles
+from .. import coverage, ctcache, dnsevidence, roles, zonefile
+from ..config import inbox_path
 from ..model import CryptoAsset, cert_expiry_flag, register_informational_prefixes
 from ..util import (
     cert_signature_token,
@@ -564,7 +566,8 @@ def collect(
         assets.extend(rows)
         failures.extend(unsettled)
         if not waiting:
-            assets.extend(_ned_sweep(domain, discovered, ref_time, note, asked))
+            assets.extend(_ned_sweep(domain, discovered, ref_time, note, asked,
+                                     target=target))
 
     for domain in dnsevidence.parked_domains(target):
         note(f"    · SPF, DMARC, DKIM and MX for parked domain {domain} …")
@@ -572,7 +575,8 @@ def collect(
         assets.extend(rows)
         failures.extend(unsettled)
         if not waiting:
-            assets.extend(_ned_sweep(domain, discovered, ref_time, note, asked, parked=True))
+            assets.extend(_ned_sweep(domain, discovered, ref_time, note, asked, parked=True,
+                                     target=target))
 
     if waiting and deferral is not None:
         deferral.target, deferral.raw_dir = target, raw_dir
@@ -631,10 +635,10 @@ def resume(deferral: CTDeferral) -> tuple[list[CryptoAsset], list[str]]:
         asked = dnsevidence.resolvers(deferral.target)
         for domain in (deferral.target.get("discovery", {}) or {}).get("email_domains", []) or []:
             assets.extend(_ned_sweep(domain, deferral.discovered, deferral.ref_time, note,
-                                     asked))
+                                     asked, target=deferral.target))
         for domain in dnsevidence.parked_domains(deferral.target):
             assets.extend(_ned_sweep(domain, deferral.discovered, deferral.ref_time, note,
-                                     asked, parked=True))
+                                     asked, parked=True, target=deferral.target))
     return assets, failures
 
 
@@ -677,13 +681,166 @@ def _endpoint_assets(domain: str, names: dict[str, dict], ct_date: str,
 
 def _ned_sweep(domain: str, discovered: set[str], ref_time: datetime | None,
                note: Progress, resolvers: tuple[str, ...] = ("",),
-               parked: bool = False) -> list[CryptoAsset]:
-    """Sweep the discovered names beneath ``domain``; ``parked`` marks each row ``extra.parked``."""
-    beneath = sorted(n for n in discovered if n.endswith("." + domain))
+               parked: bool = False, target: dict | None = None) -> list[CryptoAsset]:
+    """Sweep every known name beneath ``domain``; ``parked`` marks each row ``extra.parked``.
+
+    The names are the transparency read's (``discovered``) and, from
+    ``target``, the supplied zone files', the profile's and the scan targets'
+    (:func:`sweep_names`). Where the profile attests a zone file complete, the
+    rows carry that attestation (:func:`zone_population`).
+    """
+    held = zone_files()
+    sources = sweep_names(domain, discovered, target or {}, held)
+    population = zone_population(domain, target or {}, held)
+    beneath = sorted(sources)
     note(f"    · sub-domain SPF, DKIM and DMARC records under {domain}"
          f"{' (parked)' if parked else ''} "
          f"({len(beneath)} name(s), 4 corroborated lookups each) …")
-    return _ned_assets(domain, beneath, ref_time, resolvers, parked)
+    return _ned_assets(domain, beneath, ref_time, resolvers, parked, sources, population)
+
+
+#: Where the supplied zone files are read from: the inbox folder the
+#: ``dns_zones`` collector reads.
+ZONE_DIRECTORY = "inbox/dns-zones"
+
+
+def zone_files() -> list[zonefile.ZoneFile]:
+    """The public zone files supplied in :data:`ZONE_DIRECTORY` (unreadable ones left out).
+
+    Private-zone exports are not read: their names are not served to the
+    public DNS a receiver asks.
+    """
+    directory = inbox_path(ZONE_DIRECTORY)
+    held = []
+    for p in sorted(directory.glob("*.zone")) if directory.is_dir() else []:
+        try:
+            held.append(zonefile.read(p))
+        except (OSError, ValueError):
+            continue
+    return held
+
+
+def _beneath(name: str, domain: str) -> bool:
+    return name.endswith("." + domain)
+
+
+def _scan_target_hosts(target: dict) -> list[str]:
+    """Every host name the profile's ``scan_targets`` groups list (addresses are skipped later)."""
+    out = []
+    for entries in (target.get("scan_targets") or {}).values():
+        for entry in entries or []:
+            host = entry.get("host") if isinstance(entry, dict) else entry
+            if host:
+                out.append(str(host).split(":")[0] if str(host).count(":") == 1 else str(host))
+    return out
+
+
+def sweep_names(domain: str, discovered: set[str], target: dict,
+                zones: list[zonefile.ZoneFile]) -> dict[str, list[str]]:
+    """Every name known beneath ``domain``, with where each came from.
+
+    Sources: certificate transparency (``discovered``); the owner names of the
+    supplied zone files, and the names between each owner and ``domain``,
+    which exist as empty non-terminals when they own no record (RFC 4592
+    §2.2.2); the ``discovery`` domain lists; the hosts under ``scan_targets``;
+    and the names the zone files' sender policies point at
+    (:func:`takestock.dnsevidence.sender_policy_names`). The domain's live
+    sender policy is added by the sweep itself. A name that cannot be a mail
+    domain is left out (:func:`takestock.dnsevidence.mail_domain_name`).
+    """
+    root = domain.lower().strip(".")
+    out: dict[str, set[str]] = {}
+
+    def add(name: str, source: str) -> None:
+        n = str(name).lower().strip(".")
+        if _beneath(n, root) and dnsevidence.mail_domain_name(n):
+            out.setdefault(n, set()).add(source)
+
+    for n in discovered:
+        add(n, dnsevidence.NAME_FROM_CT)
+    for z in zones:
+        for r in z.records:
+            labels = r.owner.split(".")
+            for i in range(len(labels)):
+                add(".".join(labels[i:]), dnsevidence.NAME_FROM_ZONE)
+            if r.rtype == "TXT" and r.text.lower().startswith("v=spf1"):
+                for n in dnsevidence.sender_policy_names(r.text):
+                    add(n, dnsevidence.NAME_FROM_SPF)
+    disc = target.get("discovery") or {}
+    for n in [*(disc.get("domains") or []), *(disc.get("email_domains") or [])]:
+        add(str(n), dnsevidence.NAME_FROM_PROFILE)
+    for n in _scan_target_hosts(target):
+        add(n, dnsevidence.NAME_FROM_SCAN)
+    return {n: sorted(v) for n, v in sorted(out.items())}
+
+
+#: The target-profile key, under ``dns_zones``, listing zone files attested complete.
+COMPLETE_ZONES_KEY = "complete_zones"
+
+
+def _attestations(target: dict) -> dict[str, dict]:
+    settings = target.get("dns_zones") or {}
+    entries = settings.get(COMPLETE_ZONES_KEY) if isinstance(settings, dict) else None
+    out = {}
+    for e in entries or []:
+        if isinstance(e, dict) and e.get("zone"):
+            out[str(e["zone"]).lower().strip(".")] = e
+    return out
+
+
+def zone_population(domain: str, target: dict,
+                    zones: list[zonefile.ZoneFile]) -> dict[str, Any]:
+    """Whether the names beneath ``domain`` are known completely, on an attested zone file.
+
+    Returns ``{}`` when the profile attests no zone file for ``domain`` under
+    ``dns_zones.complete_zones``. Otherwise ``complete`` is True only when all
+    of these hold: the attestation names who made it (``attested_by``) and
+    when (``attested_on``); a zone file whose origin is ``domain`` is
+    supplied; no line of it went unparsed; and every zone it delegates beneath
+    ``domain`` (an NS record below its apex, RFC 1034 §4.2.1) is supplied and
+    attested in the same way. ``why_not`` says which failed. ``wildcard``
+    says whether the zone file holds a wildcard owner, so a name that resolves
+    without being listed can be told from a name the file left out.
+    """
+    root = domain.lower().strip(".")
+    attested = _attestations(target)
+    if root not in attested:
+        return {}
+    by_origin = {z.origin: z for z in zones}
+    entry = attested[root]
+    out: dict[str, Any] = {
+        "zone": root, "attested_by": str(entry.get("attested_by") or ""),
+        "attested_on": str(entry.get("attested_on") or ""), "complete": False,
+        "why_not": "", "zones": [], "wildcard": False}
+
+    def check(origin: str, seen: set[str]) -> str:
+        e = attested.get(origin)
+        if e is None:
+            return f"the zone {origin} is delegated beneath it and is not attested complete"
+        if not (e.get("attested_by") and e.get("attested_on")):
+            return (f"the attestation for {origin} does not say who made it and when "
+                    "(attested_by, attested_on)")
+        z = by_origin.get(origin)
+        if z is None:
+            return f"no zone file for {origin} was supplied"
+        if z.unparsed:
+            return (f"{len(z.unparsed)} line(s) of the zone file for {origin} were not "
+                    "understood, and a line not understood may hold a name")
+        seen.add(origin)
+        out["zones"].append(origin)
+        out["wildcard"] = out["wildcard"] or any(r.owner.startswith("*.") for r in z.records)
+        for cut in sorted({r.owner for r in z.records
+                           if r.rtype == "NS" and r.owner != origin and _beneath(r.owner, origin)}):
+            if cut not in seen:
+                why = check(cut, seen)
+                if why:
+                    return why
+        return ""
+
+    why = check(root, set())
+    out["complete"] = not why
+    out["why_not"] = why
+    return out
 
 
 def _ip_stack(host: str) -> dict[str, str]:
@@ -1092,14 +1249,17 @@ SUBDOMAIN_MAIL = "subdomain-mail"
 def _ned_assets(domain: str, names: list[str],
                 ref_time: datetime | None = None,
                 resolvers: tuple[str, ...] = ("",),
-                parked: bool = False) -> list[CryptoAsset]:
+                parked: bool = False,
+                sources: dict[str, list[str]] | None = None,
+                population: dict[str, Any] | None = None) -> list[CryptoAsset]:
     """The rows summarising a sub-domain sweep (see :func:`ned_rows`)."""
-    cap = dnsevidence.capture_subdomains(domain, names, resolvers)
-    return ned_rows(domain, cap, ref_time, parked)
+    cap = dnsevidence.capture_subdomains(domain, names, resolvers, sources=sources)
+    return ned_rows(domain, cap, ref_time, parked, population)
 
 
 def ned_rows(domain: str, cap: dict, ref_time: datetime | None = None,
-             parked: bool = False) -> list[CryptoAsset]:
+             parked: bool = False,
+             population: dict[str, Any] | None = None) -> list[CryptoAsset]:
     """The sub-domain rows from a :func:`dnsevidence.capture_subdomains` result.
 
     Three rows (SPF, DKIM and DMARC) read the names that show no sign of handling
@@ -1117,7 +1277,16 @@ def ned_rows(domain: str, cap: dict, ref_time: datetime | None = None,
     ``extra.intermediate_unsettled``. ``extra.control_basis`` says why the
     absence control was trusted (:func:`dnsevidence.control_reading`).
     ``parked`` sets ``extra.parked`` on each row, for the sweep beneath a
-    parked domain.
+    parked domain. ``extra.name_sources`` gives each name read the sources it
+    came from, and ``extra.names_by_source`` counts them.
+
+    ``population`` is :func:`zone_population`'s reading, kept as
+    ``extra.population``. When it says the zone files are complete,
+    ``extra.names_disagreeing_with_zone`` lists the names the live reading
+    and the files disagree on: a name the files list that came back
+    NXDOMAIN, or a name they do not list that exists (unless the files hold
+    a wildcard, which makes unlisted names answer). Either means the files no
+    longer describe the zone.
     """
     collected_at = now_date(ref_time)
 
@@ -1146,7 +1315,22 @@ def ned_rows(domain: str, cap: dict, ref_time: datetime | None = None,
         "names_resolving": sum(1 for r in in_scope if r["exists"]),
         "names_nonexistent": sorted(r["name"] for r in in_scope if not r["exists"]),
         "names_email_enabled": sending,
+        "name_sources": {r["name"]: list(r.get("found_in") or []) for r in cap["subdomains"]},
     }
+    counts: dict[str, int] = {}
+    for found_in in shared["name_sources"].values():
+        for src in found_in:
+            counts[src] = counts.get(src, 0) + 1
+    shared["names_by_source"] = dict(sorted(counts.items()))
+    if population:
+        shared["population"] = dict(population)
+        if population.get("complete"):
+            listed = dnsevidence.NAME_FROM_ZONE
+            shared["names_disagreeing_with_zone"] = sorted(
+                r["name"] for r in cap["subdomains"] if settled(r) and (
+                    (listed in (r.get("found_in") or []) and not r["exists"])
+                    or (listed not in (r.get("found_in") or []) and r["exists"]
+                        and not population.get("wildcard"))))
     if parked:
         shared["parked"] = True
     common: dict[str, Any] = {"host": domain, "source": "ct_dns", "source_class": "public",

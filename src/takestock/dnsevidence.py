@@ -24,6 +24,7 @@ import concurrent.futures as futures
 import datetime
 import json
 import re
+import secrets
 import subprocess
 from dataclasses import asdict, dataclass, field
 from typing import Any
@@ -202,6 +203,24 @@ CONTROL_LABEL = "takestock-absence-control"
 #: published wildcard answered it with exactly the wildcard's own record.
 CONTROL_NXDOMAIN = "nxdomain"
 CONTROL_WILDCARD = "wildcard"
+
+#: Why a sweep's absence control is NOT trusted, when the cause is known: a
+#: resolver answered with records a name under a domain that publishes none
+#: (see :func:`synthesis_control_name`), so it invents answers.
+RESOLVER_SYNTHESISES = "resolver-synthesises"
+
+#: The domain the synthesis control is asked beneath. ``invalid`` is reserved
+#: and never delegated (RFC 2606 §2, RFC 6761 §6.4), so it publishes no
+#: wildcard and nothing beneath it exists: RFC 6761 §6.4 says a caching
+#: server "SHOULD generate immediate negative responses for all such
+#: queries", and once the root denies ``invalid`` there is nothing underneath
+#: it (RFC 8020 §2).
+SYNTHESIS_CONTROL_ZONE = "invalid"
+
+
+def synthesis_control_name() -> str:
+    """A fresh random name under :data:`SYNTHESIS_CONTROL_ZONE`, so no cache holds an answer."""
+    return f"{CONTROL_LABEL}-{secrets.token_hex(6)}.{SYNTHESIS_CONTROL_ZONE}"
 
 # dig prints some types under another name: an HTTPS query is shown as TYPE65
 # by older versions.
@@ -485,6 +504,44 @@ def sender_policy_hosts(record: str) -> list[str]:
     return sorted(set(out))
 
 
+# Where a swept name came from. A name may come from several.
+NAME_FROM_CT = "certificate transparency"
+NAME_FROM_ZONE = "zone file"
+NAME_FROM_PROFILE = "target profile"
+NAME_FROM_SCAN = "scan targets"
+NAME_FROM_SPF = "sender policy"
+
+_LDH_LABEL = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
+
+
+def mail_domain_name(name: str) -> bool:
+    """True when ``name`` can be the domain of a mail address.
+
+    RFC 5321 §4.1.2 builds a mail domain from labels of letters, digits and
+    hyphens only, so a name with an underscore label (an attribute leaf such
+    as ``_dmarc``, RFC 8552 §1.1) or a wildcard label is not one a message can
+    claim to come from, and is not swept.
+    """
+    labels = name.lower().strip(".").split(".")
+    return all(_LDH_LABEL.match(x) for x in labels) and len(labels) > 1
+
+
+def sender_policy_names(record: str) -> list[str]:
+    """Names an SPF record points at: ``a:``, ``mx:``, ``include:`` and ``redirect=`` targets.
+
+    A target holding a macro (RFC 7208 §7) is not a fixed name and is left out.
+    """
+    out = []
+    for token in record.split():
+        low = token.lower().lstrip("+-~?")
+        for prefix in ("a:", "mx:", "include:", "redirect="):
+            if low.startswith(prefix):
+                name = low[len(prefix):].split("/")[0].strip().rstrip(".")
+                if name and "%" not in name:
+                    out.append(name)
+    return sorted(set(out))
+
+
 @dataclass
 class SubdomainRecords:
     """What one sub-domain name publishes, and whether it shows signs of sending mail."""
@@ -503,6 +560,7 @@ class SubdomainRecords:
     dmarc_record: str = ""
     email_enabled: bool = False
     email_enabled_because: str = ""
+    found_in: list[str] = field(default_factory=list)
 
     @property
     def exists(self) -> bool:
@@ -578,7 +636,8 @@ def _corroborated_block(q: Corroborated, prefix: str) -> dict:
 
 
 def control_reading(control: Corroborated, wildcard: Corroborated,
-                    own: Corroborated) -> tuple[bool, str]:
+                    own: Corroborated, outside: Corroborated | None = None
+                    ) -> tuple[bool, str]:
     """Whether a sweep's absence control may be trusted, and on what basis.
 
     The control asks for a label nobody registers. When it comes back
@@ -606,25 +665,49 @@ def control_reading(control: Corroborated, wildcard: Corroborated,
     wildcard of a type the TXT probe of ``*.<domain>`` cannot see) is never
     graded from that run. What the wildcard exception costs: a resolver that
     returned one fixed, non-empty TXT answer for every question would read as
-    a wildcard; a resolver that returns nothing for every question does not,
-    because the exception needs real TXT records seen. There is no cheap
-    recovery from grading a batch whose absences are false, which is why the
-    guard prevents rather than repairs.
+    a wildcard, but for the second control below; a resolver that returns
+    nothing for every question does not, because the exception needs real TXT
+    records seen. There is no cheap recovery from grading a batch whose absences are
+    false, which is why the guard prevents rather than repairs.
+
+    ``outside`` is the same question asked of a random name under a domain
+    that publishes no wildcard and holds no names at all
+    (:func:`synthesis_control_name`). A wildcard under the swept domain cannot
+    answer it, so a resolver that answers it with records is inventing
+    answers: the batch is not usable, and the basis says so
+    (:data:`RESOLVER_SYNTHESISES`) rather than reading as a wildcard. The
+    wildcard exception also needs ``outside`` to come back NXDOMAIN from every
+    resolver, so a resolver that will not say whether it invents answers
+    leaves the control untrusted. What that costs: behind a resolver that
+    answers the reserved name with anything but NXDOMAIN (SERVFAIL, say), a
+    domain with a wildcard is never graded. ``None`` (a caller that did not
+    ask) keeps the reading without that check.
     """
     if control.rcode == "NXDOMAIN":
         return True, CONTROL_NXDOMAIN
+    if outside is not None and any(lk.answers for lk in outside.lookups if not lk.error):
+        return False, RESOLVER_SYNTHESISES
     explained = (control.rcode == "NOERROR" and wildcard.rcode == "NOERROR"
                  and control.agreed and wildcard.agreed
                  and sorted(control.value) == sorted(wildcard.value)
-                 and bool(wildcard.value or own.value))
+                 and bool(wildcard.value or own.value)
+                 and (outside is None or outside.rcode == "NXDOMAIN"))
     return (True, CONTROL_WILDCARD) if explained else (False, "")
 
 
 def capture_subdomains(domain: str, names: list[str],
                        resolvers: tuple[str, ...] = ("",),
                        workers: int = SWEEP_WORKERS,
-                       max_names: int = SWEEP_MAX_NAMES) -> dict:
+                       max_names: int = SWEEP_MAX_NAMES,
+                       sources: dict[str, list[str]] | None = None) -> dict:
     """Read each sub-domain name's SPF, MX, DKIM wildcard and DMARC records.
+
+    ``sources`` says where each of ``names`` came from (a name missing from it
+    is put down to certificate transparency, the source the sweep was first
+    built on). The names the domain's own sender policy points at beneath it
+    are added (:func:`sender_policy_names`), marked :data:`NAME_FROM_SPF`, and
+    each name read carries its sources in ``found_in``. A name that cannot be
+    a mail domain (:func:`mail_domain_name`) is not read.
 
     The wildcards under ``domain`` itself and an absence control are read in
     the same batch, and so is the DMARC record of each name a policy walk
@@ -642,9 +725,21 @@ def capture_subdomains(domain: str, names: list[str],
     wildcard_spf = corroborate_status(spf_wildcard_name(domain), "TXT", resolvers)
     wildcard_dkim = corroborate_status(dkim_wildcard_name(domain), "TXT", resolvers)
     control = corroborate_status(f"{CONTROL_LABEL}.{domain}", "TXT", resolvers)
-    usable, basis = control_reading(control, wildcard_spf, own_spf)
+    outside = (None if control.rcode == "NXDOMAIN" else
+               corroborate_status(synthesis_control_name(), "TXT", resolvers))
+    usable, basis = control_reading(control, wildcard_spf, own_spf, outside)
 
-    wanted = sorted(dict.fromkeys(n.lower().strip(".") for n in names if n))
+    root = domain.lower().strip(".")
+    found: dict[str, list[str]] = {}
+    for n in names:
+        key = n.lower().strip(".")
+        if key:
+            found.setdefault(key, []).extend((sources or {}).get(n) or [NAME_FROM_CT])
+    for n in sender_policy_names(own_record):
+        if n.endswith("." + root):
+            found.setdefault(n, []).append(NAME_FROM_SPF)
+    found = {n: sorted(set(v)) for n, v in found.items() if mail_domain_name(n)}
+    wanted = sorted(found)
     truncated = max(0, len(wanted) - max_names)
     wanted = wanted[:max_names]
 
@@ -658,6 +753,7 @@ def capture_subdomains(domain: str, names: list[str],
                 lambda n: corroborate_status(f"_dmarc.{n}", "TXT", resolvers), between))
     for rec in read:
         _scope(rec, named_senders)
+        rec.found_in = found[rec.name]
 
     return {
         "domain": domain,
@@ -668,7 +764,8 @@ def capture_subdomains(domain: str, names: list[str],
         "wildcard_spf": _corroborated_block(wildcard_spf, "v=spf1"),
         "wildcard_dkim": _corroborated_block(wildcard_dkim, "v=DKIM1"),
         "control": {**_corroborated_block(control, "v=spf1"),
-                    "usable": usable, "basis": basis},
+                    "usable": usable, "basis": basis,
+                    "outside": _corroborated_block(outside, "") if outside else None},
         "subdomains": [asdict(r) | {"exists": r.exists, "settled": r.settled,
                                     "spf_conformant": r.spf_conformant,
                                     "dkim_conformant": r.dkim_conformant}
@@ -677,7 +774,7 @@ def capture_subdomains(domain: str, names: list[str],
             {"name": n, "dmarc_name": q.name, "dmarc_record": _pick_txt(q.value, "v=DMARC1"),
              "settled": q.agreed and any(not lk.error for lk in q.lookups)}
             for n, q in zip(between, intermediate, strict=True)],
-        "names_offered": len(names),
+        "names_offered": len(found),
         "names_dropped_by_cap": truncated,
     }
 
@@ -832,6 +929,11 @@ def subdomain_transcript(captures: list[dict]) -> list[str]:
                       if ctl["usable"] and ctl.get("basis") == CONTROL_WILDCARD else
                       "absence is distinguishable, so the readings below mean what they say"
                       if ctl["usable"] else
+                      "⚠ A RESOLVER INVENTS ANSWERS: it answered "
+                      f"{(ctl.get('outside') or {}).get('name', 'a reserved name')}, under a "
+                      "domain that publishes nothing, with records, so no reading below is "
+                      "evidence of anything"
+                      if ctl.get("basis") == RESOLVER_SYNTHESISES else
                       "⚠ THIS SHOULD HAVE BEEN NXDOMAIN, and no published wildcard explains "
                       "the answer, so the resolver may not be telling absences apart — the "
                       "readings below are not evidence of absence"))

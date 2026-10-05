@@ -450,11 +450,13 @@ requirements:
       zones themselves rather than from certificate logs, with each name that
       sends no mail read for a v=spf1 -all record.
     partial: >-
-      Which sub-domains exist. The names read are the ones that have appeared in
-      a public certificate, and that list leans away from the very names this
-      requirement is about, because a sub-domain needing a denying record is
-      usually one nobody serves web traffic on. So the count of names missing
-      the record is a floor, and the true number is higher.
+      Which sub-domains exist. The names read are the ones the observation knows
+      of: certificate logs, supplied zone files, the profile and the names
+      sender policies point at. Certificate logs lean away from the very names
+      this requirement is about, because a sub-domain needing a denying record
+      is usually one nobody serves web traffic on. Unless a zone file the
+      profile attests complete is supplied, the count of names missing the
+      record is a floor, and the true number may be higher.
     note: >-
       A sender policy does not carry down. A receiver checking mail that claims
       to come from a sub-domain asks that sub-domain for a policy and stops
@@ -486,11 +488,13 @@ requirements:
     # grade a domain where they differ.
     record: "*._domainkey.<domain>"
     partial: >-
-      Which sub-domains exist. The names read are the ones that have appeared in
-      a public certificate, and that list leans away from the very names this
-      requirement is about, because a sub-domain needing a denying record is
-      usually one nobody serves web traffic on. So the count of names missing
-      the record is a floor, and the true number is higher.
+      Which sub-domains exist. The names read are the ones the observation knows
+      of: certificate logs, supplied zone files, the profile and the names
+      sender policies point at. Certificate logs lean away from the very names
+      this requirement is about, because a sub-domain needing a denying record
+      is usually one nobody serves web traffic on. Unless a zone file the
+      profile attests complete is supplied, the count of names missing the
+      record is a floor, and the true number may be higher.
     note: >-
       Publishing the empty key on a domain that does send signed mail is safe:
       an explicit selector record takes precedence over a wildcard, so a live
@@ -522,10 +526,11 @@ requirements:
     partial: >-
       Whether every sub-domain rejects. The root domain's sub-domain policy tag
       decides it for sub-domains that carry no DMARC record of their own. The
-      sub-domains read for a record of their own are the ones that have
-      appeared in a public certificate and show no sign of sending mail, so a
-      sub-domain outside that list is not seen, and every name read rejecting
-      cannot show that every sub-domain does.
+      sub-domains read for a record of their own are the ones the observation
+      knows of and show no sign of sending mail, so a sub-domain outside that
+      list is not seen, and every name read rejecting cannot show that every
+      sub-domain does, unless a zone file the profile attests complete is
+      supplied.
 
   - id: SGE-NED-DMARC-R01
     title: Strict alignment and a reporting address on non-email-enabled domains
@@ -552,9 +557,9 @@ requirements:
       its own DMARC record or the one it falls back to.
     partial: >-
       Which sub-domains exist, and the ones that send mail. The names read are
-      the ones that have appeared in a public certificate, and only those that
-      show no sign of sending mail are read, so the count of names short of the
-      record is a floor. A sub-domain with no DMARC record of its own is read
+      the ones the observation knows of, and only those that show no sign of
+      sending mail are read, so the count of names short of the record is a
+      floor unless a zone file the profile attests complete is supplied. A sub-domain with no DMARC record of its own is read
       through the organisational domain's record, which a receiver applies to
       it.
     note: >-
@@ -687,17 +692,19 @@ requirements:
     text: "To avoid confusion sp= should only ever be set on organisation level domains."
     source: DMARC Deployment Guide v1.0 §4 step 2
     document: dmarc-guide
-    # Fails a domain on any sub-domain publishing its own sp= tag; never
-    # passes, because the names read are a floor.
+    # Fails a domain on any sub-domain publishing its own sp= tag; passes only
+    # when a zone file is attested complete, because otherwise the names read
+    # are a floor.
     measurable: observed
     settled_by: >-
       The full list of names in the organisation's DNS zones, each read for a
       DMARC record of its own.
     partial: >-
       Which sub-domains exist, and the ones that send mail. The names read are
-      the ones that have appeared in a public certificate, and only those that
-      show no sign of sending mail are read, so a sub-domain setting sp= that
-      is not among them is not seen.
+      the ones the observation knows of, and only those that show no sign of
+      sending mail are read, so a sub-domain setting sp= that is not among
+      them is not seen, unless a zone file the profile attests complete is
+      supplied.
 
   - id: SGE-DMARC-R06
     title: Bulk mail sent from a sub-domain separate from staff mail

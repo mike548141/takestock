@@ -243,7 +243,8 @@ sit beside, and never merge with, the rows for the parked domain's own records.
 A name with no DMARC record of its own is read through the parked domain's own
 record, which a receiver applies to it. As with every sweep, the names are a
 floor: a name without the required record is a breach, and any number of names
-carrying it settles nothing, so these rows can fail and never pass. A name the
+carrying it settles nothing, so these rows can fail and pass only on an attested
+zone file (below). A name the
 sweep finds sending mail (it publishes MX, is named in the parent's sender
 policy, or authorises senders) is excluded from them and graded against the
 rules for email domains instead (below).
@@ -257,8 +258,58 @@ whose subject is *mail-handling sub-domains of* the parent. A name with no DMARC
 record of its own takes the record a receiver's policy discovery finds for it
 (see *DMARC policy discovery* below): its `sp=` for a name that exists, its
 `np=` for one that does not, then its `p=`. Their own DMARC records are also
-read for the tags SGE-DMARC-R03 says not to use. Their MTA-STS, TLS-RPT and DKIM records are not read in this first cut.
-The names are a floor, so these rows can fail and never pass.
+read for the tags SGE-DMARC-R03 says not to use. Their MTA-STS, TLS-RPT and DKIM records are not read in this first cut,
+so these rows can fail and never pass, even on an attested zone file.
+
+**Which names the sweep reads.** The sweep reads every name the observation
+knows beneath a domain, and keeps with each where it came from
+(`extra.name_sources`, counted in `extra.names_by_source`):
+
+| Source | Names |
+|---|---|
+| certificate transparency | names in the public certificates the logs hold |
+| zone file | every owner name in a supplied zone file (`inbox/dns-zones/<zone>.zone`), and every name between an owner and the domain, which exists as an empty non-terminal when it owns no record (RFC 4592 §2.2.2) |
+| target profile | names under `discovery.domains` and `discovery.email_domains` |
+| scan targets | host names under `scan_targets` |
+| sender policy | the `a:`, `mx:`, `include:` and `redirect=` targets of the domain's own SPF record, and of every SPF record in a supplied zone file |
+
+A name with a label that is not letters, digits and hyphens (an underscore
+attribute leaf such as `_dmarc`, RFC 8552 §1.1, or a wildcard) is not read: RFC
+5321 §4.1.2 builds a mail domain from such labels only, so no message can claim
+to come from it. Private-zone exports are not read, because a receiver asks the
+public DNS.
+
+**When a sweep may pass: an attested zone file.** A list of names is a floor
+unless something says it is the whole population. A zone file can, when the
+organisation that runs it says so. The target profile records that statement:
+
+```yaml
+dns_zones:
+  complete_zones:
+    - zone: example.com
+      attested_by: Example Widgets Ltd, DNS administrator
+      attested_on: "2030-01-31"
+```
+
+The sweep's rows for names that send no mail (SGE-NED-SPF-01, SGE-NED-DKIM-01,
+SGE-NED-DMARC-01, SGE-NED-DMARC-R01, SGE-DMARC-R05 and SGE-DMARC-R03 over the
+swept names) then pass, rather than staying not measured, when every name read
+meets the requirement and all of these hold:
+
+- the attestation names who made it and when;
+- a zone file whose origin is the domain was supplied, and every line of it was
+  understood;
+- every zone it delegates beneath the domain (an NS record below its apex) was
+  supplied and attested the same way;
+- every name was read and settled, none was beyond the sweep's ceiling, and no
+  DMARC policy walk passed a name that was not read;
+- the live reading agrees with the files: no name the files list came back
+  NXDOMAIN, and no name they do not list exists (unless the files hold a
+  wildcard, which answers unlisted names).
+
+The passing row names the attestation, so a reader sees what the verdict rests
+on. Where a zone file is attested and one of these fails, the row stays not
+measured and says which. The rows for names that handle mail never pass.
 
 **DMARC policy discovery.** RFC 9989, which obsoletes RFC 7489, replaces RFC
 7489's reliance on a public suffix list with a *DNS Tree Walk* (§4.10). For a name with no DMARC
@@ -299,6 +350,19 @@ answer at the control that no wildcard explains still stops the batch from
 being graded in either direction. A name whose resolvers gave different records
 is counted neither way.
 
+**A resolver that invents answers.** A resolver that gave one fixed TXT record
+to every question would look, to the checks above, like a wildcard. So when the
+control answers, the sweep also asks for a random name under `invalid`, a name
+reserved never to exist (RFC 2606 §2; RFC 6761 §6.4 says a caching server
+*"SHOULD generate immediate negative responses for all such queries"*), where no
+wildcard of the domain's can answer and, once the root has denied `invalid`,
+nothing beneath it exists (RFC 8020 §2). A resolver that answers it with records
+is inventing answers: the sweep's rows say so, as an unusable resolver reading
+rather than a wildcard (`extra.control_basis` is `resolver-synthesises`), and
+nothing in the batch is graded. The wildcard reading also needs that name to
+come back NXDOMAIN from every resolver, so a resolver that will not say (one
+that answers SERVFAIL, say) leaves a domain with a wildcard ungraded.
+
 **An observation whose rows are not marked parked.** The DNS collector marks
 each reading of a parked domain `extra.parked`. An observation taken while the
 domain was listed as an email domain, or by a tool that does not mark the rows,
@@ -336,11 +400,13 @@ Limits that every report should carry:
 - **A published key is not a signed message.** *"All outbound email … must be
   DKIM signed"* is a statement about mail flow. A key in DNS shows that signing
   is possible, not that every service signs.
-- **Sub-domain checks can fail but never pass.** The list of sub-domains
-  takestock knows is a floor drawn from certificate-transparency logs, not the
-  full population. A known name without the required records settles the
-  requirement as unmet; any number of compliant names does not settle it as
-  met.
+- **Sub-domain checks can fail, and pass only on an attested zone file.** The
+  list of sub-domains takestock knows is drawn from certificate-transparency
+  logs, supplied zone files, the target profile and the names sender policies
+  point at. That is a floor, not the full population. A known name without the
+  required records settles the requirement as unmet; any number of compliant
+  names does not settle it as met, unless the profile attests a zone file
+  complete (see *Which names the sweep reads* above).
 - **Some conditions are invisible.** Whether a domain sends bulk mail decides
   whether strict DKIM alignment is recommended at all, and whether a domain
   sends mail at all decides whether the email-enabled or non-email-enabled
