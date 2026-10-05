@@ -295,23 +295,36 @@ MX, the parent's sender policy names them, or their own sender policy
 authorises senders. To a receiver those are email domains, so they are read
 against the rules for email domains, one row per parent domain, with the
 subject *mail-handling sub-domains of* the parent, marked *(discovered)*
-rather than taken from the profile. This is a first cut, read from the SPF,
-DMARC and MX records the sweep already holds; their MTA-STS, TLS-RPT and DKIM
-records are not read.
+rather than taken from the profile. The SPF, DMARC and MX records come from
+the sweep; each such name is then also read for its MTA-STS record and policy
+file, its TLS-RPT record and its DKIM keys under each selector tried, as an
+email domain is.
 
 | Requirement | Level | Not met when | Otherwise |
 |---|---|---|---|
 | SGE-SPF-01 SPF ending `-all` | must | a name publishes no SPF record, or one ending `~all` or neither | not measured |
 | SGE-DMARC-01 `p=reject` | must | a name's own DMARC record does not reject all failing mail; or it has none and the record policy discovery finds for it (`sp=` for a name that exists, `np=` for one that does not, then `p=`) does not; or none is found | not measured |
+| SGE-DMARC-04 a DMARC reporting tool | must | the DMARC record a receiver applies to a name (its own, or the one policy discovery finds) has no `rua=` address, or no record applies | not measured |
+| SGE-MTASTS-01 MTA-STS in enforce mode | must | a name publishes no `_mta-sts` record; or its policy is not valid (the certificate does not validate, the answer is not HTTP 200, or `version: STSv1` or a valid `max_age` is missing); or its mode is not `enforce` | not measured |
+| SGE-MTASTS-02 every MX listed, no wildcards | must | a name's valid policy has no `mx:` line matching one of its MX hosts, or uses a wildcard entry | not measured |
+| SGE-TLSRPT-01 TLS reporting | must | a name publishes no `_smtp._tls` record, or one with no `rua=` address | not measured |
+| SGE-DMARC-R02 strict SPF alignment | recommended | the DMARC record a receiver applies to a name sets relaxed SPF alignment, or omits `aspf=`, or no record applies | not measured |
 | SGE-DMARC-R05 `sp=` only on organisational domains | recommended | a name's own DMARC record sets `sp=` | not measured |
 | SGE-DMARC-R03 unwanted DMARC tags absent | recommended | a name's own DMARC record carries `ruf`, `fo`, `pct`, `rf` or `ri` | not measured |
+| SGE-DKIM-R01 2048-bit DKIM keys | recommended | a key under a selector that answered is shorter than 2048 bits | not measured |
+| SGE-DKIM-R02 a distinct key per selector | recommended | a name's key is published under more than one selector name, anywhere in the observation | not measured |
 
 A name without a DMARC record of its own is not failed for that alone, because
-a receiver applies to it the record its policy discovery finds. A name whose
-policy discovery passes a name that could not be read is counted neither way:
-it is left out of the names read, and the note beside the row lists it. As with
-every sweep, the names are a floor, so these rows can fail and never pass. A parent whose sweep found
-no such name has no row.
+a receiver applies to it the record its policy discovery finds. A name is
+counted neither way, left out of the names read and listed with the reason in
+the note beside the row, when what a requirement needs was not read: a lookup
+that did not settle, a policy file this machine could not fetch, no key under
+any selector tried (selector names cannot be listed, so silence proves
+nothing), or a policy discovery that passes a name that could not be read. An
+observation that never read a name's MTA-STS, TLS-RPT or DKIM records shows
+those rows as not collected. As with every sweep, the names are a floor, so
+these rows can fail and never pass. A parent whose sweep found no such name has
+no row.
 
 ### Read from the mail hosts
 

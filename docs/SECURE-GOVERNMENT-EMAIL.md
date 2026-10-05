@@ -247,7 +247,10 @@ carrying it settles nothing, so these rows can fail and pass only on an attested
 zone file (below). A name the
 sweep finds sending mail (it publishes MX, is named in the parent's sender
 policy, or authorises senders) is excluded from them and graded against the
-rules for email domains instead (below).
+rules for email domains instead (below). The row's note says a name is graded
+that way only when the same observation holds a usable mail-handling reading
+of it; otherwise it says the name was set aside and is not graded as an email
+domain either.
 
 **Sub-domains that handle mail.** A name beneath an email or parked domain that
 publishes MX, is named in the parent's sender policy, or publishes a sender

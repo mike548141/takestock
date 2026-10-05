@@ -981,6 +981,18 @@ def _whole_population(extra: dict, unread: list[str] | None = None) -> tuple[str
             "profile), and every name was read, settled, and agreed with the files"), ""
 
 
+def _mail_names_graded(assets: list[Any], domain: str) -> set[str]:
+    """The names beneath ``domain`` that :func:`_discovered_rows` grades as email domains.
+
+    Those held in a mail-handling sub-domain row for ``domain`` whose control
+    name was usable. A note saying a name is graded against the rules for
+    email domains is true only for these.
+    """
+    return {str(n) for a in _by(assets, "subdomain-mail", domain)
+            if (_get(a, "extra") or {}).get("control_usable", False)
+            for n in ((_get(a, "extra") or {}).get("names") or {})}
+
+
 def _floor_note(why_not: str) -> str:
     return f". {why_not[0].upper()}{why_not[1:]}" if why_not else ""
 
@@ -1045,9 +1057,16 @@ def _eval_ned_records(req: dict, assets: list[Any], domains: list[str],
             _control_note(extra),
         ]
         note = [x for x in note if x]
-        if sending:
-            note.append(f"excluded as email-enabled on the evidence, and graded against the "
-                        f"rules for email domains instead: {', '.join(sending)}")
+        graded = _mail_names_graded(assets, d)
+        if any(n in graded for n in sending):
+            note.append("excluded as email-enabled on the evidence, and graded against the "
+                        "rules for email domains instead: "
+                        + ", ".join(n for n in sending if n in graded))
+        if any(n not in graded for n in sending):
+            note.append("excluded as email-enabled on the evidence, and not graded against the "
+                        "rules for email domains either, because this observation holds no "
+                        "usable mail-handling reading of them: "
+                        + ", ".join(n for n in sending if n not in graded))
         if unread:
             note.append(f"NOT READ, so not counted either way: {', '.join(unread)}")
         if extra.get("names_unsettled"):

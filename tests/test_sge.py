@@ -667,6 +667,33 @@ def test_no_discovered_row_without_mail_handling_names_and_none_graded_on_a_bad_
     assert (row.status, row.reason) == (sge.NOT_MEASURED, sge.INCONCLUSIVE)
 
 
+@pytest.mark.parametrize("req_id, protocol", [("SGE-NED-SPF-01", "ned-spf"),
+                                              ("SGE-NED-DKIM-01", "ned-dkim")])
+def test_a_set_aside_name_is_called_graded_as_an_email_domain_only_when_that_grading_is_here(
+        req_id, protocol):
+    graded = "graded against the rules for email domains instead"
+    ungraded = "because this observation holds no usable mail-handling reading of them"
+    sweep = ned(protocol, ["a.example.com"],
+                names_email_enabled=["mail.example.com", "out.example.com"])
+    # The mail-handling row is here and holds both names: both are graded as email domains.
+    both = {"mail.example.com": sub(), "out.example.com": sub()}
+    note = one(req_id, [sweep, mail_subs(both)]).subject_note
+    assert f"{graded}: mail.example.com, out.example.com" in note and ungraded not in note
+    # No mail-handling row at all: the note must not claim a grading the report lacks.
+    note = one(req_id, [sweep]).subject_note
+    assert graded not in note
+    assert f"{ungraded}: mail.example.com, out.example.com" in note
+    # A mail-handling row on an unusable control grades nothing either.
+    note = one(req_id, [sweep, mail_subs(both, usable=False)]).subject_note
+    assert graded not in note and f"{ungraded}: mail.example.com, out.example.com" in note
+    # A row holding one of the names: each is described as what happened to it.
+    note = one(req_id, [sweep, mail_subs({"mail.example.com": sub()})]).subject_note
+    assert f"{graded}: mail.example.com;" in note and f"{ungraded}: out.example.com" in note
+    # Another domain's mail-handling row says nothing about this one's names.
+    elsewhere = {**mail_subs(both), "host": "example.org"}
+    assert graded not in one(req_id, [sweep, elsewhere]).subject_note
+
+
 def test_mail_handling_names_beneath_a_parked_domain_are_marked_parked_and_discovered():
     assets = [{**mail_subs({"mail.example.com": sub("")}), "host": "example.org"}]
     report = sge.evaluate(assets, [], STD, parked=["example.org"])
