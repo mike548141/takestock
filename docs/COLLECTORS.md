@@ -138,6 +138,20 @@ hosts:
   DKIM records, then sweeps the sub-domain names the transparency read found
   for the denying SPF, empty DKIM and DMARC records a name that sends no mail
   should publish.
+- **The MTA-STS policy fetch.** When `_mta-sts.<domain>` answers, the policy
+  is fetched from `https://mta-sts.<domain>/.well-known/mta-sts.txt` with
+  `curl`, which validates the certificate and does not follow redirects. The
+  `mta-sts` row keeps `extra.policy_http_status` (absent an answer, `null`),
+  `extra.policy_certificate_valid` (`false` when `curl` refused the
+  certificate, exit code 60 or 51; `null` when the fetch never reached it),
+  `extra.policy_fetch_error` (`curl`'s own words) and, from a 200 answer only,
+  `extra.policy_version`, `extra.policy_max_age`, `extra.mode` and `extra.mx`.
+  A policy RFC 8461 would not accept (a certificate that does not validate, an
+  answer other than 200, or no `version: STSv1` or valid `max_age`) carries
+  the flag `mta-sts-policy-invalid`. The certificate is validated against the
+  trust store of the machine running takestock, so a machine whose own store
+  is broken would read every policy host as invalid; the row keeps `curl`'s
+  message so a reader can tell.
 - **Parked domains.** A domain under `discovery.domains` and not under
   `discovery.email_domains` is *parked*: it sends and receives no mail. For
   each one it reads SPF and DMARC the same way as for an email domain; the

@@ -395,6 +395,19 @@ def _eval_mta_sts(req: dict, assets: list[Any], domains: list[str]) -> list[Conf
                         "independently of the mode"),
                 evidence=str(_get(a, "name") or ""), source=req["source"], record=record))
             continue
+        faults = _mta_sts_policy_faults(extra)
+        if faults:
+            rows.append(Conformance(
+                req["id"], req["title"], req["level"], req["scope"], d, FAIL,
+                observed="policy not valid",
+                reason=("; ".join(faults) + ". A sender that cannot fetch a valid policy "
+                        "and holds no cached one delivers as though the domain had not implemented "
+                        "MTA-STS (RFC 8461 §3.3), so the published record puts no mode, enforce or "
+                        "otherwise, into effect"
+                        + (f"; curl reported: {extra['policy_fetch_error']}"
+                           if extra.get("policy_fetch_error") else "")),
+                evidence=str(_get(a, "name") or ""), source=req["source"], record=record))
+            continue
         mode = re.search(r"mode=(\w+)", record)
         value = mode.group(1) if mode else "unknown"
         if value == "unknown" and extra.get("policy_reachable") is False:
@@ -403,7 +416,9 @@ def _eval_mta_sts(req: dict, assets: list[Any], domains: list[str]) -> list[Conf
                 "the TXT record is published but the policy file could not be fetched "
                 "from this machine, so the mode was not read; that is a limit of this "
                 "instrument, not a finding about the domain, and it is not graded as a "
-                "breach"))
+                "breach"
+                + (f"; curl reported: {extra['policy_fetch_error']}"
+                   if extra.get("policy_fetch_error") else "")))
             continue
         status = PASS if value == "enforce" else FAIL
         reason = "" if status == PASS else (
@@ -414,6 +429,20 @@ def _eval_mta_sts(req: dict, assets: list[Any], domains: list[str]) -> list[Conf
                                 evidence=str(_get(a, "name") or ""), source=req["source"],
                                 record=record))
     return rows
+
+
+def _mta_sts_policy_faults(extra: dict) -> list[str]:
+    """Why the row's policy fetch gave no valid policy (RFC 8461 §3.2, §3.3), or [].
+
+    Read only from a row that recorded the fetch's HTTP status and certificate
+    result; an observation taken before those were kept gives no fault.
+    """
+    if "policy_http_status" not in extra and "policy_certificate_valid" not in extra:
+        return []
+    status = extra.get("policy_http_status")
+    return dnsevidence.mta_sts_faults(
+        extra.get("policy_certificate_valid"), int(status) if status is not None else None,
+        extra.get("policy_version"), extra.get("policy_max_age"))
 
 
 def _eval_dkim_keysize(req: dict, assets: list[Any], domains: list[str]) -> list[Conformance]:
@@ -696,7 +725,8 @@ def _control_note(extra: dict) -> str:
     if extra.get("control_basis") != dnsevidence.CONTROL_WILDCARD:
         return ""
     return ("the absence control was answered by the published wildcard with exactly the "
-            "wildcard's record, which a wildcard does for every name that does not exist, so "
+            "wildcard's record, as a wildcard does for a name that does not exist directly "
+            "beneath the domain (RFC 4592 §3.3.1), so "
             "each name was read for its own response code and agreed records, a wildcard "
             "answer being the record a receiver is given for it")
 
@@ -869,12 +899,17 @@ def _eval_tls_floor(req: dict, assets: list[Any], domains: list[str]) -> list[Co
     limit = (_TLS_FLOOR_READ_ELSEWHERE.format(subject=_SENDING_SUBJECT)
              if measured_sending else _TLS_FLOOR_UNREAD)
 
+    named = _mx_named(assets, domains)
     hosts = _mail_hosts(assets, domains)
-    if not hosts:
+    if not named:
         return [_unmeasured(req, "", NOT_COLLECTED,
                             "no MX host has been measured for TLS versions"), sending]
     rows = []
-    for host, a in sorted(hosts.items()):
+    for host in sorted(named):
+        a = hosts.get(host)
+        if a is None:
+            rows.append(_unprobed_mx(req, host, named[host], assets))
+            continue
         versions = list(_get(a, "protocol_versions") or [])
         if not versions:
             if _no_encryption_offered(a):
@@ -1137,23 +1172,61 @@ def _sending_window(assets: list[Any]) -> str:
     return ""
 
 
-def _mail_hosts(assets: list[Any], domains: list[str]) -> dict[str, Any]:
-    named: set[str] = set()
+#: The port an inbound sender delivers to, on which STARTTLS (RFC 3207) is
+#: offered: SMTP relay, port 25 (RFC 5321 §4.5.4, under Receiving Strategy).
+SMTP_RELAY_PORT = "25"
+
+
+def _mx_named(assets: list[Any], domains: list[str]) -> dict[str, list[str]]:
+    """Each mail host the domains' MX records name, with the domains naming it.
+
+    A null MX (``0 .``, RFC 7505) names no host and is left out.
+    """
+    named: dict[str, list[str]] = {}
     for d in domains:
         for a in _by(assets, "mx", d):
             for rec in (_get(a, "extra") or {}).get("records", []) or []:
                 m = re.search(r"(\d+\s+)?([\w.-]+?)\.?$", str(rec).strip())
-                if m:
-                    named.add(m.group(2).lower())
+                host = m.group(2).lower().strip(".") if m else ""
+                if host and d not in named.setdefault(host, []):
+                    named[host].append(d)
+    return named
+
+
+def _mail_hosts(assets: list[Any], domains: list[str]) -> dict[str, Any]:
+    """The STARTTLS probe row of each MX host, on port 25 only.
+
+    A TLS row for the same host on another port reads a different service (a
+    web server, or a submission port), and a row with no port is not a probe
+    at all (a certificate-transparency record of the name, for example), so
+    neither says what an inbound sender is offered.
+    """
+    named = _mx_named(assets, domains)
     out: dict[str, Any] = {}
     for a in assets:
         host = str(_get(a, "host") or "").lower()
         if host not in named or _get(a, "protocol") != "tls":
             continue
+        if str(_get(a, "port") or "").strip() != SMTP_RELAY_PORT:
+            continue
         if host in out and not _get(a, "protocol_versions"):
             continue
         out[host] = a
     return out
+
+
+def _unprobed_mx(req: dict, host: str, domains: list[str], assets: list[Any]) -> Conformance:
+    """The row for an MX host the observation holds no port-25 probe of."""
+    other = sorted({str(_get(a, "port") or "") for a in _by(assets, "tls", host)}
+                   - {"", SMTP_RELAY_PORT})
+    return _unmeasured(
+        req, host, NOT_COLLECTED,
+        f"published as an MX host of {', '.join(domains)}, and this observation holds no "
+        "STARTTLS probe of it on port 25, so the TLS versions it offers an inbound sender "
+        "were not read; listing it under scan_targets.smtp_25 and running with --scan "
+        "reads them"
+        + (f". TLS rows for it on port(s) {', '.join(other)} read another service and are "
+           "not used" if other else ""))
 
 
 def _discovered_subdomains(assets: list[Any], domain: str) -> list[str]:
@@ -1309,17 +1382,8 @@ def _eval_dmarc_unused_tags(req: dict, assets: list[Any], domains: list[str]) ->
             status, reason = PASS, ""
         else:
             status = FAIL
-            why = []
-            if "ruf" in present or "fo" in present:
-                why.append("forensic reporting (ruf, and fo which configures it) is the "
-                           "guide's most emphatic case — 'Do not enable RUF reporting' — "
-                           "because forensic reports can carry message headers, subjects "
-                           "and bodies to a third party")
-            if any(t in present for t in ("pct", "rf", "ri")):
-                why.append("pct, rf and ri were removed from DMARC by RFC 9989 (Appendix "
-                           "C.5.2), whose tag registry marks them historic (§9.3)")
             reason = (f"the record publishes {', '.join(present)}, which the DMARC guide "
-                      "says should not be used; " + "; ".join(why)
+                      "says should not be used; " + _unused_tags_why(present)
                       + " — a recommendation unmet, not a requirement breached")
         rows.append(Conformance(
             req["id"], req["title"], req["level"], req["scope"], d, status,
@@ -1328,6 +1392,34 @@ def _eval_dmarc_unused_tags(req: dict, assets: list[Any], domains: list[str]) ->
             reason=reason, evidence=str(_get(a, "name") or ""), source=req["source"],
             record=record))
     return rows
+
+
+def _unused_tags_why(present: list[str]) -> str:
+    """Why the DMARC guide asks for each of ``present`` to be left out."""
+    why = []
+    if "ruf" in present or "fo" in present:
+        why.append("forensic reporting (ruf, and fo which configures it) is the "
+                   "guide's most emphatic case — 'Do not enable RUF reporting' — "
+                   "because forensic reports can carry message headers, subjects "
+                   "and bodies to a third party")
+    if any(t in present for t in ("pct", "rf", "ri")):
+        why.append("pct, rf and ri were removed from DMARC by RFC 9989 (Appendix "
+                   "C.5.2), whose tag registry marks them historic (§9.3)")
+    return "; ".join(why)
+
+
+def _eval_dmarc_unused_tags_and_beneath(req: dict, assets: list[Any],
+                                        domains: list[str]) -> list[Conformance]:
+    """SGE-DMARC-R03 on each email domain's own record, then on the swept names beneath it.
+
+    The swept names' rows take the subject *sub-domains of* the domain
+    (:func:`parked_subdomains_subject`), so they never merge with the
+    domain's own row.
+    """
+    beneath = _eval_subdomain_unused_tags(req, assets, domains)
+    for row in beneath:
+        row.subject = parked_subdomains_subject(row.subject)
+    return _eval_dmarc_unused_tags(req, assets, domains) + beneath
 
 
 def _eval_spf_mechanisms(req: dict, assets: list[Any], domains: list[str]) -> list[Conformance]:
@@ -1403,6 +1495,12 @@ def _eval_mta_sts_mx(req: dict, assets: list[Any], domains: list[str]) -> list[C
                 "no _mta-sts TXT record is published, so no policy is ever fetched and "
                 "there are no mx entries to compare; the missing record is graded under "
                 "SGE-MTASTS-01"))
+            continue
+        if _mta_sts_policy_faults(extra):
+            rows.append(_unmeasured(
+                req, d, INCONCLUSIVE,
+                "the policy fetch gave no valid policy, so it has no mx entries a sender "
+                "would apply; that is graded under SGE-MTASTS-01"))
             continue
         if extra.get("policy_reachable") is False:
             rows.append(_unmeasured(
@@ -1634,6 +1732,59 @@ def _eval_subdomain_sp(req: dict, assets: list[Any], domains: list[str]) -> list
             evidence=("no enumerated sub-domain that shows no sign of sending mail "
                       "publishes its own sp= tag, and that is not the same as none doing "
                       "so. " + _partial(req) + " No verdict is claimed in either direction."),
+            source=req["source"], subject_note=_ned_scope_note(extra)))
+    return rows
+
+
+def _eval_subdomain_unused_tags(req: dict, assets: list[Any],
+                                domains: list[str]) -> list[Conformance]:
+    """SGE-DMARC-R03 on the DMARC records the swept names beneath each domain publish.
+
+    Only a name's own record is read: a name without one is given the
+    parent's record, which is graded on the parent's own row. A record
+    carrying a tag the guide says not to use fails the row; otherwise the row
+    is not measured, because the names are a floor. A domain with no sweep
+    reading, or no name in scope, gets no row here, since its own row already
+    reads the requirement; a sweep whose control could not be trusted is
+    reported as inconclusive.
+    """
+    unwanted = [str(t).lower() for t in (req.get("tags") or [])]
+    rows = []
+    for d in domains:
+        got = _ned_dmarc_asset(req, assets, d)
+        if isinstance(got, Conformance):
+            if got.reason == INCONCLUSIVE:
+                rows.append(got)
+            continue
+        a, extra = got
+        records = dict(extra.get("dmarc_records") or {})
+        carrying = {n: present for n in sorted(records)
+                    if (present := [t for t in unwanted if t in _dmarc_tags(str(records[n]))])}
+        if carrying:
+            every = sorted({t for present in carrying.values() for t in present})
+            rows.append(Conformance(
+                req["id"], req["title"], req["level"], req["scope"], d, FAIL,
+                observed=f"{len(carrying)} of {len(records)} sub-domain records carry "
+                         + ", ".join(every),
+                reason="; ".join([
+                    ("a sub-domain's own DMARC record publishes a tag the DMARC guide says "
+                     "should not be used: "
+                     + "; ".join(f"{n} ({', '.join(p)})" for n, p in carrying.items())
+                     + "; " + _unused_tags_why(every)
+                     + " — a recommendation unmet, not a requirement breached"),
+                    _SWEEP_INSTRUMENT]),
+                evidence=str(_get(a, "name") or ""), source=req["source"],
+                record="; ".join(f"{n}: {records[n]}" for n in carrying),
+                subject_note=_ned_scope_note(extra)))
+            continue
+        rows.append(Conformance(
+            req["id"], req["title"], req["level"], req["scope"], d, NOT_MEASURED,
+            observed=f"none of {len(records)} sub-domain records carries them",
+            reason=NOT_COLLECTED,
+            evidence=("no DMARC record published by an enumerated sub-domain that shows no "
+                      f"sign of sending mail carries {', '.join(unwanted)}, and that is not "
+                      "the same as none doing so: " + _SWEEP_POPULATION
+                      + ". No verdict is claimed in either direction."),
             source=req["source"], subject_note=_ned_scope_note(extra)))
     return rows
 
@@ -1917,6 +2068,36 @@ def _eval_parked_dmarc_alignment(req: dict, assets: list[Any],
     return _as_parked(rows, assets, "dmarc")
 
 
+def _eval_parked_spf_legacy(req: dict, assets: list[Any],
+                            parked: list[str]) -> list[Conformance]:
+    """SGE-SPF-R02 on each parked domain: an SPF2.0 record is removed from DNS.
+
+    Read as for an email domain (:func:`_eval_spf_legacy`), from the TXT
+    records the parked domain's SPF reading kept.
+    """
+    rows = []
+    for d in parked:
+        found = _parked_rows(assets, "spf", d)
+        rows += (_eval_spf_legacy(req, found, [d]) if found
+                 else [_parked_unread(req, d, "SPF", assets)])
+    return _as_parked(rows, assets, "spf")
+
+
+def _eval_parked_dmarc_unused_tags(req: dict, assets: list[Any],
+                                   parked: list[str]) -> list[Conformance]:
+    """SGE-DMARC-R03 on each parked domain's own DMARC record (:func:`_eval_dmarc_unused_tags`)."""
+    rows = []
+    for d in parked:
+        found = _parked_rows(assets, "dmarc", d)
+        if not found:
+            rows.append(_parked_unread(req, d, "DMARC", assets))
+        elif _absent(found[0]):
+            rows.append(_graded_elsewhere(req, d, "DMARC", "SGE-NED-DMARC-01"))
+        else:
+            rows += _eval_dmarc_unused_tags(req, found, [d])
+    return _as_parked(rows, assets, "dmarc")
+
+
 def _eval_parked_dkim(req: dict, assets: list[Any], parked: list[str]) -> list[Conformance]:
     """SGE-NED-DKIM-01 on each parked domain, read at ``*._domainkey.<domain>``.
 
@@ -1925,7 +2106,9 @@ def _eval_parked_dkim(req: dict, assets: list[Any], parked: list[str]) -> list[C
     passes; no DKIM record there, or one carrying a key, fails; a lookup that
     did not settle leaves the row inconclusive. A selector published under its
     own name answers ahead of the wildcard, and selectors cannot be listed, so
-    a pass speaks for every selector nobody has published.
+    a pass speaks for every selector nobody has published, except one beneath
+    a name that exists under ``_domainkey``, which the wildcard does not answer
+    (RFC 4592 §2.2.1).
     """
     rows = []
     for d in parked:
@@ -2014,6 +2197,8 @@ _PARKED_EVALUATORS: dict[str, Callable[..., list[Conformance]]] = {
     "SGE-NED-DKIM-01": _eval_parked_dkim,
     "SGE-NED-DMARC-01": _eval_parked_dmarc,
     "SGE-NED-DMARC-R01": _eval_parked_dmarc_alignment,
+    "SGE-SPF-R02": _eval_parked_spf_legacy,
+    "SGE-DMARC-R03": _eval_parked_dmarc_unused_tags,
 }
 
 #: The evaluator for each requirement read over the swept names beneath a parked
@@ -2027,6 +2212,7 @@ _PARKED_SUBDOMAIN_EVALUATORS: dict[str, Callable[..., list[Conformance]]] = {
     "SGE-NED-DMARC-01": _eval_parked_subdomain_dmarc,
     "SGE-NED-DMARC-R01": _eval_subdomain_dmarc_alignment,
     "SGE-DMARC-R05": _eval_subdomain_sp,
+    "SGE-DMARC-R03": _eval_subdomain_unused_tags,
 }
 
 
@@ -2087,10 +2273,10 @@ def _spf_qualifier(record: str) -> str:
 
 
 def _discovered_rows(req: dict, assets: list[Any], roots: list[str],
-                     judge: Callable[[str, dict, str], str]) -> list[Conformance]:
+                     judge: Callable[[dict, str, dict, str], str]) -> list[Conformance]:
     """One row per root whose sweep holds settled mail-handling names, graded by ``judge``.
 
-    ``judge(name, records, root_record)`` returns why the name falls short, or
+    ``judge(req, name, records, root_record)`` returns why the name falls short, or
     "" when it meets the requirement. A name short of it fails the row. When
     every name meets it the row is not measured, never met: the names come
     from certificate transparency, which is a floor, so any number of names
@@ -2120,7 +2306,7 @@ def _discovered_rows(req: dict, assets: list[Any], roots: list[str],
             continue
         root = _by(assets, "dmarc", d)
         root_record = _dmarc_record(root[0]) if root else ""
-        short = {n: why for n in sorted(names) if (why := judge(n, names[n], root_record))}
+        short = {n: why for n in sorted(names) if (why := judge(req, n, names[n], root_record))}
         why_mail = "; ".join(f"{n} {names[n].get('because') or 'handles mail'}"
                              for n in sorted(names))
         note = "; ".join(x for x in [
@@ -2153,7 +2339,7 @@ def _discovered_record(req: dict, records: dict) -> str:
     return str(records.get(key) or "none published")
 
 
-def _judge_spf(name: str, records: dict, root_record: str) -> str:
+def _judge_spf(req: dict, name: str, records: dict, root_record: str) -> str:
     spf = str(records.get("spf_record") or "")
     if not spf:
         return "publishes no v=spf1 record, so no sender is denied"
@@ -2163,7 +2349,7 @@ def _judge_spf(name: str, records: dict, root_record: str) -> str:
             "its record ends neither -all nor ~all, so no sender is denied")
 
 
-def _judge_dmarc(name: str, records: dict, root_record: str) -> str:
+def _judge_dmarc(req: dict, name: str, records: dict, root_record: str) -> str:
     """SGE-DMARC-01 on one name: its own record, or the organisational record it falls back to.
 
     A name with no DMARC record of its own is not failed for that alone. A
@@ -2192,7 +2378,7 @@ def _judge_dmarc(name: str, records: dict, root_record: str) -> str:
             f"{policy}; the standard requires p=reject")
 
 
-def _judge_sp_tag(name: str, records: dict, root_record: str) -> str:
+def _judge_sp_tag(req: dict, name: str, records: dict, root_record: str) -> str:
     own = str(records.get("dmarc_record") or "")
     sp = _dmarc_tags(own).get("sp", "")
     return (f"its own record sets sp={sp}, which the DMARC guide says should only ever be set "
@@ -2200,13 +2386,23 @@ def _judge_sp_tag(name: str, records: dict, root_record: str) -> str:
             "breached" if sp else "")
 
 
+def _judge_unused_tags(req: dict, name: str, records: dict, root_record: str) -> str:
+    """SGE-DMARC-R03 on one name's own DMARC record; the parent's is graded on its own row."""
+    tags = _dmarc_tags(str(records.get("dmarc_record") or ""))
+    present = [t for t in (str(x).lower() for x in req.get("tags") or []) if t in tags]
+    return (f"its own record publishes {', '.join(present)}, which the DMARC guide says "
+            f"should not be used; {_unused_tags_why(present)} — a recommendation unmet, not a "
+            "requirement breached" if present else "")
+
+
 #: The judge for each requirement read on discovered mail-handling sub-domains. A
 #: first cut from the records the sweep already holds (SPF, DMARC and MX); the
 #: MTA-STS, TLS-RPT and DKIM records of these names are not read.
-_DISCOVERED_JUDGES: dict[str, Callable[[str, dict, str], str]] = {
+_DISCOVERED_JUDGES: dict[str, Callable[[dict, str, dict, str], str]] = {
     "SGE-SPF-01": _judge_spf,
     "SGE-DMARC-01": _judge_dmarc,
     "SGE-DMARC-R05": _judge_sp_tag,
+    "SGE-DMARC-R03": _judge_unused_tags,
 }
 
 #: The requirements discovered mail-handling sub-domains are read against.
@@ -2241,7 +2437,7 @@ _EVALUATORS: dict[str, Callable[..., list[Conformance]]] = {
     "SGE-NED-DKIM-01": _eval_ned_dkim,
     "SGE-DMARC-04": _eval_dmarc_reporting,
     "SGE-DMARC-R02": _eval_spf_alignment,
-    "SGE-DMARC-R03": _eval_dmarc_unused_tags,
+    "SGE-DMARC-R03": _eval_dmarc_unused_tags_and_beneath,
     "SGE-SPF-R01": _eval_spf_mechanisms,
     "SGE-MTASTS-02": _eval_mta_sts_mx,
     "SGE-SPF-R02": _eval_spf_legacy,

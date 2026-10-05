@@ -219,3 +219,15 @@ def test_a_version_the_client_would_not_offer_is_not_recorded_as_refused(monkeyp
 def test_a_server_refusal_is_still_recorded_as_refused(monkeypatch):
     _openssl_says(monkeypatch, fixture("smtp-tls1.txt"))
     assert dnsevidence._starttls("mail-01.example.test", "tls1")["state"] == "refused"
+
+
+def test_an_mta_sts_policy_is_read_as_rfc_8461_defines_it():
+    body = ("version: STSv1\r\nmode: enforce\r\nmx: mx1.example.com\r\nmx: *.example.net\r\n"
+            "max_age: 604800\r\nmode: none\r\n")
+    fields = dnsevidence.mta_sts_fields(body)
+    # mx repeats; any other repeated field keeps its first value (§3.2).
+    assert fields["mx"] == ["mx1.example.com", "*.example.net"]
+    assert (fields["version"], fields["mode"], fields["max_age"]) == ("STSv1", "enforce", "604800")
+    assert dnsevidence.mta_sts_faults(True, 200, "STSv1", "604800") == []
+    assert dnsevidence.mta_sts_faults(None, None, None, None) == []      # nothing was read
+    assert len(dnsevidence.mta_sts_faults(True, 200, "", "1e6")) == 2

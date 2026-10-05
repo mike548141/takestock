@@ -329,6 +329,63 @@ def mta_sts_policy(domain: str) -> dict:
     }
 
 
+#: RFC 8461 §3.2: the largest ``max_age`` an MTA-STS policy may carry, in seconds.
+MTA_STS_MAX_AGE_LIMIT = 31557600
+
+
+def mta_sts_fields(body: str) -> dict[str, Any]:
+    """An MTA-STS policy body's fields, read as RFC 8461 §3.2 defines them.
+
+    Each line is ``key: value``. ``mx`` may repeat and is kept as a list;
+    any other field that repeats keeps its first value, as §3.2 says.
+    """
+    fields: dict[str, Any] = {"mx": []}
+    for line in body.splitlines():
+        m = re.match(r"^\s*([A-Za-z0-9][A-Za-z0-9_.-]*)\s*:\s*(.*?)\s*$", line)
+        if not m:
+            continue
+        key, value = m.group(1), m.group(2)
+        if key == "mx":
+            fields["mx"].append(value)
+        else:
+            fields.setdefault(key, value)
+    return fields
+
+
+def mta_sts_faults(certificate_valid: bool | None, http_status: int | None,
+                   version: str | None, max_age: str | None) -> list[str]:
+    """Why an MTA-STS policy fetch did not yield a valid policy, or [] when it did.
+
+    Read against RFC 8461: the policy host must present a certificate valid
+    for ``mta-sts.<domain>`` that chains to a trusted root and has not expired
+    (§3.3); a policy is valid only on an HTTP 200 answer, and a redirect is not
+    followed (§3.3); and the policy must say ``version: STSv1`` and carry a
+    ``max_age`` of whole seconds no larger than 31557600 (§3.2). A fetch that
+    never got an answer (``http_status`` None and the certificate not refused)
+    gives no fault: nothing was read.
+    """
+    if certificate_valid is False:
+        return ["the policy host's certificate did not validate; RFC 8461 §3.3 requires one "
+                "valid for mta-sts.<domain>, chaining to a trusted root and not expired"]
+    if http_status is None:
+        return []
+    if http_status != 200:
+        return [f"the policy host answered HTTP {http_status}; RFC 8461 §3.3 makes a policy "
+                "valid only on a 200 (OK) answer, and a sender does not follow a redirect"]
+    faults = []
+    if version != "STSv1":
+        faults.append(f"the policy's version field is {version or 'missing'}; RFC 8461 §3.2 "
+                      "requires version: STSv1")
+    age = (max_age or "").strip()
+    if not re.fullmatch(r"[0-9]{1,10}", age):
+        faults.append(f"the policy's max_age is {age or 'missing'}; RFC 8461 §3.2 requires a "
+                      "whole number of seconds")
+    elif int(age) > MTA_STS_MAX_AGE_LIMIT:
+        faults.append(f"the policy's max_age is {age}, above the {MTA_STS_MAX_AGE_LIMIT} "
+                      "seconds RFC 8461 §3.2 allows")
+    return faults
+
+
 def capture_domain(domain: str, resolvers: tuple[str, ...] = ("",),
                    selectors: list[str] | None = None) -> dict:
     """Every mail-authentication record for ``domain``, corroborated across resolvers."""
@@ -388,7 +445,11 @@ SWEEP_MAX_NAMES = 400
 
 
 def spf_wildcard_name(domain: str) -> str:
-    """Where a wildcard sender policy covering every sub-domain would be published."""
+    """Where a wildcard sender policy would be published.
+
+    It answers the names beneath ``domain`` that do not exist, and never a name
+    that exists or one beneath it (RFC 4592 §2.2.1, §3.3.1).
+    """
     return f"*.{domain}"
 
 
@@ -524,8 +585,11 @@ def control_reading(control: Corroborated, wildcard: Corroborated,
     NXDOMAIN, the resolvers are telling absences apart, and every name's
     answer in the batch means what it says (:data:`CONTROL_NXDOMAIN`).
 
-    A published wildcard (``*.<domain>``) answers the control too, because a
-    wildcard answers for every name beneath that does not exist. That answer
+    A published wildcard (``*.<domain>``) answers the control too, because the
+    control does not exist and sits directly beneath the domain, which is where
+    that wildcard answers. It does not answer every name: never one that
+    exists, and never one beneath a name that exists, an empty non-terminal
+    included (RFC 4592 §2.2.1, §2.2.2, §3.3.1). That answer
     is explained, and the control is trusted (:data:`CONTROL_WILDCARD`), when
     all of these hold: the control and the wildcard both come back NOERROR,
     the resolvers agree on each, the control's records are exactly the

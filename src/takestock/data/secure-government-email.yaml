@@ -476,10 +476,11 @@ requirements:
       The full list of names in the organisation's DNS zones, with each name
       that sends no mail read for an empty DKIM key (v=DKIM1; p=) at
       *._domainkey.<name>.
-    # A DNS wildcard: published, it answers for every selector beneath that has
-    # no record of its own, which is what "no mail from here is ever signed"
-    # needs to say. The evaluator compares this with the name the sweep read
-    # and refuses to grade a domain where they differ.
+    # A DNS wildcard: published, it answers for every selector name that does
+    # not exist, unless that name sits beneath one that does (RFC 4592
+    # §2.2.1), which is what "no mail from here is ever signed" needs to say.
+    # The evaluator compares this with the name the sweep read and refuses to
+    # grade a domain where they differ.
     record: "*._domainkey.<domain>"
     partial: >-
       Which sub-domains exist. The names read are the ones that have appeared in

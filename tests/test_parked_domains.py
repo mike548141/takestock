@@ -184,7 +184,8 @@ def _rows(spf: str | None = "v=spf1 -all", dmarc: str | None = "v=DMARC1; p=reje
     if spf is not None:
         out.append({"name": f"SPF {P}", "protocol": "spf", "host": P, "flags": list(spf_flags),
                     "notes": spf or "no v=spf1 record published",
-                    "extra": {"present": bool(spf), "record": spf, "parked": True}})
+                    "extra": {"present": bool(spf), "record": spf, "parked": True,
+                              "legacy_spf2_records": []}})
     if dmarc is not None:
         out.append({"name": f"DMARC {P}", "protocol": "dmarc", "host": P, "flags": [],
                     "notes": dmarc or "no DMARC record published",
@@ -207,7 +208,8 @@ def test_a_clean_parked_domain_meets_the_rules_for_domains_that_send_no_mail():
     by = {r.requirement: r for r in report.rows if r.parked and r.subject == P}
     assert {k: v.status for k, v in by.items()} == {
         "SGE-NED-SPF-01": sge.PASS, "SGE-NED-DMARC-01": sge.PASS,
-        "SGE-NED-DMARC-R01": sge.PASS, "SGE-NED-DKIM-01": sge.PASS}
+        "SGE-NED-DMARC-R01": sge.PASS, "SGE-NED-DKIM-01": sge.PASS,
+        "SGE-SPF-R02": sge.PASS, "SGE-DMARC-R03": sge.PASS}
     assert report.breaches() == []
     assert [(p.domain, p.null_mx, p.published) for p in report.parked] == [
         (P, "published", True)]
@@ -300,6 +302,22 @@ def test_relaxed_alignment_on_a_parked_domain_is_a_recommendation_not_a_breach()
     assert row.observed == "adkim=r (by default), aspf=r (by default), no rua="
 
 
+def test_a_legacy_spf2_record_on_a_parked_domain_is_a_recommendation_unmet():
+    rows = _rows()
+    next(r for r in rows if r["protocol"] == "spf")["extra"]["legacy_spf2_records"] = [
+        "spf2.0/pra -all"]
+    row = graded(rows, "SGE-SPF-R02")
+    assert row.status == sge.FAIL and not row.breaches_must and "SPF2.0" in row.reason
+
+
+def test_unwanted_dmarc_tags_on_a_parked_domain_are_a_recommendation_unmet():
+    row = graded(_rows(dmarc="v=DMARC1; p=reject; ruf=mailto:f@example.com"), "SGE-DMARC-R03")
+    assert row.status == sge.FAIL and not row.breaches_must and "ruf" in row.observed
+    # No DMARC record at all is graded under SGE-NED-DMARC-01, not here.
+    row = graded(_rows(dmarc=""), "SGE-DMARC-R03")
+    assert row.status == sge.NOT_MEASURED and "SGE-NED-DMARC-01" in row.evidence
+
+
 def test_an_unread_parked_domain_is_not_measured_never_met():
     report = sge.evaluate([], [], STD, parked=[P])
     statuses = {r.requirement: r.status for r in report.rows if r.parked}
@@ -379,6 +397,12 @@ def test_without_a_sweep_the_names_beneath_a_parked_domain_are_not_collected():
     subs = beneath(_rows())
     assert {(r.status, r.reason) for r in subs.values()} == {(sge.NOT_MEASURED,
                                                               sge.NOT_COLLECTED)}
+
+
+def test_unwanted_dmarc_tags_on_the_names_beneath_a_parked_domain():
+    sweep = _ned("ned-dmarc", dmarc_records={f"b.{P}": "v=DMARC1; p=reject; ri=86400"})
+    row = beneath(_rows() + [sweep])["SGE-DMARC-R03"]
+    assert row.status == sge.FAIL and row.parked and f"b.{P} (ri)" in row.reason
 
 
 def test_names_beneath_fall_back_to_the_parked_domains_own_dmarc_record():

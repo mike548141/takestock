@@ -196,6 +196,8 @@ domains apply to it directly, and takestock grades it on its own records:
 | SPF `v=spf1 -all`, with no other mechanism | MUST | SGE SPF guide §3 (the row above). The M3AAWG *Protecting Parked Domains Best Common Practices* (December 2015) say parked domains *"should publish a SPF TXT record in DNS that is referred to as a "naked" -all"* |
 | DMARC `p=reject`, and no `sp=` or `np=` weaker than `reject` | MUST | SGE DMARC guide §3 (the row above). M3AAWG: parked domains *"should publish a DMARC TXT record in DNS which specifies "p=reject""*. A record that sets `sp=` or `np=` to `none` or `quarantine` fails, and one with neither passes on its `p=reject`; see below |
 | Strict alignment and a reporting address | Directive | Framework §10 checklist (the row above) |
+| No SPF2.0 record | SHOULD | SPF guide Appendix 2, read from the TXT records the SPF reading kept, as for an email domain |
+| None of the DMARC tags `ruf`, `fo`, `pct`, `rf`, `ri` | SHOULD | DMARC guide Appendix 2, read from the parked domain's own DMARC record, as for an email domain; a missing record is graded under the DMARC row |
 | Empty DKIM key `v=DKIM1; p=` at `*._domainkey.<domain>` | MUST | DKIM guide §3 (the row above). Read at the wildcard name: the empty key passes; no DKIM record there, or one carrying a key, fails; a lookup that does not settle is not measured |
 | Null MX (`0 .`) | Not an SGE requirement | RFC 7505 §3 defines it: *"To indicate that a domain does not accept email, it advertises a single MX RR … with an RDATA section consisting of preference number 0 and a zero-length label"*, and *"A domain that advertises a null MX MUST NOT advertise any other MX RR."* M3AAWG calls it *"The recommended way to indicate that a domain is not meant to receive email"*. The UK NCSC's *Protecting parked domains* guidance says *"If you have an A record on your domain, but no MX records, you should create a null MX record"* |
 
@@ -234,7 +236,8 @@ for every domain under `discovery.domains`, parked ones included, and the names
 it finds beneath a parked domain are swept exactly as an email domain's are:
 each name's SPF, wildcard DKIM and DMARC records are read, with an absence
 control in the same batch. They are graded against SGE-NED-SPF-01,
-SGE-NED-DKIM-01, SGE-NED-DMARC-01, SGE-NED-DMARC-R01 and SGE-DMARC-R05, in rows
+SGE-NED-DKIM-01, SGE-NED-DMARC-01, SGE-NED-DMARC-R01, SGE-DMARC-R05 and
+SGE-DMARC-R03 (the names' own DMARC records), in rows
 marked *(parked)* whose subject is *sub-domains of* the parked domain, so they
 sit beside, and never merge with, the rows for the parked domain's own records.
 A name with no DMARC record of its own is read through the parked domain's own
@@ -253,7 +256,8 @@ DMARC and MX records the sweep already holds, in rows marked *(discovered)*
 whose subject is *mail-handling sub-domains of* the parent. A name with no DMARC
 record of its own falls back to the parent's record, as a receiver applies it:
 its `sp=` for a name that exists, its `np=` for one that does not, then its
-`p=`. Their MTA-STS, TLS-RPT and DKIM records are not read in this first cut.
+`p=`. Their own DMARC records are also read for the tags SGE-DMARC-R03 says not
+to use. Their MTA-STS, TLS-RPT and DKIM records are not read in this first cut.
 The names are a floor, so these rows can fail and never pass.
 
 **Wildcards and the absence control.** Each sweep asks, in the same batch, for
@@ -265,7 +269,12 @@ the wildcard as explaining it, and reads each name for its own response code and
 agreed records, a wildcard answer being that name's effective record. A
 wildcard `*.<domain>` carrying `v=spf1 -all` is therefore graded as the
 compliant record it is, for every name it answers; a name that exists with no
-record of its own is not covered by a wildcard, and is read as missing it. An
+record of its own is not covered by a wildcard, and is read as missing it. Nor
+is a name beneath one that exists: under RFC 4592 a wildcard answers only a
+name that does not exist and whose closest existing ancestor is the
+wildcard's own parent (§3.3.1), so `*.example.com` does not answer
+`x.a.example.com` when `a.example.com` exists, even as an empty non-terminal
+that owns no record but has names beneath it (§2.2.1, §2.2.2). An
 answer at the control that no wildcard explains still stops the batch from
 being graded in either direction. A name whose resolvers gave different records
 is counted neither way.
@@ -292,8 +301,8 @@ without credentials. Three kinds of evidence are available.
 | Probe | What it shows | Requirements it can grade |
 |---|---|---|
 | DNS queries | The SPF, DMARC, TLS-RPT and MTA-STS records; DKIM keys at selectors that are already known; the MX records | SPF `-all`; `ptr` use; `spf2.0` records; DMARC `p=`, `sp=`, `np=`, alignment tags, unwanted tags, presence of `rua=`; TLS-RPT record form; MTA-STS record; the non-email-enabled records on every name takestock knows of; DKIM key length on known selectors |
-| HTTPS fetch of the MTA-STS policy, with certificate validation | The policy's mode and `mx:` lines, and whether the policy host presents a valid certificate | MTA-STS in `enforce`; MX list complete and without wildcards |
-| SMTP connection to each inbound MX | Whether STARTTLS is offered, which TLS versions the server accepts, and its certificate | Whether the domain's receiving servers *accept* TLS below 1.2, or accept mail without TLS |
+| HTTPS fetch of the MTA-STS policy, with certificate validation | The policy's `version`, `mode`, `max_age` and `mx:` lines, the HTTP status, and whether the policy host presents a valid certificate | MTA-STS in `enforce`, in a policy valid under RFC 8461 §3.2 and §3.3; MX list complete and without wildcards |
+| SMTP connection to each inbound MX, on port 25 | Whether STARTTLS is offered, which TLS versions the server accepts, and its certificate | Whether the domain's receiving servers *accept* TLS below 1.2, or accept mail without TLS |
 
 Limits that every report should carry:
 

@@ -264,6 +264,41 @@ def test_mta_sts_mode_and_publication():
     assert unreachable.status == sge.NOT_MEASURED and "limit of this instrument" in unreachable.evidence
 
 
+def fetched(status: int | None = 200, valid: bool | None = True, version: str = "STSv1",
+            max_age: str = "604800", **more) -> dict:
+    row = sts(mx=["mx1.example.com"], **more)
+    row["extra"] |= {"policy_reachable": status is not None, "policy_http_status": status,
+                     "policy_certificate_valid": valid, "policy_version": version,
+                     "policy_max_age": max_age, "policy_fetch_error": ""}
+    return row
+
+
+def test_a_policy_a_sender_cannot_validly_fetch_is_not_met():
+    assert one("SGE-MTASTS-01", [fetched()]).status == sge.PASS
+    # RFC 8461 §3.3: the certificate must validate, and only a 200 answer is a policy.
+    bad_cert = fetched(status=None, valid=False)
+    bad_cert["extra"]["policy_fetch_error"] = "curl: (60) SSL certificate problem"
+    row = one("SGE-MTASTS-01", [bad_cert])
+    assert row.status == sge.FAIL and "§3.3" in row.reason and "curl: (60)" in row.reason
+    row = one("SGE-MTASTS-01", [fetched(status=404)])
+    assert row.status == sge.FAIL and "HTTP 404" in row.reason
+    assert one("SGE-MTASTS-01", [fetched(status=301)]).status == sge.FAIL
+    # RFC 8461 §3.2: version: STSv1, and max_age of whole seconds up to 31557600.
+    row = one("SGE-MTASTS-01", [fetched(version="STSv2")])
+    assert row.status == sge.FAIL and "STSv2" in row.reason
+    assert one("SGE-MTASTS-01", [fetched(max_age="")]).status == sge.FAIL
+    assert one("SGE-MTASTS-01", [fetched(max_age="31557601")]).status == sge.FAIL
+    assert one("SGE-MTASTS-01", [fetched(max_age="31557600")]).status == sge.PASS
+    # A fetch that never got an answer is still a limit of the instrument.
+    offline = fetched(status=None, valid=None)
+    offline["notes"] = "mode=unknown"
+    row = one("SGE-MTASTS-01", [offline])
+    assert (row.status, row.reason) == (sge.NOT_MEASURED, sge.INCONCLUSIVE)
+    # The mx entries of a policy that is not valid are not compared.
+    row = one("SGE-MTASTS-02", [fetched(status=404), mx_row("mx1.example.com")])
+    assert row.status == sge.NOT_MEASURED and "SGE-MTASTS-01" in row.evidence
+
+
 def test_the_policy_must_list_every_mx_host_without_wildcards():
     hosts = ["mx1.example.com", "mx2.example.com"]
     assert one("SGE-MTASTS-02", [sts(mx=hosts), mx_row(*hosts)]).status == sge.PASS
@@ -446,6 +481,32 @@ def test_a_discovered_name_setting_sp_is_a_recommendation_unmet():
     assert row.status == sge.FAIL and not row.breaches_must
 
 
+def test_a_discovered_name_publishing_an_unwanted_dmarc_tag_is_a_recommendation_unmet():
+    own = [mail_subs({"mail.example.com": sub(dmarc="v=DMARC1; p=reject; fo=1"),
+                      "out.example.com": sub()})]
+    row = discovered("SGE-DMARC-R03", own)
+    assert row.status == sge.FAIL and not row.breaches_must
+    assert "mail.example.com: its own record publishes fo" in row.reason
+    assert "out.example.com" not in row.reason
+
+
+def test_unwanted_dmarc_tags_on_the_swept_names_beneath_an_email_domain():
+    sweep = {"name": f"DMARC on sub-domains of {D}", "protocol": "ned-dmarc", "host": D,
+             "extra": {"control_usable": True, "names_in_scope": 2,
+                       "dmarc_records": {"a.example.com": "v=DMARC1; p=reject; pct=50"},
+                       "read_at": "t", "resolvers": ["192.0.2.53"]}}
+    rows = {r.subject: r for r in rows_for("SGE-DMARC-R03", [dmarc("v=DMARC1; p=reject"), sweep])}
+    assert rows[D].status == sge.PASS
+    beneath = rows[sge.parked_subdomains_subject(D)]
+    assert beneath.status == sge.FAIL and not beneath.breaches_must
+    assert "a.example.com (pct)" in beneath.reason
+    sweep["extra"]["dmarc_records"] = {"a.example.com": "v=DMARC1; p=reject"}
+    rows = {r.subject: r for r in rows_for("SGE-DMARC-R03", [dmarc("v=DMARC1; p=reject"), sweep])}
+    assert rows[sge.parked_subdomains_subject(D)].status == sge.NOT_MEASURED
+    # No sweep reading: the domain's own row stands alone.
+    assert len(rows_for("SGE-DMARC-R03", [dmarc("v=DMARC1; p=reject")])) == 1
+
+
 def test_no_discovered_row_without_mail_handling_names_and_none_graded_on_a_bad_control():
     assert not [r for r in rows_for("SGE-SPF-01", [mail_subs({})]) if r.discovered]
     row = discovered("SGE-SPF-01", [mail_subs({"mail.example.com": sub("")}, usable=False)])
@@ -462,8 +523,9 @@ def test_mail_handling_names_beneath_a_parked_domain_are_marked_parked_and_disco
 
 # ── TLS on the mail path ──────────────────────────────────────────────
 
-def gateway(host: str, versions: list[str], flags: list[str] | None = None) -> dict:
-    return {"name": f"smtp {host}", "protocol": "tls", "host": host,
+def gateway(host: str, versions: list[str], flags: list[str] | None = None,
+            port: str = "25") -> dict:
+    return {"name": f"smtp {host}", "protocol": "tls", "host": host, "port": port,
             "protocol_versions": versions, "flags": flags or []}
 
 
@@ -479,6 +541,29 @@ def test_the_receiving_floor():
     clear = rows_for("SGE-TLS-01", base + [gateway("mx1.example.com", [], ["plaintext:smtp"])])
     assert clear[0].status == sge.FAIL and clear[0].observed == "no TLS offered"
     assert rows_for("SGE-TLS-01", [])[0].reason == sge.NOT_COLLECTED
+
+
+def test_every_mx_host_gets_a_row_and_only_a_port_25_probe_is_read():
+    base = [mx_row("mx1.example.com", "mx2.example.com")]
+    # mx2 has no probe: it is reported, not dropped.
+    rows = rows_for("SGE-TLS-01", base + [gateway("mx1.example.com", ["TLSv1.2"])])
+    by_host = {r.subject: r for r in rows}
+    assert by_host["mx1.example.com"].status == sge.PASS
+    unprobed = by_host["mx2.example.com"]
+    assert (unprobed.status, unprobed.reason) == (sge.NOT_MEASURED, sge.NOT_COLLECTED)
+    assert "MX host of example.com" in unprobed.evidence and "port 25" in unprobed.evidence
+    # A TLS row on another port, or with no port (a certificate-log record), is not
+    # what an inbound sender is offered, so it is not read for the floor.
+    other = rows_for("SGE-TLS-01", base + [
+        gateway("mx1.example.com", ["TLSv1.0"], port="443"),
+        {"name": "certificate mx2.example.com", "protocol": "tls", "host": "mx2.example.com"}])
+    by_host = {r.subject: r for r in other}
+    assert by_host["mx1.example.com"].reason == sge.NOT_COLLECTED
+    assert "port(s) 443" in by_host["mx1.example.com"].evidence
+    assert by_host["mx2.example.com"].reason == sge.NOT_COLLECTED
+    # A null MX names no host.
+    null = [{"name": f"MX {D}", "protocol": "mx", "host": D, "extra": {"records": ["0 ."]}}]
+    assert [r.subject for r in rows_for("SGE-TLS-01", null)][:1] == [""]
 
 
 def transport(direction: str, messages: int, clear: int, dist: str, **extra) -> dict:

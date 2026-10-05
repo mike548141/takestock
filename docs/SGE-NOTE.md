@@ -98,7 +98,9 @@ The target profile supplies:
    the framework's requirements for domains that send no mail (the blank SPF
    record `v=spf1 -all`, a `p=reject` DMARC policy with no `sp=` or `np=`
    weaker than reject, strict alignment with a reporting address, and the
-   empty DKIM key `v=DKIM1; p=` at `*._domainkey.<domain>`), whether it
+   empty DKIM key `v=DKIM1; p=` at `*._domainkey.<domain>`), the two
+   recommendations read from the same records (no SPF2.0 record, SGE-SPF-R02,
+   and none of the DMARC tags the guide says not to use, SGE-DMARC-R03), whether it
    publishes a null MX, and the record text read. The swept names beneath
    each parked domain have a line of their own, *sub-domains of* the domain,
    read as in [Read from the sub-domain sweep](#read-from-the-sub-domain-sweep).
@@ -173,7 +175,13 @@ report conformance.
 
 The sweep also asks for a name nobody has registered in the same batch. It
 should come back NXDOMAIN. A published wildcard (`*.<domain>`) answers it too,
-because a wildcard answers for every name that does not exist; when the control's
+because the control is a name that does not exist directly beneath the domain.
+A wildcard does not answer every name, though: it never answers a name that
+exists, and it does not answer beneath one either, including an empty
+non-terminal (a name that owns no record but has names beneath it, such as
+`a.example.com` when only `_dmarc.a.example.com` is published). RFC 4592 sets
+this out in §2.2.1 and §2.2.2, and §3.3.1 says the only wildcard that can
+answer is the one directly beneath the closest existing name. When the control's
 answer is exactly the wildcard's record, the resolvers agree, and they are seen
 returning real TXT records, the wildcard explains it and the sweep still grades.
 Each name is then read for its own response code and agreed records, a wildcard
@@ -224,14 +232,14 @@ settle](#a-missing-record-and-a-lookup-that-did-not-settle).
 |---|---|---|---|---|---|
 | SGE-SPF-01 SPF ending in hardfail | must | the domain's SPF record | ends `-all` | ends `~all`, or neither; or no SPF record published | no SPF reading |
 | SGE-DMARC-01 DMARC reject | must | the DMARC record | `p=reject` at 100% (`pct` absent or 100) | any other policy, or `pct` below 100; or no DMARC record published | no DMARC reading |
-| SGE-MTASTS-01 MTA-STS in enforce mode | must | the `_mta-sts` record and the policy file | `mode: enforce` | no record published, or any other mode | no MTA-STS reading, or the policy file could not be fetched, so the mode was not read |
-| SGE-MTASTS-02 every MX listed, no wildcards | must | the policy's `mx:` lines against the MX records | every MX host matched, no wildcard | an MX host unmatched, or a wildcard used | no record published (graded under SGE-MTASTS-01), unreachable policy, no MTA-STS reading, or no MX reading |
+| SGE-MTASTS-01 MTA-STS in enforce mode | must | the `_mta-sts` record and the policy file | `mode: enforce` in a valid policy | no record published, or any other mode; or the policy is not valid: the policy host's certificate does not validate, the answer is not HTTP 200 (a redirect included), or the policy lacks `version: STSv1` or a `max_age` of whole seconds up to 31557600 (RFC 8461 §3.2 and §3.3) | no MTA-STS reading, or the fetch got no answer (no connection, or a timeout), so the mode was not read |
+| SGE-MTASTS-02 every MX listed, no wildcards | must | the policy's `mx:` lines against the MX records | every MX host matched, no wildcard | an MX host unmatched, or a wildcard used | no record published, or a policy that is not valid (both graded under SGE-MTASTS-01), unreachable policy, no MTA-STS reading, or no MX reading |
 | SGE-TLSRPT-01 TLS reporting | must | the record at `_smtp._tls.<domain>` | published with a `rua=` address | not published, or no `rua=` | no TLS-RPT reading: the lookup did not settle, or was not made (`inconclusive`) |
 | SGE-DMARC-04 a DMARC reporting tool | must | the DMARC record's `rua=` | never: a published address is consistent with a tool, not proof of one | no `rua=` address, or no DMARC record published | an address is published (`no-instrument`), or no DMARC reading |
 | SGE-DKIM-R01 2048-bit DKIM keys | recommended | the key at each selector that answered | 2048 bits or more | shorter | no selector answered, or no size could be read |
 | SGE-DMARC-R01 strict DKIM alignment where no bulk mail | recommended | `adkim` | `adkim=s` | never | relaxed alignment: whether the domain sends bulk mail is not established; no DMARC record published (the missing record is graded under SGE-DMARC-01); or no DMARC reading |
 | SGE-DMARC-R02 strict SPF alignment | recommended | `aspf` | `aspf=s` | relaxed, including by omission; or no DMARC record published | no DMARC reading |
-| SGE-DMARC-R03 unwanted DMARC tags absent | recommended | the record's tags | none of `ruf`, `fo`, `pct`, `rf`, `ri` | any of them present | no DMARC record published (graded under SGE-DMARC-01), or no DMARC reading |
+| SGE-DMARC-R03 unwanted DMARC tags absent | recommended | the record's tags | none of `ruf`, `fo`, `pct`, `rf`, `ri` | any of them present | no DMARC record published (graded under SGE-DMARC-01), or no DMARC reading. The swept names' own records are read on a row of their own (below) |
 | SGE-SPF-R01 no `ptr`, no overly broad ranges | recommended | the SPF terms | never: breadth of a range cannot be judged from DNS | `ptr` used | no `ptr` (`inconclusive`); no SPF record published (graded under SGE-SPF-01); or no SPF reading |
 | SGE-SPF-R02 no legacy SPF2.0 records | recommended | every TXT record at the domain | no SPF2.0 record | one or more published | no SPF reading, or the observation kept only the first SPF record |
 | SGE-DKIM-R02 a key per sending platform | recommended | the public keys of the selectors that answered | never | two selectors publish one key | no key shared (other selectors may exist) |
@@ -260,6 +268,12 @@ defaults, are tried. A selector that does not answer proves nothing.
 | SGE-NED-DMARC-01 a rejecting DMARC policy on names that send no mail | must | the email domain's own record sets `sp=none`, or `np=` weaker than `reject` (RFC 9989's policy for names that do not exist); or a swept name's own record, or the domain's record it falls back to (`sp=` for a name that exists, `np=` for one that answers NXDOMAIN), does not reject all failing mail; or a swept name has no record and the domain publishes none for it to fall back to | not measured |
 | SGE-NED-DMARC-R01 strict alignment and a reporting address on those names | recommended | a swept name, on its own record or the one it falls back to, lacks `adkim=s`, `aspf=s` or `rua=`, or has no record and nothing to fall back to | not measured |
 | SGE-DMARC-R05 `sp=` only on organisational domains | recommended | a swept sub-domain publishes its own `sp=` | not measured |
+| SGE-DMARC-R03 unwanted DMARC tags absent | recommended | a swept sub-domain's own record carries `ruf`, `fo`, `pct`, `rf` or `ri` | not measured |
+
+SGE-DMARC-R03 is read here with the subject *sub-domains of* the domain, beside
+the domain's own row, and only where the observation holds a sweep with names
+in scope; a name without a record of its own is given the domain's record,
+which the domain's own row already reads.
 
 Names the sweep finds sending mail are excluded and listed; names it could
 not read are listed as not read, so not counted either way. The same rows are
@@ -283,6 +297,7 @@ records are not read.
 | SGE-SPF-01 SPF ending `-all` | must | a name publishes no SPF record, or one ending `~all` or neither | not measured |
 | SGE-DMARC-01 `p=reject` | must | a name's own DMARC record does not reject all failing mail; or it has none and the parent's record it falls back to (`sp=` for a name that exists, `np=` for one that does not, then `p=`) does not; or neither publishes one | not measured |
 | SGE-DMARC-R05 `sp=` only on organisational domains | recommended | a name's own DMARC record sets `sp=` | not measured |
+| SGE-DMARC-R03 unwanted DMARC tags absent | recommended | a name's own DMARC record carries `ruf`, `fo`, `pct`, `rf` or `ri` | not measured |
 
 A name without a DMARC record of its own is not failed for that alone, because
 a receiver applies the parent's record to it. As with every sweep, the names
@@ -294,13 +309,16 @@ no such name has no row.
 **SGE-TLS-01, TLS 1.2 minimum on email connections** (must) has two halves.
 
 The **receiving** half is read per MX host, from the STARTTLS probe of that
-host:
+host on port 25, the port an inbound sender delivers to. Every host the
+domains' MX records name gets a row, probed or not; a TLS row for the host on
+another port, or with no port (a certificate-log record of the name), reads
+another service and is not used:
 
 | Result | When |
 |---|---|
 | Met | the host offers at least one version at or above TLS 1.2, and none of SSL 2.0, SSL 3.0, TLS 1.0 or TLS 1.1 |
 | Not met | it offers a forbidden version, or it answers without offering STARTTLS at all |
-| Not measured | no MX host was probed; the host gave no version list; or its versions could not be placed against the floor |
+| Not measured | the host has no STARTTLS probe on port 25 (list it under `scan_targets.smtp_25` and run with `--scan`); the host gave no version list; its versions could not be placed against the floor; or no MX host was read at all |
 
 A host that *accepts* TLS 1.0 permits what the framework forbids, but a
 probe cannot see what senders actually negotiate.

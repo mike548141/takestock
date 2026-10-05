@@ -213,19 +213,23 @@ def resolving(table: dict, status: dict | None = None):
 
 
 def email_rows(monkeypatch, table: dict, status: dict | None = None,
-               selectors: list[str] | None = None, policy: str = "__ERROR__ refused",
+               selectors: list[str] | None = None,
+               policy: tuple[str, dict] = ("__ERROR__ refused", {}),
                resolvers: tuple[str, ...] = ("",)):
     monkeypatch.setattr(ct_dns, "dig", lambda n, t="A", short=True: table.get((n, t), []))
     monkeypatch.setattr(dnsevidence, "run", resolving(table, status))
-    monkeypatch.setattr(ct_dns, "http_get", lambda url, *a, **k: policy)
+    monkeypatch.setattr(ct_dns, "http_get_full", lambda url, *a, **k: policy)
     rows, failures = ct_dns._email_assets("example.com", NOW, selectors or [], resolvers)
     return {a.protocol: a for a in rows}, rows, failures
+
+
+POLICY = "version: STSv1\nmode: enforce\nmx: mx1.example.com\nmax_age: 604800\n"
 
 
 def test_mail_authentication_rows(monkeypatch):
     rows, every, failures = email_rows(
         monkeypatch, DNS, selectors=["s1", "s2", "s3"],
-        policy="version: STSv1\nmode: enforce\nmx: mx1.example.com\n")
+        policy=(POLICY, {"status": 200}))
     assert failures == []
     assert rows["mx"].extra["records"] == ["10 mx1.example.com."]
     assert set(rows["spf"].flags) == {"softfail-all", "duplicate-spf", "legacy-spf2"}
@@ -259,6 +263,31 @@ def test_an_answered_lookup_with_no_record_is_a_measured_absence(monkeypatch):
     assert rows["tls-rpt"].flags == ["no-tls-reporting"]
 
 
+@pytest.mark.parametrize(("answer", "status", "valid", "flag"), [
+    ((POLICY, {"status": 200}), 200, True, "enforce"),
+    (("<html>not found</html>", {"status": 404}), 404, True, ct_dns.MTA_STS_INVALID),
+    (("", {"status": 301}), 301, True, ct_dns.MTA_STS_INVALID),
+    (("curl: (60) SSL certificate problem: certificate has expired\n", {}), None, False,
+     ct_dns.MTA_STS_INVALID),
+    (("curl: (6) Could not resolve host: mta-sts.example.com\n", {}), None, None, None),
+    (("__ERROR__ curl not found", {}), None, None, None),
+])
+def test_the_policy_fetch_keeps_its_status_and_certificate_result(monkeypatch, answer,
+                                                                  status, valid, flag):
+    rows, _, _ = email_rows(monkeypatch, DNS, policy=answer)
+    sts = rows["mta-sts"]
+    assert sts.extra["policy_http_status"] == status
+    assert sts.extra["policy_certificate_valid"] is valid
+    assert sts.extra["policy_reachable"] is (status is not None)
+    assert sts.flags == ([flag] if flag else [])
+    if valid is False:
+        assert sts.extra["policy_fetch_error"].startswith("curl: (60)")
+    if status == 200:
+        assert (sts.extra["policy_version"], sts.extra["policy_max_age"]) == ("STSv1", "604800")
+    else:                       # only a 200 answer is read as a policy (RFC 8461 §3.3)
+        assert sts.extra["mode"] == "" and sts.extra["mx"] == []
+
+
 def test_a_lookup_that_failed_is_not_an_absence(monkeypatch):
     status = {"example.com": "SERVFAIL", "_dmarc.example.com": "timeout",
               "_mta-sts.example.com": "REFUSED", "_smtp._tls.example.com": "timeout"}
@@ -282,7 +311,7 @@ def test_one_resolver_failing_while_another_answers_is_not_an_absence(monkeypatc
         return answers(cmd, timeout, stdin_text)
     monkeypatch.setattr(ct_dns, "dig", lambda n, t="A", short=True: [])
     monkeypatch.setattr(dnsevidence, "run", split)
-    monkeypatch.setattr(ct_dns, "http_get", lambda url, *a, **k: "__ERROR__ refused")
+    monkeypatch.setattr(ct_dns, "http_get_full", lambda url, *a, **k: ("__ERROR__ refused", {}))
     rows, failures = ct_dns._email_assets("example.com", NOW, [], dnsfake.RESOLVERS)
     assert "spf" not in {a.protocol for a in rows}
     assert failures and "SERVFAIL" in failures[0]

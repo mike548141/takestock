@@ -60,7 +60,7 @@ from ..util import (
     cert_signature_token,
     days_remaining,
     dig,
-    http_get,
+    http_get_full,
     http_json,
     keychain_secret,
     now_date,
@@ -767,6 +767,48 @@ def read_txt(name: str, resolvers: tuple[str, ...] = ("",), rtype: str = "TXT") 
          "rcode": lk.rcode, "error": lk.error} for lk in q.lookups])
 
 
+#: Flag on an MTA-STS row whose policy a sender could not validly fetch or read.
+MTA_STS_INVALID = "mta-sts-policy-invalid"
+
+#: curl's exit codes for a server certificate that failed validation: 60 (the
+#: peer's certificate or its name could not be verified) and 51 (the name did
+#: not match, in curl releases before 7.62).
+CURL_CERTIFICATE_ERRORS = frozenset({51, 60})
+
+
+def mta_sts_fetch(domain: str) -> dict[str, Any]:
+    """Fetch ``domain``'s MTA-STS policy over HTTPS, validating the certificate.
+
+    Returns ``reachable`` (an HTTP answer arrived), ``http_status``,
+    ``certificate_valid`` (True when the answer came over a validated TLS
+    session, False when curl refused the certificate, None when the fetch
+    never reached that point), ``error`` (curl's own words when the fetch
+    failed), and ``fields``, the policy's fields read from a 200 answer only
+    (RFC 8461 §3.3: a policy is valid only if the response code is 200).
+    Redirects are not followed, as §3.3 forbids.
+    """
+    body, meta = http_get_full(f"https://mta-sts.{domain}/.well-known/mta-sts.txt")
+    out: dict[str, Any] = {"reachable": False, "http_status": None,
+                           "certificate_valid": None, "error": "", "fields": {}}
+    if "status" in meta:
+        out.update(reachable=True, http_status=int(meta["status"]), certificate_valid=True)
+        if out["http_status"] == 200:
+            out["fields"] = dnsevidence.mta_sts_fields(body)
+        return out
+    failed = re.search(r"curl: \((\d+)\)\s*([^\n]*)", body)
+    out["error"] = (failed.group(0) if failed else body).strip()[:300]
+    if failed and int(failed.group(1)) in CURL_CERTIFICATE_ERRORS:
+        out["certificate_valid"] = False
+    return out
+
+
+def mta_sts_policy_faults(fetch: dict[str, Any]) -> list[str]:
+    """Why a fetched policy is not valid; see :func:`takestock.dnsevidence.mta_sts_faults`."""
+    fields = fetch.get("fields") or {}
+    return dnsevidence.mta_sts_faults(fetch.get("certificate_valid"), fetch.get("http_status"),
+                                      fields.get("version"), fields.get("max_age"))
+
+
 def _email_assets(domain: str, ref_time: datetime | None = None,
                   selectors: list[str] | None = None,
                   resolvers: tuple[str, ...] = ("",)) -> tuple[list[CryptoAsset], list[str]]:
@@ -800,20 +842,28 @@ def _email_assets(domain: str, ref_time: datetime | None = None,
         unsettled.append(f"MTA-STS ({sts.name}: {sts.why_unsettled()})")
     else:
         published = any("v=STSv1" in t for t in sts.answers)
-        policy = http_get(f"https://mta-sts.{domain}/.well-known/mta-sts.txt")
-        reachable = not policy.startswith("__ERROR__")
-        mode = re.search(r"mode:\s*(\w+)", policy) if reachable else None
-        mx_lines = re.findall(r"(?im)^\s*mx:\s*(\S+)", policy) if reachable else []
+        fetch = mta_sts_fetch(domain)
+        fields = fetch["fields"]
+        mode, mx_lines = str(fields.get("mode") or ""), list(fields.get("mx") or [])
+        invalid = mta_sts_policy_faults(fetch)
         out.append(CryptoAsset(
             name=f"MTA-STS {domain}", role=roles.email_record("mta-sts", domain),
             protocol="mta-sts",
-            flags=(["enforce"] if (published and mode and mode.group(1) == "enforce")
-                   else [] if published else ["no-mta-sts-record"]),
-            notes=(f"mode={mode.group(1) if mode else 'unknown'}"
-                   + (f"; mx={','.join(mx_lines)}" if mx_lines else "") if published
+            flags=(["no-mta-sts-record"] if not published else
+                   [MTA_STS_INVALID] if invalid else
+                   ["enforce"] if mode == "enforce" else []),
+            notes=(f"mode={mode or 'unknown'}"
+                   + (f"; mx={','.join(mx_lines)}" if mx_lines else "")
+                   + (f"; policy not valid: {'; '.join(invalid)}" if invalid else "")
+                   if published
                    else "no _mta-sts TXT record published, so no sender fetches a policy"),
-            extra={"published": published, "policy_reachable": reachable,
-                   "mode": mode.group(1) if mode else "",
+            extra={"published": published, "policy_reachable": fetch["reachable"],
+                   "policy_http_status": fetch["http_status"],
+                   "policy_certificate_valid": fetch["certificate_valid"],
+                   "policy_fetch_error": fetch["error"],
+                   "policy_version": str(fields.get("version") or ""),
+                   "policy_max_age": str(fields.get("max_age") or ""),
+                   "mode": mode,
                    "mx": mx_lines,
                    "record": " ".join(sts.answers),
                    "lookup": sts.evidence()}, **common))
