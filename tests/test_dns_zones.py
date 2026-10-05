@@ -133,6 +133,12 @@ def test_helpers():
     assert dns_zones.registrable("a.b.example.ac.zz") == "example.ac.zz"
     assert dns_zones.registrable("a.example.com") == "example.com"
     assert dns_zones.registrable("a.example.gen.zz", {"gen"}) == "example.gen.zz"
+    # The government, education and military forms (``zz`` is a user-assigned
+    # country code, never a country's domain).
+    for label in ("gov", "govt", "gob", "gouv", "edu", "mil"):
+        assert dns_zones.registrable(f"www.example.{label}.zz") == f"example.{label}.zz"
+    # Only directly under a two-letter country code.
+    assert dns_zones.registrable("www.example.gob.zzz") == "gob.zzz"
     assert dns_zones.proof_service("v=spf1 -all") == ""
     assert dns_zones.proof_service("plain text") == ""
     assert dns_zones.claimable("x.apps-host.example", {"apps-host.example": "C"}) == "C"

@@ -197,6 +197,60 @@ def test_a_collector_that_raises_is_a_failure_not_a_crash(workspace, monkeypatch
     assert json.loads((result.observation / "summary.json").read_text())["complete"] is False
 
 
+# ── running one step outside an observation ──
+
+def test_one_collector_runs_through_the_public_step_runner(workspace, tmp_path, monkeypatch):
+    _no_network(monkeypatch)
+    target = config.load_target("example-widgets")
+    opts = _quiet()
+    opts.offline = True
+    run = observe.Run(target=target, raw=tmp_path / "raw", observations=tmp_path / "obs",
+                      options=opts)
+    rows, failures, _gaps = observe.run_step(run, "ssh_audit_inbox")
+    assert rows and failures == [] and run.assets == rows and run.ran == ["ssh_audit_inbox"]
+    # A passive collector may not run offline: skipped, and nothing added.
+    assert observe.run_step(run, "dnssec") == ([], [], [])
+    assert run.skipped == {"dnssec": "the observation was run offline"}
+    # Nothing was written: grading and the observation files are observe()'s.
+    assert not (tmp_path / "obs").exists() and not (workspace / "observations").exists()
+    with pytest.raises(KeyError):
+        observe.run_step(run, "no_such_collector")
+
+
+def test_the_step_runner_never_probes_without_an_authorisation_record(workspace, tmp_path,
+                                                                     monkeypatch):
+    _no_network(monkeypatch)
+    target = config.load_target("example-widgets")
+    del target["authorisation"]
+    opts = _quiet()
+    opts.scan = True
+    run = observe.Run(target=target, raw=tmp_path, observations=tmp_path, options=opts)
+    assert observe.run_step(run, "tls_scan") == ([], [], [])
+    assert "authorisation" in run.skipped["tls_scan"]
+
+
+def test_a_broken_step_is_returned_as_a_failure(tmp_path, monkeypatch):
+    def broken(run: object) -> object:
+        raise RuntimeError("synthetic defect")
+    monkeypatch.setitem(observe.PLANS, "netdev", observe.Plan(broken, offline=True))
+    run = observe.Run(target={}, raw=tmp_path, observations=tmp_path, options=_quiet())
+    assert observe.run_step(run, "netdev") == (
+        [], ["netdev: stopped with RuntimeError: synthetic defect"], [])
+    assert run.failures == ["netdev: stopped with RuntimeError: synthetic defect"]
+
+
+def test_resume_ct_finishes_deferred_reads_and_files_the_failure_gap(tmp_path, monkeypatch):
+    from takestock.collectors import ct_dns
+    run = observe.Run(target={}, raw=tmp_path, observations=tmp_path, options=_quiet())
+    assert observe.resume_ct(run) == ([], [], [])          # nothing was deferred
+    run.ct_deferral = ct_dns.CTDeferral(pending=[object()])  # type: ignore[list-item]
+    monkeypatch.setattr(ct_dns, "resume", lambda _d: ([], ["ct_dns: example.com: HTTP 429"]))
+    rows, failures, gaps = observe.resume_ct(run)
+    assert rows == [] and failures == ["ct_dns: example.com: HTTP 429"]
+    assert len(gaps) == 1 and run.gaps == gaps and run.failures == failures
+    assert run.ct_failures == failures
+
+
 # ── the command line ──
 
 def test_help_documents_the_exit_codes(capsys):

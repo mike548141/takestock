@@ -48,6 +48,7 @@ not weak (see ``docs/DISPOSITIONS.md``).
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from datetime import date
 
 from .model import CryptoAsset
@@ -424,7 +425,9 @@ def line_support(line: dict, as_of: date) -> dict:
 
 
 def derive_census_support(rows: list[dict], dataset: dict, as_of: str,
-                          aliases: list[dict] | None = None) -> tuple[list[dict], dict]:
+                          aliases: list[dict] | None = None,
+                          report_unmatched_kinds: Iterable[str] = REPORT_UNMATCHED_KINDS,
+                          ) -> tuple[list[dict], dict]:
     """Grade software inventory rows against ``dataset`` (``data/software-lifecycle.yaml``).
 
     Each row needs ``source``, ``kind``, ``product`` and optionally
@@ -432,12 +435,19 @@ def derive_census_support(rows: list[dict], dataset: dict, as_of: str,
     ``source_date``, and on ``as_of``. ``aliases`` (``{source, product,
     version, line}``) map a product string an export spells unusually to a
     line id. A row matching two lines is reported as ambiguous, never graded.
-    Unmatched rows are returned only for :data:`REPORT_UNMATCHED_KINDS`.
+    Unmatched rows are returned only for the kinds in
+    ``report_unmatched_kinds`` (default :data:`REPORT_UNMATCHED_KINDS`); a
+    census whose rows carry other kinds the table is expected to cover, such
+    as a platform service, can name those kinds too. Every unmatched row is
+    counted either way.
     Returns the graded records and counts of matched, ambiguous and unmatched.
     """
     by_id = {str(line["id"]): line for line in dataset.get("lines") or []}
     sources = dataset.get("sources") or {}
     as_of_date = date.fromisoformat(as_of)
+    if isinstance(report_unmatched_kinds, str):
+        raise TypeError("report_unmatched_kinds is a collection of kinds, not one string")
+    reported = {str(k) for k in report_unmatched_kinds}
     alias_index: dict[tuple[str, str, str], str] = {}
     for al in aliases or []:
         if str(al["line"]) not in by_id:
@@ -460,7 +470,7 @@ def derive_census_support(rows: list[dict], dataset: dict, as_of: str,
             continue
         if not hits:
             counts["unmatched"] += 1
-            if str(r["kind"]) in REPORT_UNMATCHED_KINDS:
+            if str(r["kind"]) in reported:
                 rec.update(line="", band_at_source_date=UNKNOWN_SUPPORT, band_at_as_of=UNKNOWN_SUPPORT,
                            reason="no lifecycle line matches this product exactly")
                 out.append(rec)

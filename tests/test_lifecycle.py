@@ -227,6 +227,21 @@ def test_census_rows_are_graded_at_both_dates():
     assert out[2]["matched_by"] == "alias"                       # an unmatched app is not
 
 
+def test_the_caller_chooses_which_unmatched_kinds_are_listed():
+    rows = [{"source": "inv", "kind": "os", "product": "Mystery OS 9"},
+            {"source": "inv", "kind": "service", "product": "Example Hosted Database"},
+            {"source": "inv", "kind": "application", "product": "Unlisted App"}]
+    out, counts = lc.derive_census_support(rows, DATASET, "2030-01-01",
+                                           report_unmatched_kinds=("os", "service"))
+    assert counts["unmatched"] == 3
+    assert [r["kind"] for r in out] == ["os", "service"]
+    out, counts = lc.derive_census_support(rows, DATASET, "2030-01-01",
+                                           report_unmatched_kinds=())
+    assert out == [] and counts["unmatched"] == 3
+    with pytest.raises(TypeError):
+        lc.derive_census_support(rows, DATASET, "2030-01-01", report_unmatched_kinds="os")
+
+
 def test_a_row_matching_two_lines_is_ambiguous():
     dataset = {"lines": [dict(DATASET["lines"][0], id="a"), dict(DATASET["lines"][0], id="b")]}
     out, counts = lc.derive_census_support(

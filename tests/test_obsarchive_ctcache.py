@@ -129,3 +129,23 @@ def test_rate_limit_detail():
     assert ctcache.rate_limit_detail({}) == ""
     assert ctcache.rate_limit_detail({"status": 429, "headers": {"retry-after": "60"}}) == (
         " (HTTP 429; retry-after=60)")
+
+
+def test_a_registered_completion_marker_marks_a_finished_observation(tmp_path, monkeypatch):
+    monkeypatch.setattr(ctcache, "_registered_markers", [])
+    obs = _observation(tmp_path, "2030-06-15T0000Z", complete=False, payload=[{"id": "7"}])
+    (obs / "finished.json").write_text(json.dumps({"done": True}))
+    assert ctcache.find("example.com", tmp_path, ref_time=NOW) is None
+    ctcache.register_completion_marker("finished.json", "finished.json")
+    assert ctcache.completion_markers() == ("bom.cdx.json", "finished.json")
+    got = ctcache.find("example.com", tmp_path, ref_time=NOW)
+    assert got is not None and got.payload == [{"id": "7"}]
+    (obs / "finished.json").write_text("{not json")
+    assert ctcache.find("example.com", tmp_path, ref_time=NOW) is None
+
+
+@pytest.mark.parametrize("name", ["", "raw/finished.json", ".."])
+def test_a_completion_marker_is_a_plain_file_name(name, monkeypatch):
+    monkeypatch.setattr(ctcache, "_registered_markers", [])
+    with pytest.raises(ValueError):
+        ctcache.register_completion_marker(name)

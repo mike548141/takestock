@@ -43,7 +43,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
 
-from .. import __version__, coverage, digresponse, inside_scope, roles
+from .. import __version__, coverage, digresponse, dnsevidence, inside_scope, roles
 from ..model import CryptoAsset, register_informational_prefixes
 from ..util import is_ipv6_literal, now_date, run, scan_address
 
@@ -314,10 +314,24 @@ def _record_text(rec: dict) -> str:
     return f"{mode} target {rec['target']}{alpn}"
 
 
+#: The profile key this collector once read its resolvers from, now refused.
+RETIRED_RESOLVERS_KEY = "dns_resolvers"
+
+
 def resolvers_for(target: dict) -> tuple[str, ...]:
-    """The resolvers to ask: the profile's ``dns_resolvers:`` list, else the system's."""
-    named = [str(r).strip() for r in (target.get("dns_resolvers") or []) if str(r).strip()]
-    return tuple(named) or ("",)
+    """The resolvers to ask: the same ones every DNS collector asks.
+
+    That is ``resolvers`` in the profile's ``dns:`` block (else
+    ``data/dns-services.yaml``), else the system's resolver. A profile still
+    carrying the retired top-level ``dns_resolvers:`` key is refused rather
+    than quietly ignored, so a reading is never taken against resolvers
+    nobody chose.
+    """
+    if target.get(RETIRED_RESOLVERS_KEY) is not None:
+        raise ValueError(f"target `{RETIRED_RESOLVERS_KEY}:` is no longer read; move the list "
+                         f"to `{dnsevidence.TARGET_KEY}: resolvers:`, which every DNS "
+                         "collector shares")
+    return dnsevidence.resolvers(target)
 
 
 def _https_answers(resp: digresponse.Response) -> list[str]:

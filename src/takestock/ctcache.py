@@ -3,9 +3,10 @@
 Certificate-transparency search services limit how often they may be asked,
 and a domain with many certificates takes many pages. A run may therefore
 reuse a domain's answer from an earlier observation, under three conditions:
-the observation is recent (``CT_CACHE_DAYS``), it finished (its ``bom.cdx.json``
-parses), and its read of that domain reached the end of the results (its
-page record says ``exhausted``). A reused answer is always reported as such,
+the observation is recent (``CT_CACHE_DAYS``), it finished (a completion
+marker parses: ``bom.cdx.json``, or a file a caller registered with
+:func:`register_completion_marker`), and its read of that domain reached the
+end of the results (its page record says ``exhausted``). A reused answer is always reported as such,
 with its age, so a reader knows a certificate issued since then is missing.
 
 The raw files this module reads are written by the ``ct_dns`` collector:
@@ -32,7 +33,32 @@ CT_COMMIT_MAX_AGE_DAYS = CT_CACHE_DAYS
 #: Prefix of the raw files holding certificate-transparency answers.
 RAW_PREFIX = "ct-"
 
+#: The file whose presence (as parseable JSON) marks a finished observation.
+COMPLETION_MARKER = "bom.cdx.json"
+
+_registered_markers: list[str] = []
+
 _OBS_NAME = re.compile(r"^(\d{4}-\d{2}-\d{2})T(\d{2})(\d{2})Z$")
+
+
+def register_completion_marker(*names: str) -> None:
+    """Accept further file names as the mark of a finished observation.
+
+    For a tool that runs takestock's collectors inside its own observations
+    and writes its finished-run file under another name: once registered, an
+    observation holding any one of the markers as parseable JSON counts as
+    finished. Registering the same name twice has no further effect.
+    """
+    for name in names:
+        if not name or "/" in name or name in (".", ".."):
+            raise ValueError(f"a completion marker is a plain file name, not {name!r}")
+        if name != COMPLETION_MARKER and name not in _registered_markers:
+            _registered_markers.append(name)
+
+
+def completion_markers() -> tuple[str, ...]:
+    """Every completion marker in effect: the built-in one, then registered ones."""
+    return (COMPLETION_MARKER, *_registered_markers)
 
 
 def raw_name(domain: str) -> str:
@@ -68,11 +94,13 @@ def _observation_time(name: str) -> datetime | None:
 
 
 def _is_complete(observation: Path) -> bool:
-    try:
-        json.loads((observation / "bom.cdx.json").read_text())
-    except (OSError, ValueError):
-        return False
-    return True
+    for name in completion_markers():
+        try:
+            json.loads((observation / name).read_text())
+        except (OSError, ValueError):
+            continue
+        return True
+    return False
 
 
 def _read_to_the_end(observation: Path, domain: str) -> bool:

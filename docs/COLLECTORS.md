@@ -522,8 +522,8 @@ The grade never reaches `strong`: HSTS limits a downgrade of the first
 request; it does not make the session stronger. The collector also records
 the HTTP version that answered, any `Alt-Svc` advertisement, and the DNS
 HTTPS record (RFC 9460), so a reader can see whether HTTP/3 is advertised.
-DNS is asked of the profile's `dns_resolvers:` list, else the system's
-resolver.
+DNS is asked of the resolvers every DNS collector shares (`resolvers` in the
+profile's `dns:` block), else the system's resolver.
 
 A provider's endpoint is often many machines behind one name, so each
 `saas_443` host is read several times (default 3,

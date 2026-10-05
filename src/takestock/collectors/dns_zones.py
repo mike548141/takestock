@@ -76,9 +76,21 @@ register_informational_prefixes(
 RESERVED_TLDS = frozenset({"test", "example", "invalid", "localhost", "local"})
 
 # Second-level labels that, directly under a two-letter country code, form part
-# of a public suffix (``co`` or ``com`` before the country code). A profile may
-# add its own.
-SECOND_LEVEL_LABELS = frozenset({"co", "com", "net", "org", "ac", "gov"})
+# of a public suffix (``co`` or ``com`` before the country code), so the
+# registered domain is the label to their left. Taken from the ICANN section
+# of the Public Suffix List: the commercial, network, organisation, academic,
+# government, education and military forms it lists under many country codes,
+# and the national spellings of "government" (``govt``, ``gob``, ``gouv``),
+# each listed under only one or a few country codes but never ordinary words.
+# ``go``, ``or`` and ``ne`` are left out because they are ordinary words,
+# registered as names under other country codes, where a match would shorten a
+# real registered domain. The match is
+# by label, not by country code, so it is a best guess, not the list itself. A
+# profile may add its own.
+SECOND_LEVEL_LABELS = frozenset({
+    "co", "com", "net", "org", "ac",
+    "gov", "govt", "gob", "gouv", "edu", "mil",
+})
 
 #: Reads (name, resolver) and returns dig's text for an A query.
 Reader = Callable[[str, str], str]

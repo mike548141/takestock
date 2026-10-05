@@ -104,13 +104,22 @@ class Result:
 
 
 @dataclass
-class _Run:
-    """State shared by the collector steps of one observation."""
+class Run:
+    """State shared by the collector steps of one observation.
+
+    :func:`observe` makes one per observation. A tool that keeps its own
+    observations can make one too and run single collectors through it with
+    :func:`run_step` (then :func:`resume_ct` once the early steps are done),
+    getting exactly the argument wiring, failure handling and gap filing
+    :func:`observe` uses, without grading or writing anything. ``raw`` is
+    where the collectors keep their transcripts; ``observations`` is where
+    earlier observations are looked for (see :mod:`takestock.ctcache`).
+    """
 
     target: dict
     raw: Path
     observations: Path
-    options: Options
+    options: Options = field(default_factory=Options)
     assets: list[CryptoAsset] = field(default_factory=list)
     gaps: list = field(default_factory=list)
     failures: list[str] = field(default_factory=list)
@@ -130,7 +139,7 @@ class _Run:
 
 
 # A step runs one collector against the run and returns (rows, failures, gaps).
-Step = Callable[[_Run], tuple[list[CryptoAsset], list[str], list]]
+Step = Callable[[Run], tuple[list[CryptoAsset], list[str], list]]
 
 
 def split_failures(items: list) -> tuple[list[str], list[coverage.Gap]]:
@@ -153,7 +162,7 @@ def _ct_failure_gap(failures: list[str]) -> coverage.Gap:
                         nature=coverage.NO_DATA)
 
 
-def _ct_dns(run: _Run) -> tuple[list[CryptoAsset], list[str], list]:
+def _ct_dns(run: Run) -> tuple[list[CryptoAsset], list[str], list]:
     run.ct_deferral = ct_dns.CTDeferral()
     rows, failures, reused = ct_dns.collect(
         run.target, run.raw, run.ref_time, observations=run.observations,
@@ -171,7 +180,7 @@ def _ct_dns(run: _Run) -> tuple[list[CryptoAsset], list[str], list]:
     return rows, failures, gaps
 
 
-def _relay_probe(run: _Run) -> Callable[[str, str], tuple[CryptoAsset, list[str]]] | None:
+def _relay_probe(run: Run) -> Callable[[str, str], tuple[CryptoAsset, list[str]]] | None:
     if not _active_allowed(run):
         return None
 
@@ -180,20 +189,20 @@ def _relay_probe(run: _Run) -> Callable[[str, str], tuple[CryptoAsset, list[str]
     return probe
 
 
-def _spf_senders(run: _Run) -> tuple[list[CryptoAsset], list[str], list]:
+def _spf_senders(run: Run) -> tuple[list[CryptoAsset], list[str], list]:
     rows, gaps = _mod("spf_senders").collect(run.target, run.ref_time,
                                              scan=_active_allowed(run), probe=_relay_probe(run))
     return rows, [], list(gaps)
 
 
 def _rows_and_failures(module: str, function: str = "collect",
-                       **kwargs: Callable[[_Run], object]) -> Step:
+                       **kwargs: Callable[[Run], object]) -> Step:
     """A step for a collector returning (rows, failures) from ``(target, ...)``.
 
     Each keyword names an argument of the collector's entry point and gives
     the function that reads its value off the run.
     """
-    def step(run: _Run) -> tuple[list[CryptoAsset], list[str], list]:
+    def step(run: Run) -> tuple[list[CryptoAsset], list[str], list]:
         fn = getattr(_mod(module), function)
         values = {k: v(run) for k, v in kwargs.items()}
         rows, failures = fn(run.target, **values)
@@ -201,19 +210,19 @@ def _rows_and_failures(module: str, function: str = "collect",
     return step
 
 
-def _raw(run: _Run) -> Path:
+def _raw(run: Run) -> Path:
     return run.raw
 
 
-def _ref(run: _Run) -> datetime | None:
+def _ref(run: Run) -> datetime | None:
     return run.ref_time
 
 
-def _announce(run: _Run) -> Callable[[str], None]:
+def _announce(run: Run) -> Callable[[str], None]:
     return run.say
 
 
-def _caa(run: _Run) -> tuple[list[CryptoAsset], list[str], list]:
+def _caa(run: Run) -> tuple[list[CryptoAsset], list[str], list]:
     certificates = [a for a in run.assets if a.data_state == "certificate"]
     rows, failures = _mod("caa").collect(run.target, certificates, run.ref_time, raw_dir=run.raw)
     return rows, failures, []
@@ -223,7 +232,7 @@ def _offline_reader(*_args: object) -> str:
     return f"{ERROR_PREFIX} offline: no lookup was made"
 
 
-def _dns_zones(run: _Run) -> tuple[list[CryptoAsset], list[str], list]:
+def _dns_zones(run: Run) -> tuple[list[CryptoAsset], list[str], list]:
     reader = _offline_reader if run.options.offline else None
     rows, gaps = _mod("dns_zones").collect(run.target, None, list(run.assets), run.ref_time,
                                            reader=reader)
@@ -239,13 +248,13 @@ def _dns_zones(run: _Run) -> tuple[list[CryptoAsset], list[str], list]:
     return rows, [], list(gaps)
 
 
-def _ike(run: _Run) -> tuple[list[CryptoAsset], list[str], list]:
+def _ike(run: Run) -> tuple[list[CryptoAsset], list[str], list]:
     ike_scan = _mod("ike_scan")
     rows, failures = ike_scan.collect(run.target, run.raw, run.ref_time)
     return rows, failures, list(ike_scan.coverage_gaps(rows))
 
 
-def _hsts(run: _Run) -> tuple[list[CryptoAsset], list[str], list]:
+def _hsts(run: Run) -> tuple[list[CryptoAsset], list[str], list]:
     hsts = _mod("hsts")
     rows, failures = hsts.collect(run.target, run.raw, run.ref_time)
     return rows, failures, list(hsts.coverage_gaps(run.target, rows))
@@ -257,11 +266,11 @@ def _ports_declared(target: dict) -> bool:
     return config.derived_ports_path_for_target(target) is not None
 
 
-def _port_probe(module: str, **kwargs: Callable[[_Run], object]) -> Step:
+def _port_probe(module: str, **kwargs: Callable[[Run], object]) -> Step:
     """A step for a probe whose ports come from the profile's own port list."""
     inner = _rows_and_failures(module, "collect", **kwargs)
 
-    def step(run: _Run) -> tuple[list[CryptoAsset], list[str], list]:
+    def step(run: Run) -> tuple[list[CryptoAsset], list[str], list]:
         if not _ports_declared(run.target):
             run.skipped[module] = "the target profile declares no ports for it"
             return [], [], []
@@ -269,20 +278,20 @@ def _port_probe(module: str, **kwargs: Callable[[_Run], object]) -> Step:
     return step
 
 
-def _ssh_inbox(run: _Run) -> tuple[list[CryptoAsset], list[str], list]:
+def _ssh_inbox(run: Run) -> tuple[list[CryptoAsset], list[str], list]:
     rows, gaps = _mod("ssh_audit").collect_inbox(run.target)
     return rows, [], list(gaps)
 
 
 def _ingest(module: str) -> Step:
     """A step for an ingest collector returning (rows, coverage gaps) from ``(target)``."""
-    def step(run: _Run) -> tuple[list[CryptoAsset], list[str], list]:
+    def step(run: Run) -> tuple[list[CryptoAsset], list[str], list]:
         rows, gaps = _mod(module).collect(run.target)
         return list(rows), [], list(gaps)
     return step
 
 
-def _winrm_config(run: _Run) -> tuple[list[CryptoAsset], list[str], list]:
+def _winrm_config(run: Run) -> tuple[list[CryptoAsset], list[str], list]:
     # Reads the run's other rows, to name listeners the export does not cover.
     rows, gaps = _mod("winrm_config").collect(run.target, other_assets=list(run.assets))
     return list(rows), [], list(gaps)
@@ -335,11 +344,11 @@ PLANS: dict[str, Plan] = {
 }
 
 
-def _active_allowed(run: _Run) -> bool:
+def _active_allowed(run: Run) -> bool:
     return run.options.scan and not inside_scope.scan_authorisation_problems(run.target)
 
 
-def _why_not(run: _Run, name: str) -> str:
+def _why_not(run: Run, name: str) -> str:
     """Why collector ``name`` does not run in this observation, or "" when it does."""
     kind = collectors.REGISTRY[name].kind
     plan = PLANS.get(name)
@@ -349,25 +358,71 @@ def _why_not(run: _Run, name: str) -> str:
         return "the observation was run offline"
     if kind == "active" and not run.options.scan:
         return "active probes need --scan"
+    if kind == "active" and inside_scope.scan_authorisation_problems(run.target):
+        return "the target profile carries no complete authorisation record"
     return ""
 
 
-def _run_step(run: _Run, name: str) -> None:
+StepOutput = tuple[list[CryptoAsset], list[str], list[coverage.Gap]]
+
+
+def run_step(run: Run, name: str) -> StepOutput:
+    """Run the registered collector ``name`` into ``run``, as :func:`observe` does.
+
+    The rows, real failures and coverage gaps are added to ``run`` and also
+    returned, so a caller sees what this one step contributed. A collector
+    that may not run here (offline, an active probe without ``scan`` or
+    without a complete authorisation record) is recorded in ``run.skipped``
+    and contributes nothing. A collector that raises is recorded as a failure,
+    never raised, so one broken collector cannot end the run. Raises
+    :class:`KeyError` for a name that is not registered.
+    """
+    if name not in collectors.REGISTRY:
+        raise KeyError(f"no registered collector is called {name!r}")
+    why = _why_not(run, name)
+    if why:
+        run.skipped[name] = why
+        return [], [], []
     run.say(f"  · {name}")
     try:
         rows, failures, gaps = PLANS[name].step(run)
     except Exception as exc:  # noqa: BLE001 - one broken collector must not end the run
-        run.failures.append(f"{name}: stopped with {type(exc).__name__}: {exc}")
-        return
+        failed = f"{name}: stopped with {type(exc).__name__}: {exc}"
+        run.failures.append(failed)
+        return [], [failed], []
     real, unconfigured = split_failures(list(failures))
+    added = list(gaps) + unconfigured
     run.assets += rows
     run.failures += real
-    run.gaps += list(gaps) + unconfigured
+    run.gaps += added
     if name not in run.skipped:
         run.ran.append(name)
+    return list(rows), real, added
 
 
-def _skip_gaps(run: _Run) -> list[coverage.Gap]:
+def resume_ct(run: Run) -> StepOutput:
+    """Finish certificate-transparency reads the ``ct_dns`` step deferred.
+
+    A rate-limited search service makes ``ct_dns`` defer some domains rather
+    than wait; :func:`observe` calls this after the early steps, so the other
+    collectors' time counts towards the wait. Nothing happens when nothing
+    was deferred. Like :func:`run_step`, it adds to ``run`` and returns what
+    it added.
+    """
+    if run.ct_deferral is None or not run.ct_deferral.pending:
+        return [], [], []
+    rows, resumed = ct_dns.resume(run.ct_deferral)
+    failures, gaps = split_failures(list(resumed))
+    run.ct_failures += failures
+    if run.ct_failures:
+        gaps.append(_ct_failure_gap(run.ct_failures))
+    run.assets += rows
+    run.gaps += gaps
+    run.failures += failures
+    return list(rows), failures, gaps
+
+
+def _skip_gaps(run: Run) -> list[coverage.Gap]:
     """One gap per reason a group of collectors did not run."""
     by_reason: dict[str, list[str]] = {}
     for name, why in run.skipped.items():
@@ -472,7 +527,7 @@ def observe(target: dict, options: Options | None = None) -> Result:
     raw = obs / "raw"
     raw.mkdir(parents=True)
 
-    run = _Run(target=target, raw=raw, observations=observations, options=options)
+    run = Run(target=target, raw=raw, observations=observations, options=options)
     run.say(f"observing {_organisation(target) or 'the target'} into {config.display_path(obs)}")
     run.say(f"  inbox: {config.inbox_dir()}")
 
@@ -485,21 +540,13 @@ def observe(target: dict, options: Options | None = None) -> Result:
     early = [n for n in names if n not in run.skipped and not PLANS[n].late]
     late = [n for n in names if n not in run.skipped and PLANS[n].late]
     for name in early:
-        _run_step(run, name)
-    if run.ct_deferral is not None and run.ct_deferral.pending:
-        rows, resumed = ct_dns.resume(run.ct_deferral)
-        failures, gaps = split_failures(list(resumed))
-        run.assets += rows
-        run.gaps += gaps
-        run.failures += failures
-        run.ct_failures += failures
-        if run.ct_failures:
-            run.gaps.append(_ct_failure_gap(run.ct_failures))
+        run_step(run, name)
+    resume_ct(run)
     rows, gaps = host.run(late=False, assets=run.assets)
     run.assets += rows
     run.gaps += gaps
     for name in late:
-        _run_step(run, name)
+        run_step(run, name)
     rows, gaps = host.run(late=True, assets=run.assets)
     run.assets += rows
     run.gaps += gaps

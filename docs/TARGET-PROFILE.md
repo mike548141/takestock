@@ -123,8 +123,7 @@ collector reads is ignored.
 | `organisation` | `{name: ...}`, or a plain string | every HTML output, the observation record |
 | `branding` | Colours, fonts and a logo for the HTML outputs | every HTML output |
 | `discovery` | The domains to look up, and DKIM selectors | the passive DNS collectors, the SGE note |
-| `dns` | Public DNS services, overriding `data/dns-services.yaml` key by key | the DNS and certificate-transparency collectors |
-| `dns_resolvers` | Resolvers for the DNS HTTPS-record lookup | `hsts` |
+| `dns` | Public DNS services, overriding `data/dns-services.yaml` key by key | the DNS and certificate-transparency collectors, and `hsts` for its DNS HTTPS-record lookup |
 | `authorisation` | Who authorised active probing, of what, and when | every active collector |
 | `scan_targets` | The hosts each active probe may contact, by group | the active collectors |
 | `plaintext_ports` | Ports to check for cleartext on the published hosts | `plaintext_scan`, `implicit_tls` |
@@ -213,10 +212,9 @@ dns:
 The bundled file leaves every key empty. An unconfigured service is a
 coverage gap, not a failure, so the run still exits 0 or 1.
 
-### `dns_resolvers`
-
-A list of resolver addresses for the `hsts` collector's DNS HTTPS-record
-lookup. Without it, the machine's own resolver is asked.
+`hsts` asks the same `resolvers` for its DNS HTTPS-record lookup. The
+top-level `dns_resolvers:` key it once read is retired: a profile that still
+carries it makes `hsts` stop with a message saying where the list now goes.
 
 ### `authorisation`
 
@@ -333,7 +331,7 @@ all optional:
 | `resolved_names` | A CSV of names endpoints resolved, to narrow the list of published names nobody measured |
 | `resolved_names_column` | That CSV's column of names (default `name`) |
 | `proof_prefixes` | Ownership-proof TXT record prefixes, mapped to the service each names |
-| `second_level_labels` | Further labels that sit directly under a country code as part of a public suffix (`co`, `com`, `net`, `org`, `ac` and `gov` are built in) |
+| `second_level_labels` | Further labels that sit directly under a country code as part of a public suffix (`co`, `com`, `net`, `org`, `ac`, `gov`, `govt`, `gob`, `gouv`, `edu` and `mil` are built in, each listed by the Public Suffix List under country codes) |
 | `complete_zones` | Zone files the organisation attests list every name in the zone: a list of `{zone, attested_by, attested_on}`. Over a domain whose zone file is attested complete, the sub-domain sweep's rows for names that send no mail may pass rather than only fail (see [`SECURE-GOVERNMENT-EMAIL.md`](SECURE-GOVERNMENT-EMAIL.md)) |
 
 The supplied zone files' names also feed the `ct_dns` sub-domain sweep.

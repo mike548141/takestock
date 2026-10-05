@@ -15,12 +15,19 @@
 #   https://learn.microsoft.com/windows/release-health/windows11-release-information
 #   https://learn.microsoft.com/windows/release-health/release-information
 #   https://learn.microsoft.com/windows-server/get-started/windows-server-release-info
-# The release-information pages give the version-to-build mapping and state dates as calendar
-# days. The lifecycle pages give each end as an instant early on the following morning (shown as
-# 6:59:59 AM, Pacific time); this file records the last full day of support, which is the day
-# before that instant. Read against the lifecycle pages, every `end` here is one day earlier than
-# the date those pages display. Where both kinds of page give a date for the same version, the
-# release-information page is used, and a comment on the row says so if the two disagree.
+# What each kind of page states, and what this file records:
+#   - The release-information pages give the version-to-build mapping, and each date as an
+#     ISO 8601 day. An end there is the day of the last monthly security update, the second
+#     Tuesday of the month ("Patch Tuesday"): Windows 11 version 24H2 Enterprise, 2027-10-12.
+#   - The lifecycle pages hold each end, in their markup, as an instant on the Wednesday after
+#     that Tuesday at 6:59:59 AM (for 24H2 Enterprise, "10/13/2027 6:59:59 AM"), and display it as
+#     a date in Pacific time, which is the Tuesday ("Oct 12, 2027"). Their prose gives the Tuesday
+#     too: "Windows 10 will reach end of support on October 14, 2025".
+#   - This file records the last full day of support: the Tuesday, which is the release-information
+#     date and the day before the lifecycle pages' instant. Where both kinds of page give a date for
+#     the same version, the release-information page is used, and a comment on the row says so if
+#     the two disagree, giving the lifecycle page's date read by the same rule (the day before its
+#     instant).
 #
 # Dates are ISO 8601 days. `start` is availability; `end` (or `extended_end` where a product has
 # one) is the last day security updates are published without a paid extension.

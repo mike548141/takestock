@@ -186,9 +186,16 @@ def test_the_system_resolver_alone_can_say_none_is_published(monkeypatch):
     assert got["dns_https_resolvers"] == ["system resolver"]
 
 
-def test_the_profile_may_name_its_resolvers():
-    assert hsts.resolvers_for({"dns_resolvers": ["192.0.2.53"]}) == ("192.0.2.53",)
-    assert hsts.resolvers_for({}) == ("",)
+def test_the_https_record_is_asked_of_the_shared_dns_resolvers():
+    target = {"dns": {"resolvers": ["192.0.2.53", "198.51.100.53"]}}
+    assert hsts.resolvers_for(target) == ("192.0.2.53", "198.51.100.53")
+    assert hsts.resolvers_for(target) == hsts.dnsevidence.resolvers(target)
+    assert hsts.resolvers_for({}) == hsts.dnsevidence.resolvers({})
+
+
+def test_the_retired_resolver_key_is_refused_not_ignored():
+    with pytest.raises(ValueError, match="dns: resolvers"):
+        hsts.resolvers_for({"dns_resolvers": ["192.0.2.53"]})
 
 
 def test_a_generic_form_record_is_decoded():
