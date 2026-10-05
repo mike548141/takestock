@@ -31,7 +31,7 @@ takestock = "takestock.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-takestock = ["data/*"]
+takestock = ["data/*", "py.typed"]
 
 [tool.ruff]
 line-length = 110

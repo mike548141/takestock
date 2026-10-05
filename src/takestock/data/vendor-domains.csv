@@ -26,6 +26,7 @@ microsoft.com,Microsoft,cloud,Corporate site and many service endpoints
 microsoftonline.com,Microsoft,identity,Microsoft Entra ID sign-in
 msauth.net,Microsoft,identity,Microsoft sign-in page assets
 msftauth.net,Microsoft,identity,Microsoft sign-in page assets
+msappproxy.net,Microsoft,identity,Microsoft Entra application proxy external addresses
 live.com,Microsoft,identity,Microsoft account and consumer Outlook
 windows.net,Microsoft,cloud,Azure service namespace (storage and directory endpoints)
 azure.com,Microsoft,cloud,Azure portal and services
