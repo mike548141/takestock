@@ -73,11 +73,14 @@ _LIMITS = [
     ("A published key is not a signed message.",
      "A DKIM key in DNS shows that signing is possible, not that every service signs."),
     ("Sub-domain checks can fail, and pass only on an attested zone file.",
-     "The sub-domains read are those the observation knows of: certificate-transparency "
-     "logs, supplied zone files, the profile and the names sender policies point at. That "
-     "is a floor, not the full set. One name without a required record settles a "
-     "requirement as unmet; any number of compliant names cannot settle it as met, unless "
-     "the profile attests a zone file complete and every name in it was read."),
+     "The sub-domains read are those the observation knows of. The sweep can draw them "
+     "from certificate-transparency logs, supplied zone files, the profile and the names "
+     "sender policies point at, and each row names the sources that supplied its names, "
+     "or says they were not recorded. That is a floor, not the full set. One name short "
+     "of a requirement (without a record it must publish, or carrying a tag it should "
+     "not) settles the requirement as unmet; any number of compliant names cannot settle "
+     "it as met, unless the profile attests a zone file complete and every name in it was "
+     "read."),
     ("Some conditions are invisible from outside.",
      "Whether a domain sends bulk mail, or sends mail at all, decides which rules apply to "
      "it, and neither shows in DNS. Where such a condition is unsettled, the reading is "
@@ -366,9 +369,10 @@ class _Note:
                "it is read against those requirements here rather than against the rules for "
                "mail domains. Whether a domain sends mail cannot be seen in DNS, so which "
                "domains are parked is taken from the profile, not measured. The names "
-               "beneath a parked domain that certificate transparency found are read on a "
-               "line of their own: that list is incomplete, so a name without the record "
-               "shows a breach and names carrying it show nothing. Each result below also "
+               "the sub-domain sweep read beneath a parked domain are read on a line of "
+               "their own: that list is incomplete, so one name short of a requirement "
+               "shows it unmet, and any number of names meeting it show nothing. Each "
+               "result below also "
                "appears in its requirement's card above.</p>"]
         cols = [rid for rid in dict.fromkeys((*sge.PARKED_REQUIREMENTS,
                                               *sge.PARKED_SUBDOMAIN_REQUIREMENTS))

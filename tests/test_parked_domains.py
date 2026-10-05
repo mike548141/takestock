@@ -413,7 +413,9 @@ def test_names_beneath_fall_back_to_the_parked_domains_own_dmarc_record():
     weak = _rows(dmarc="v=DMARC1; p=reject; sp=none")
     row = beneath(weak + [_ned("ned-dmarc", dmarc_records={})])["SGE-NED-DMARC-01"]
     assert (row.status, row.observed) == (sge.FAIL, "2 of 2 sub-domains without a reject policy")
-    assert "take the record policy discovery finds for them" in row.subject_note
+    # The row holds no walk, so it says what was read rather than naming discovery.
+    assert "are read against the organisational domain's record" in row.subject_note
+    assert "policy discovery" not in row.subject_note
     # A name that does not exist takes np= instead of sp= (RFC 9989 §4.7).
     split = _rows(dmarc="v=DMARC1; p=reject; sp=reject; np=none")
     row = beneath(split + [_ned("ned-dmarc", dmarc_records={},

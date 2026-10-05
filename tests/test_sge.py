@@ -981,3 +981,117 @@ def test_the_text_report_lists_unmet_musts():
     text = sge._format(report, [D])
     assert "1 unmet MUST requirement(s)." in text
     assert "SGE-SPF-01 — SPF record ending in hardfail: example.com" in text
+
+
+# ── A note describes what this observation holds ──────────────────────
+
+def _unused_tag_sweep(records: dict, in_scope: int) -> dict:
+    return {"name": f"DMARC on sub-domains of {D}", "protocol": "ned-dmarc", "host": D,
+            "extra": {"control_usable": True, "names_in_scope": in_scope,
+                      "dmarc_records": records, "read_at": "t", "resolvers": ["192.0.2.53"]}}
+
+
+def _beneath(req_id: str, assets: list):
+    return {r.subject: r for r in rows_for(req_id, assets)}[sge.parked_subdomains_subject(D)]
+
+
+def test_the_unused_tag_sweep_row_reads_as_a_must_not_carry_requirement():
+    # Names with no DMARC record of their own carry nothing to grade, and say so.
+    row = _beneath("SGE-DMARC-R03", [dmarc("v=DMARC1; p=reject"), _unused_tag_sweep({}, 3)])
+    assert (row.status, row.reason) == (sge.NOT_MEASURED, sge.NOT_COLLECTED)
+    assert row.observed == "none of 3 sub-domains read carries ruf, fo, pct, rf, ri; 0 publish " \
+                           "a DMARC record of their own"
+    assert "there is no sub-domain record here to grade" in row.evidence
+    assert "a single record carrying one is the answer" in row.evidence
+    # The "must publish" reasoning is the wrong way round for this requirement.
+    assert "a single name without it is the answer" not in row.evidence
+    assert "the other 3 publish none, so carry no tag of their own" in row.subject_note
+    # Some records of their own, none carrying a tag: counted over the names read.
+    clean = _beneath("SGE-DMARC-R03", [dmarc("v=DMARC1; p=reject"), _unused_tag_sweep(
+        {"a.example.com": "v=DMARC1; p=reject"}, 3)])
+    assert clean.observed.startswith("none of 3 sub-domains read carries") and \
+        clean.observed.endswith("1 publish a DMARC record of their own")
+    assert "no DMARC record published by an enumerated sub-domain" in clean.evidence
+    # One record carrying a tag is the answer, whatever the names not read hold.
+    bad = _beneath("SGE-DMARC-R03", [dmarc("v=DMARC1; p=reject"), _unused_tag_sweep(
+        {"a.example.com": "v=DMARC1; p=reject; ruf=mailto:f@example.com"}, 3)])
+    assert (bad.status, bad.observed) == (sge.FAIL, "1 of 3 sub-domains read carry ruf")
+    assert "one record carrying such a tag settles this" in bad.reason
+
+
+def test_the_sweep_names_only_the_sources_that_supplied_its_names():
+    sources = {"a.example.com": [dnsevidence.NAME_FROM_CT],
+               "b.example.com": [dnsevidence.NAME_FROM_CT],
+               "c.example.com": [dnsevidence.NAME_FROM_CT, dnsevidence.NAME_FROM_SPF]}
+    row = one("SGE-NED-SPF-01", [ned("ned-spf", ["a.example.com"], name_sources=sources,
+                                     names_by_source={dnsevidence.NAME_FROM_CT: 3,
+                                                      dnsevidence.NAME_FROM_SPF: 1,
+                                                      dnsevidence.NAME_FROM_ZONE: 0})])
+    assert "names from certificate transparency (3), sender policy (1)" in row.subject_note
+    assert dnsevidence.NAME_FROM_ZONE not in row.subject_note
+    assert sge.SOURCES_NOT_RECORDED not in row.subject_note
+    # The requirement's own limit no longer lists every source the sweep can use.
+    assert "supplied zone files" not in row.reason
+
+
+def test_a_sweep_that_recorded_no_provenance_names_no_source():
+    row = one("SGE-NED-SPF-01", [ned("ned-spf", ["a.example.com"])])
+    assert sge.SOURCES_NOT_RECORDED in row.subject_note
+    assert "names from" not in row.subject_note
+    for source in ("certificate", "zone file", "sender polic", "profile"):
+        assert source not in row.subject_note
+    assert "supplied zone files" not in row.reason
+    dkim_row = one("SGE-NED-DKIM-01", [ned("ned-dkim", [])])
+    assert "supplied zone files" not in dkim_row.evidence
+    sp_row = one("SGE-DMARC-R05", [dmarc("v=DMARC1; p=reject"), _unused_tag_sweep({}, 2)])
+    assert sge.SOURCES_NOT_RECORDED in sp_row.subject_note
+
+
+def test_a_discovered_row_names_the_sources_of_its_own_names_only():
+    subs = mail_subs({"mail.example.com": sub()})
+    subs["extra"]["name_sources"] = {"mail.example.com": [dnsevidence.NAME_FROM_ZONE],
+                                     "web.example.com": [dnsevidence.NAME_FROM_CT]}
+    row = discovered("SGE-SPF-01", [subs])
+    assert "names from zone file (1)" in row.subject_note
+    assert dnsevidence.NAME_FROM_CT not in row.subject_note
+    assert "certificate-transparency" not in sge.DISCOVERED_NOTE
+    bare = discovered("SGE-SPF-01", [mail_subs({"mail.example.com": sub()})])
+    assert sge.SOURCES_NOT_RECORDED in bare.subject_note
+
+
+def test_policy_discovery_is_named_only_when_the_observation_holds_the_walk():
+    weak = dmarc("v=DMARC1; p=reject; sp=none")
+    # The sweep lists the names to walk and the names between: discovery was read.
+    walked = walked_sweep({}, ["a.mail.example.com"],
+                          intermediate_dmarc={"mail.example.com": ""})
+    row = one("SGE-NED-DMARC-R01", [weak, walked])
+    assert row.status == sge.FAIL
+    assert "applies the record policy discovery finds for them" in row.subject_note
+    assert "was not looked up" not in row.subject_note
+    # sp=none alone settles the domain's own row, so the sweep is read under sp=quarantine.
+    soft = dmarc("v=DMARC1; p=reject; sp=quarantine; np=reject")
+    reject = one("SGE-NED-DMARC-01", [soft, walked])
+    assert "take the record policy discovery finds for them" in reject.subject_note
+    # No walk held: only the organisational record was read, and the note says so.
+    unwalked = _unused_tag_sweep({}, 1)
+    row = one("SGE-NED-DMARC-R01", [weak, unwalked])
+    assert row.status == sge.FAIL
+    assert "policy discovery" not in row.subject_note
+    assert "read against the organisational domain's record" in row.subject_note
+    assert "any name between them and the domain was not looked up" in row.subject_note
+    reject = one("SGE-NED-DMARC-01", [soft, unwalked])
+    assert reject.status == sge.FAIL
+    assert "policy discovery" not in reject.subject_note
+    assert "was not looked up" in reject.subject_note
+
+
+def test_a_discovered_name_without_a_walk_is_read_against_the_organisational_record():
+    names = {"a.mail.example.com": sub()}
+    root = dmarc("v=DMARC1; p=reject; sp=quarantine")
+    row = discovered("SGE-DMARC-01", [root, mail_subs(names)])
+    assert row.status == sge.FAIL
+    assert "policy discovery" not in row.reason
+    assert "organisational domain's record" in row.reason and "not looked up" in row.reason
+    walked = walked_sweep({}, [], intermediate_dmarc={"mail.example.com": ""})
+    row = discovered("SGE-DMARC-01", [root, walked, mail_subs(names)])
+    assert f"record at {D}" in row.reason and "not looked up" not in row.reason

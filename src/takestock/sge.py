@@ -42,7 +42,9 @@ domains, in rows marked ``discovered`` whose subject is
 :func:`discovered_mail_subject`: SGE-SPF-01; SGE-DMARC-01, SGE-DMARC-04,
 SGE-DMARC-R02, SGE-DMARC-R03 and SGE-DMARC-R05 (a name with no DMARC record of
 its own takes the record RFC 9989 policy discovery finds, :func:`policy_record`,
-and its ``sp=``, ``np=`` or ``p=``); SGE-MTASTS-01 and SGE-MTASTS-02 (the
+and its ``sp=``, ``np=`` or ``p=``; an observation that holds no walk is read
+against the organisational domain's record, and the row says the names between
+were not looked up); SGE-MTASTS-01 and SGE-MTASTS-02 (the
 ``_mta-sts`` record and the policy file, RFC 8461); SGE-TLSRPT-01 (the
 ``_smtp._tls`` record, RFC 8460); and SGE-DKIM-R01 and SGE-DKIM-R02 (the keys
 under the selectors tried, RFC 6376; with no key found, the name is counted
@@ -54,6 +56,9 @@ name need not publish (:data:`_MAIL_POPULATION`).
 every name the observation knows beneath a domain: certificate transparency,
 the owner names in supplied zone files, the profile's domain lists and scan
 targets, and the names sender policies point at, each kept with its source.
+A row names only the sources its own recorded provenance says contributed a
+name, and says so when it records none (:func:`_sources_note`): a note
+describes what the observation holds, not what the sweep would read today.
 Those are a floor, so a sweep row can fail and otherwise stays not measured.
 Where the target profile attests a domain's zone file complete
 (``dns_zones.complete_zones``), and every name was read, settled and agreed
@@ -73,7 +78,7 @@ from __future__ import annotations
 
 import datetime
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -822,11 +827,18 @@ def _ned_dmarc_from_sweep(req: dict, assets: list[Any], domain: str,
     if fallback_bad:
         note.insert(0, f"{fallback_bad} of the {in_scope} enumerated sub-domain(s) that show "
                        "no sign of sending mail publish no DMARC record of their own and "
-                       + ("take the record policy discovery finds for them (RFC 9989 "
-                          "§4.10.1), which does not reject all failing mail for them (sp= for "
+                       + (("take the record policy discovery finds for them (RFC 9989 "
+                           "§4.10.1)" if walked is not None else
+                           "are read against the organisational domain's record, "
+                           + NO_WALK_HELD)
+                          + ", which does not reject all failing mail for them (sp= for "
                           "a name that exists, np= for one that does not)"
                           if root_record or elsewhere else
-                          "no record at or above them publishes one for them to fall back to"))
+                          "no record at or above them publishes one for them to fall back to"
+                          if walked is not None else
+                          "the organisational domain publishes no record for them to fall "
+                          "back to; any name between them and the domain was not looked up "
+                          "for a DMARC record (RFC 9989 §4.10)"))
     if own_bad:
         note.insert(0, f"{len(own_bad)} publish a record of their own that does not reject "
                        f"all failing mail: {', '.join(own_bad)}")
@@ -852,7 +864,7 @@ def _ned_dmarc_from_sweep(req: dict, assets: list[Any], domain: str,
             observed=f"all {in_scope} sub-domains reject",
             reason="; ".join([
                 "every sub-domain that shows no sign of sending mail rejects, on its own "
-                "record or through the record policy discovery finds for it", whole]),
+                "record or " + _fallback_words(walked is not None), whole]),
             evidence=str(_get(a, "name") or ""), source=req["source"],
             subject_note="; ".join(note))
     return Conformance(
@@ -860,8 +872,7 @@ def _ned_dmarc_from_sweep(req: dict, assets: list[Any], domain: str,
         observed=f"all {in_scope - len(unread)} sub-domains read reject",
         reason=NOT_COLLECTED,
         evidence=("every enumerated sub-domain that shows no sign of sending mail rejects, "
-                  "on its own record or through the record policy discovery finds for it, "
-                  "and "
+                  "on its own record or " + _fallback_words(walked is not None) + ", and "
                   "that is not the same as every sub-domain doing so: " + _SWEEP_POPULATION
                   + ". No verdict is claimed in either direction" + _floor_note(why_not)
                   + (f". What this row does not read either: {partial}" if partial else "")),
@@ -905,6 +916,21 @@ def _walk_notes(elsewhere: dict[str, str], unread: list[str]) -> list[str]:
     return out
 
 
+#: Said where a name with no DMARC record of its own is read against the
+#: organisational domain's record because the observation holds no walk: the
+#: sweep row lists no ``names_without_own_dmarc`` to walk, so the DMARC lookups
+#: of the names in between (``intermediate_dmarc``) were never consulted.
+NO_WALK_HELD = ("the only record this observation holds for them: any name between them "
+                "and the domain was not looked up for a DMARC record, and one there could "
+                "govern them (RFC 9989 §4.10)")
+
+
+def _fallback_words(walked: bool) -> str:
+    """How a name without its own DMARC record was read: by a policy walk, or not."""
+    return ("through the record policy discovery finds for it (RFC 9989 §4.10.1)" if walked
+            else "through the organisational domain's record, " + NO_WALK_HELD)
+
+
 def _control_note(extra: dict) -> str:
     """Said when the sweep's absence control was trusted because a wildcard answered it."""
     if extra.get("control_basis") != dnsevidence.CONTROL_WILDCARD:
@@ -930,6 +956,17 @@ _SWEEP_POPULATION = (
     "nothing about the names not seen. That is why this row can report a "
     "breach and, unless the profile attests a zone file complete, can never "
     "report conformance"
+)
+
+#: The same one-directional reading for a requirement that a record must NOT
+#: carry something (SGE-DMARC-R03 on the swept names): the direction is reversed.
+_SWEEP_POPULATION_FORBIDDEN = (
+    "an incomplete list of sub-domains still settles this in one direction, and "
+    "only one: the guide asks that no DMARC record carry these tags, so a single "
+    "record carrying one is the answer, while any number of names without them "
+    "says nothing about the names not seen. That is why this row can report the "
+    "recommendation unmet and, unless the profile attests a zone file complete, "
+    "can never report it met"
 )
 
 
@@ -1589,19 +1626,17 @@ def _subdomain_limit(assets: list[Any], domains: list[str], record: str,
                 if wired else
                 "reading the record over that list needs one DNS lookup per name")
     if not total:
-        return ("no sub-domain names have been enumerated in this run, so the "
-                f"{record} record on each of them is unread; certificate-transparency "
-                "enumeration is the route already built for this and produced nothing "
-                "here")
+        return ("this observation holds no enumerated sub-domain names, so the "
+                f"{record} record on each of them is unread")
     where = (f"under {domains[0]}" if len(domains) == 1 else
              f"across {len([d for d in counts if counts[d]])} of the {len(domains)} "
              f"domains ({max(counts.values())} of them under "
              f"{max(counts, key=lambda d: counts[d])} alone)")
-    return (f"{total} sub-domain name(s) {where} are already enumerated in this run "
-            f"from certificate transparency, and {owed}. What that would still not "
-            "prove: certificate transparency lists names that appeared in a public "
-            "certificate, and a sub-domain needing a denying record is exactly one "
-            "nobody serves TLS on, so even a complete join would bound this "
+    return (f"{total} sub-domain name(s) {where} are already enumerated in this "
+            f"observation, and {owed}. What that would still not prove: a list of names "
+            "is a floor, and one drawn from certificate transparency leans away from the "
+            "names this is about, since a sub-domain needing a denying record is usually "
+            "one nobody serves TLS on, so even a complete join would bound this "
             "requirement rather than close it")
 
 
@@ -2021,11 +2056,39 @@ def _ned_dmarc_asset(req: dict, assets: list[Any], domain: str
     return a, extra
 
 
-def _sources_note(extra: dict) -> str:
-    """Where the swept names came from, counted by source (a name can have several)."""
-    counts = extra.get("names_by_source") or {}
-    return ("names from " + ", ".join(f"{src} ({n})" for src, n in counts.items())
-            if counts else "")
+#: Said when a sweep row records no provenance for its names, so no source is named.
+SOURCES_NOT_RECORDED = ("where these names came from is not recorded in this observation, "
+                        "so no source is named for them")
+
+
+def _sources_note(extra: dict, only: Iterable[str] | None = None) -> str:
+    """Where the swept names came from, counted by source (a name can have several).
+
+    Only the sources the row records as having contributed a name are named,
+    from ``extra.name_sources`` (each name's sources) or, failing that,
+    ``extra.names_by_source`` (the counts). ``only`` restricts the count to
+    those names, which needs ``name_sources``. A row that records neither (an
+    observation taken before the sweep recorded provenance, or by a collector
+    that does not record it) gets
+    :data:`SOURCES_NOT_RECORDED` rather than a list of sources that may not
+    have contributed. A row whose provenance holds no name at all gets "".
+    """
+    per_name = extra.get("name_sources")
+    counts: dict[str, int] = {}
+    if isinstance(per_name, dict):
+        wanted = None if only is None else {str(n) for n in only}
+        held = [srcs for n, srcs in per_name.items() if wanted is None or str(n) in wanted]
+        if not held:
+            return ""
+        for sources in held:
+            for src in sources or []:
+                counts[str(src)] = counts.get(str(src), 0) + 1
+    elif only is None and isinstance(extra.get("names_by_source"), dict):
+        counts = {str(s): _int(n) for s, n in extra["names_by_source"].items()}
+    counts = {s: n for s, n in sorted(counts.items()) if n > 0}
+    if not counts:
+        return SOURCES_NOT_RECORDED
+    return "names from " + ", ".join(f"{src} ({n})" for src, n in counts.items())
 
 
 def _ned_scope_note(extra: dict) -> str:
@@ -2102,15 +2165,21 @@ def _eval_subdomain_unused_tags(req: dict, assets: list[Any],
                                 domains: list[str]) -> list[Conformance]:
     """SGE-DMARC-R03 on the DMARC records the swept names beneath each domain publish.
 
-    Only a name's own record is read: a name without one is given the
-    parent's record, which is graded on the parent's own row. A record
-    carrying a tag the guide says not to use fails the row; otherwise the row
-    is not measured, because the names are a floor. A domain with no sweep
-    reading, or no name in scope, gets no row here, since its own row already
-    reads the requirement; a sweep whose control could not be trusted is
-    reported as inconclusive.
+    This is a "must not carry" requirement, so it reads the other way from
+    the sweep's "must publish" rows. Only a name's own record is read: a name
+    without one carries no tag here to grade (the domain's own record is
+    graded on the domain's own row). A record carrying a tag the guide says
+    not to use fails the row, and one is enough whatever the names not seen
+    hold; no record carrying one cannot pass it, because the names are a
+    floor (:data:`_SWEEP_POPULATION_FORBIDDEN`), unless a zone file is
+    attested complete. The observed count is over the names read, and says
+    how many of them publish a record of their own. A domain with no sweep
+    reading, or no name in scope, gets no row here, since its own row
+    already reads the requirement; a sweep whose control could not be
+    trusted is reported as inconclusive.
     """
     unwanted = [str(t).lower() for t in (req.get("tags") or [])]
+    tag_list = ", ".join(unwanted)
     rows = []
     for d in domains:
         got = _ned_dmarc_asset(req, assets, d)
@@ -2120,13 +2189,21 @@ def _eval_subdomain_unused_tags(req: dict, assets: list[Any],
             continue
         a, extra = got
         records = dict(extra.get("dmarc_records") or {})
+        in_scope = _int(extra.get("names_in_scope"))
+        own, without = len(records), max(0, in_scope - len(records))
+        held = (f"{own} of the {in_scope} enumerated sub-domain(s) that show no sign of "
+                "sending mail publish a DMARC record of their own"
+                + (f"; the other {without} publish none, so carry no tag of their own to "
+                   "grade here, and the domain's own record is graded on the domain's own "
+                   "row" if without else ""))
+        note = "; ".join([held, _ned_scope_note(extra)])
         carrying = {n: present for n in sorted(records)
                     if (present := [t for t in unwanted if t in _dmarc_tags(str(records[n]))])}
         if carrying:
             every = sorted({t for present in carrying.values() for t in present})
             rows.append(Conformance(
                 req["id"], req["title"], req["level"], req["scope"], d, FAIL,
-                observed=f"{len(carrying)} of {len(records)} sub-domain records carry "
+                observed=f"{len(carrying)} of {in_scope} sub-domains read carry "
                          + ", ".join(every),
                 reason="; ".join([
                     ("a sub-domain's own DMARC record publishes a tag the DMARC guide says "
@@ -2134,32 +2211,37 @@ def _eval_subdomain_unused_tags(req: dict, assets: list[Any],
                      + "; ".join(f"{n} ({', '.join(p)})" for n, p in carrying.items())
                      + "; " + _unused_tags_why(every)
                      + " — a recommendation unmet, not a requirement breached"),
+                    ("one record carrying such a tag settles this, whatever the names not "
+                     "read publish"),
                     _SWEEP_INSTRUMENT]),
                 evidence=str(_get(a, "name") or ""), source=req["source"],
                 record="; ".join(f"{n}: {records[n]}" for n in carrying),
-                subject_note=_ned_scope_note(extra)))
+                subject_note=note))
             continue
+        observed = (f"none of {in_scope} sub-domains read carries {tag_list}; {own} publish "
+                    "a DMARC record of their own")
+        found = (f"no DMARC record published by an enumerated sub-domain that shows no sign "
+                 f"of sending mail carries {tag_list}" if own else
+                 f"no enumerated sub-domain that shows no sign of sending mail publishes a "
+                 f"DMARC record of its own, so none carries {tag_list} and there is no "
+                 "sub-domain record here to grade")
         whole, why_not = _whole_population(extra)
         if whole:
             rows.append(Conformance(
                 req["id"], req["title"], req["level"], req["scope"], d, PASS,
-                observed=f"none of {len(records)} sub-domain records carries them",
-                reason="; ".join([
-                    "no DMARC record published by a sub-domain that shows no sign of "
-                    f"sending mail carries {', '.join(unwanted)}", whole]),
+                observed=observed, reason="; ".join([found, whole]),
                 evidence=str(_get(a, "name") or ""), source=req["source"],
-                subject_note=_ned_scope_note(extra)))
+                subject_note=note))
             continue
         rows.append(Conformance(
             req["id"], req["title"], req["level"], req["scope"], d, NOT_MEASURED,
-            observed=f"none of {len(records)} sub-domain records carries them",
+            observed=observed,
             reason=NOT_COLLECTED,
-            evidence=("no DMARC record published by an enumerated sub-domain that shows no "
-                      f"sign of sending mail carries {', '.join(unwanted)}, and that is not "
-                      "the same as none doing so: " + _SWEEP_POPULATION
+            evidence=(found + ", and that is not the same as none doing so: "
+                      + _SWEEP_POPULATION_FORBIDDEN
                       + ". No verdict is claimed in either direction"
                       + _floor_note(why_not) + "."),
-            source=req["source"], subject_note=_ned_scope_note(extra)))
+            source=req["source"], subject_note=note))
     return rows
 
 
@@ -2210,10 +2292,15 @@ def _eval_subdomain_dmarc_alignment(req: dict, assets: list[Any],
             parts = []
             if failing_by_fallback:
                 parts.append(
-                    f"{failing_by_fallback} of the {in_scope} enumerated sub-domain(s) that "
-                    "show no sign of sending mail publish no DMARC record of their own, so a "
-                    "receiver applies the record policy discovery finds for them (RFC 9989 "
-                    f"§4.10.1), which reads {', '.join(inherited)}"
+                    (f"{failing_by_fallback} of the {in_scope} enumerated sub-domain(s) that "
+                     "show no sign of sending mail publish no DMARC record of their own, so a "
+                     "receiver applies the record policy discovery finds for them (RFC 9989 "
+                     f"§4.10.1), which reads {', '.join(inherited)}"
+                     if walked is not None else
+                     f"{failing_by_fallback} of the {in_scope} enumerated sub-domain(s) that "
+                     "show no sign of sending mail publish no DMARC record of their own, and "
+                     "are read against the organisational domain's record, " + NO_WALK_HELD
+                     + f"; that record reads {', '.join(inherited)}")
                     if root_record or (walked and any(at for at, _r in walked[0].values()))
                     else
                     f"{without_own} of the {in_scope} enumerated sub-domain(s) publish no "
@@ -2250,8 +2337,8 @@ def _eval_subdomain_dmarc_alignment(req: dict, assets: list[Any],
                 observed=f"all {in_scope} sub-domains meet it",
                 reason="; ".join([
                     "every sub-domain that shows no sign of sending mail carries strict "
-                    "alignment and a reporting address, on its own record or the one it "
-                    "falls back to", whole]),
+                    "alignment and a reporting address, on its own record or "
+                    + _fallback_words(walked is not None), whole]),
                 evidence=str(_get(a, "name") or ""), source=req["source"],
                 subject_note="; ".join([*walk_notes, _ned_scope_note(extra)])))
             continue
@@ -2262,8 +2349,8 @@ def _eval_subdomain_dmarc_alignment(req: dict, assets: list[Any],
             reason=NOT_COLLECTED,
             evidence=("every enumerated sub-domain that shows no sign of sending mail "
                       "carries strict alignment and a reporting address, on its own "
-                      "record or the organisational one it falls back to, and that is not "
-                      "the same as every sub-domain doing so. " + _partial(req)
+                      "record or " + _fallback_words(walked is not None) + ", and that is "
+                      "not the same as every sub-domain doing so. " + _partial(req)
                       + " No verdict is claimed in either direction"
                       + _floor_note(why_not) + "."),
             source=req["source"],
@@ -2664,10 +2751,9 @@ def discovered_mail_subject(domain: str) -> str:
 
 
 #: Said beside every row reading discovered mail-handling sub-domains.
-DISCOVERED_NOTE = ("discovered: names the sub-domain sweep found beneath this domain (in "
-                   "certificate-transparency logs, supplied zone files, the profile or "
-                   "sender policies) and judged to send or receive mail, not domains the "
-                   "profile names as email domains; the list is a floor")
+DISCOVERED_NOTE = ("discovered: names the sub-domain sweep found beneath this domain and "
+                   "judged to send or receive mail, not domains the profile names as email "
+                   "domains; the list is a floor")
 
 
 def _spf_qualifier(record: str) -> str:
@@ -2748,7 +2834,8 @@ def _discovered_rows(req: dict, assets: list[Any], roots: list[str],
             (f"{len(unsettled)} of the {len(names)} name(s) counted neither way: "
              + "; ".join(f"{n} ({why})" for n, why in unsettled.items()) if unsettled else ""),
             f"read {extra.get('read_at', '')} via {', '.join(extra.get('resolvers') or [])}",
-            _control_note(extra), f"why each is read as handling mail: {why_mail}"] if x)
+            _sources_note(extra, only=names), _control_note(extra),
+            f"why each is read as handling mail: {why_mail}"] if x)
         if not short and not settled:
             never_read = all(isinstance(why, NotRead) for why in unsettled.values())
             rows.append(Conformance(
@@ -2814,6 +2901,11 @@ def _judge_spf(req: dict, name: str, records: dict, root_record: str) -> str:
             "its record ends neither -all nor ~all, so no sender is denied")
 
 
+#: Said of a discovered name read without a policy walk (no ``records["policy"]``).
+_UNWALKED = ("any name between it and the domain was not looked up for a DMARC record, "
+             "and one there could govern it (RFC 9989 §4.10)")
+
+
 def _governing_dmarc(records: dict, root_record: str) -> tuple[str, str] | Unsettled:
     """The DMARC record a receiver applies to a discovered name, and where it is published.
 
@@ -2839,9 +2931,10 @@ def _applied_where(at: str, records: dict) -> str:
     """Words for which DMARC record was applied: the name's own, or the one at ``at``."""
     if records.get("dmarc_record"):
         return "its own DMARC record"
-    return (f"the DMARC record at {at}, which a receiver applies to it (RFC 9989 §4.10.1)"
-            if at else "the organisational domain's DMARC record, which a receiver applies "
-            "to it (RFC 9989 §4.10.1)")
+    if at:
+        return f"the DMARC record at {at}, which a receiver applies to it (RFC 9989 §4.10.1)"
+    return ("the organisational domain's DMARC record, the only one this observation holds "
+            "for it: " + _UNWALKED)
 
 
 def _judge_dmarc(req: dict, name: str, records: dict, root_record: str) -> str:
@@ -2868,16 +2961,22 @@ def _judge_dmarc(req: dict, name: str, records: dict, root_record: str) -> str:
     at, governing = got
     if not governing:
         return ("publishes no DMARC record of its own, and no record at or above it "
-                "publishes one for it to fall back to")
+                "publishes one for it to fall back to" if "policy" in records else
+                "publishes no DMARC record of its own, and the organisational domain "
+                "publishes none for it to fall back to; " + _UNWALKED)
     key = "sp" if records.get("exists", True) else "np"
     tags = _dmarc_tags(governing)
     if _rejects(tags, key):
         return ""
     policy = next((f"{k}={tags[k]}" for k in _POLICY_FALLBACK[key] if tags.get(k)), "no policy")
+    if not at:
+        return (f"publishes no DMARC record of its own, so it is read against the {key}= "
+                "policy of the organisational domain's record (falling back as RFC 9989 "
+                f"§4.7 says), which reads {policy}; that is the only record this observation "
+                "holds for it: " + _UNWALKED + "; the standard requires p=reject")
     return (f"publishes no DMARC record of its own, so a receiver applies the {key}= policy "
-            f"of the record {'at ' + at if at else 'policy discovery finds'} (RFC 9989 "
-            f"§4.10.1, falling back as §4.7 says), which reads {policy}; the standard "
-            "requires p=reject")
+            f"of the record at {at} (RFC 9989 §4.10.1, falling back as §4.7 says), which "
+            f"reads {policy}; the standard requires p=reject")
 
 
 def _judge_sp_tag(req: dict, name: str, records: dict, root_record: str) -> str:
@@ -2910,7 +3009,10 @@ def _judge_dmarc_reporting(req: dict, name: str, records: dict, root_record: str
     if not record:
         return ("publishes no DMARC record of its own and none at or above it applies, so "
                 "no receiver sends an aggregate report about mail claiming it and no "
-                "reporting tool can be receiving one")
+                "reporting tool can be receiving one" if "policy" in records else
+                "publishes no DMARC record of its own and the organisational domain "
+                "publishes none, so on what this observation holds no receiver sends an "
+                "aggregate report about mail claiming it; " + _UNWALKED)
     if _dmarc_tags(record).get("rua"):
         return ""
     return (f"{_applied_where(at, records)} publishes no rua= aggregate reporting address, "
@@ -2927,7 +3029,10 @@ def _judge_spf_alignment(req: dict, name: str, records: dict, root_record: str) 
     if not record:
         return ("no DMARC record applies to it, so no alignment is published at all; the "
                 "DMARC guide recommends strict (aspf=s) — a recommendation unmet, not a "
-                "requirement breached")
+                "requirement breached"
+                + ("" if "policy" in records else
+                   "; no record is published at it or at the organisational domain, and "
+                   + _UNWALKED))
     tags = _dmarc_tags(record)
     if (tags.get("aspf") or "r").lower() == "s":
         return ""

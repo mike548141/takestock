@@ -451,12 +451,12 @@ requirements:
       sends no mail read for a v=spf1 -all record.
     partial: >-
       Which sub-domains exist. The names read are the ones the observation knows
-      of: certificate logs, supplied zone files, the profile and the names
-      sender policies point at. Certificate logs lean away from the very names
-      this requirement is about, because a sub-domain needing a denying record
-      is usually one nobody serves web traffic on. Unless a zone file the
-      profile attests complete is supplied, the count of names missing the
-      record is a floor, and the true number may be higher.
+      of, and the row's note names the sources that supplied them, or says the
+      observation did not record them. Names drawn from certificate logs lean
+      away from the very names this requirement is about, because a sub-domain
+      needing a denying record is usually one nobody serves web traffic on.
+      Unless a zone file the profile attests complete is supplied, the count of
+      names missing the record is a floor, and the true number may be higher.
     note: >-
       A sender policy does not carry down. A receiver checking mail that claims
       to come from a sub-domain asks that sub-domain for a policy and stops
@@ -489,12 +489,12 @@ requirements:
     record: "*._domainkey.<domain>"
     partial: >-
       Which sub-domains exist. The names read are the ones the observation knows
-      of: certificate logs, supplied zone files, the profile and the names
-      sender policies point at. Certificate logs lean away from the very names
-      this requirement is about, because a sub-domain needing a denying record
-      is usually one nobody serves web traffic on. Unless a zone file the
-      profile attests complete is supplied, the count of names missing the
-      record is a floor, and the true number may be higher.
+      of, and the row's note names the sources that supplied them, or says the
+      observation did not record them. Names drawn from certificate logs lean
+      away from the very names this requirement is about, because a sub-domain
+      needing a denying record is usually one nobody serves web traffic on.
+      Unless a zone file the profile attests complete is supplied, the count of
+      names missing the record is a floor, and the true number may be higher.
     note: >-
       Publishing the empty key on a domain that does send signed mail is safe:
       an explicit selector record takes precedence over a wildcard, so a live
