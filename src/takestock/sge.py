@@ -37,13 +37,18 @@ requirement; it is reported beside them in
 
 **Discovered sub-domains that handle mail.** The sub-domain sweep sets aside
 the names that show signs of sending or receiving mail. Those are email domains
-to a receiver, so :func:`evaluate` reads them against SGE-SPF-01, SGE-DMARC-01
-(a name with no DMARC record of its own takes the ``sp=``, ``np=`` or ``p=``
-of the record RFC 9989 policy discovery finds, :func:`policy_record`) and
-SGE-DMARC-R05, from the records the sweep already holds, in rows marked
-``discovered`` whose subject is :func:`discovered_mail_subject`. Their
-MTA-STS, TLS-RPT and DKIM records are not read, so these rows can fail and
-never pass.
+to a receiver, so :func:`evaluate` reads them against the rules for email
+domains, in rows marked ``discovered`` whose subject is
+:func:`discovered_mail_subject`: SGE-SPF-01; SGE-DMARC-01, SGE-DMARC-04,
+SGE-DMARC-R02, SGE-DMARC-R03 and SGE-DMARC-R05 (a name with no DMARC record of
+its own takes the record RFC 9989 policy discovery finds, :func:`policy_record`,
+and its ``sp=``, ``np=`` or ``p=``); SGE-MTASTS-01 and SGE-MTASTS-02 (the
+``_mta-sts`` record and the policy file, RFC 8461); SGE-TLSRPT-01 (the
+``_smtp._tls`` record, RFC 8460); and SGE-DKIM-R01 and SGE-DKIM-R02 (the keys
+under the selectors tried, RFC 6376; with no key found, the name is counted
+neither way). These rows can fail and never pass, even on an attested-complete
+zone file, because which names send mail is judged from DNS signals a sending
+name need not publish (:data:`_MAIL_POPULATION`).
 
 **Which names the sweep reads, and when a sweep may pass.** The sweep reads
 every name the observation knows beneath a domain: certificate transparency,
@@ -53,7 +58,8 @@ Those are a floor, so a sweep row can fail and otherwise stays not measured.
 Where the target profile attests a domain's zone file complete
 (``dns_zones.complete_zones``), and every name was read, settled and agreed
 with the file, the rows for names that send no mail may pass, and say on what
-attestation (:func:`_whole_population`). The mail-handling rows stay fail-only.
+attestation (:func:`_whole_population`). The mail-handling rows stay fail-only
+(above).
 
 **Sub-domains that do not exist.** RFC 9989 (DMARC, which obsoletes RFC 7489)
 adds the ``np=`` tag, the policy for non-existent sub-domains. Wherever a
@@ -698,9 +704,21 @@ def held_dmarc(assets: list[Any], domain: str) -> HeldRecords:
 #: What :func:`policy_record` returns when a walk passes a name it holds no reading of.
 UNREAD = None
 
-#: What a discovered-name judge returns when what it needs was not read: the
-#: name is counted neither way (:func:`_discovered_rows`).
-NOT_SETTLED = "not settled"
+class Unsettled(str):
+    """A discovered-name judge's answer when what it needs was not read, saying why.
+
+    The name is counted neither way (:func:`_discovered_rows`).
+    """
+
+
+class NotRead(Unsettled):
+    """An :class:`Unsettled` answer because the observation never read the record at all."""
+
+
+#: What a discovered-name judge returns when the name's DMARC policy walk
+#: passes a name that was not read.
+NOT_SETTLED = Unsettled("a name between it and the domain was not read, and its DMARC record "
+                        "could govern it (RFC 9989 §4.10)")
 
 
 def policy_record(name: str, held: HeldRecords) -> tuple[str, str] | None:
@@ -1761,16 +1779,24 @@ def _partial(req: dict) -> str:
     return " ".join(str(req.get("partial") or "").split())
 
 
+def _mx_host_names(records: list[Any]) -> list[str]:
+    """The host names MX records name, lower-cased and sorted.
+
+    A null MX (``0 .``, RFC 7505 §3) names no host and is left out.
+    """
+    out = []
+    for rec in records:
+        m = re.search(r"(\d+\s+)?([\w.-]+?)\.?$", str(rec).strip())
+        if m and m.group(2).strip("."):
+            out.append(m.group(2).lower())
+    return sorted(set(out))
+
+
 def _mx_hosts(assets: list[Any], domain: str) -> list[str] | None:
     found = _by(assets, "mx", domain)
     if not found:
         return None
-    out = []
-    for rec in (_get(found[0], "extra") or {}).get("records", []) or []:
-        m = re.search(r"(\d+\s+)?([\w.-]+?)\.?$", str(rec).strip())
-        if m:
-            out.append(m.group(2).lower())
-    return sorted(set(out))
+    return _mx_host_names((_get(found[0], "extra") or {}).get("records", []) or [])
 
 
 def _mta_sts_matches(pattern: str, host: str) -> bool:
@@ -2630,22 +2656,40 @@ def _spf_qualifier(record: str) -> str:
     return "~all" if "~all" in record else "-all" if "-all" in record else ""
 
 
+#: Why a row reading discovered mail-handling sub-domains never reports conformance.
+_MAIL_POPULATION = (
+    "the names read are a floor, and an attested-complete zone file would not make them "
+    "the whole population this requirement is about: it binds every email-enabled or "
+    "email-sending domain, and which names send mail is judged here from what DNS shows "
+    "(an MX record, a sender policy that authorises senders, or the parent's sender "
+    "policy naming the name), while a name can send mail with none of those. So a "
+    "complete list of names is not a complete list of sending domains, and this row can "
+    "report a breach and never conformance"
+)
+
+
 def _discovered_rows(req: dict, assets: list[Any], roots: list[str],
                      judge: Callable[[dict, str, dict, str], str]) -> list[Conformance]:
     """One row per root whose sweep holds settled mail-handling names, graded by ``judge``.
 
     ``judge(req, name, records, root_record)`` returns why the name falls short,
-    "" when it meets the requirement, or :data:`NOT_SETTLED` when what it
-    needs was not read. A name short of it fails the row. A name not settled
-    is counted neither way: it is left out of the names read and listed in the
-    row's note. When every name read meets it the row is not measured, never
-    met: these rows read only part of what an email domain must publish (no
-    MTA-STS, TLS-RPT or DKIM), and the names are a floor unless a zone file is
-    attested complete, so any number of names meeting the requirement says
-    nothing about the names not seen. A root whose sweep found no such name
-    gets no row.
+    "" when it meets the requirement, or an :class:`Unsettled` saying why what
+    it needs was not read. A name short of it fails the row. A name not
+    settled is counted neither way: it is left out of the names read and
+    listed, with why, in the row's note. When every name read meets it the
+    row is not measured, never met, even where a zone file is attested
+    complete (:data:`_MAIL_POPULATION`). When every name is unsettled because
+    the observation never read the record (:class:`NotRead`), the row says
+    not collected; otherwise inconclusive. A root whose sweep found no such
+    name gets no row.
+
+    ``records`` is the name's entry in the sweep row's ``extra.names``, with
+    ``policy`` (the DMARC record :func:`policy_record` finds for it) and
+    ``dkim_keys_seen`` (every DKIM public key the observation read, with the
+    selector names publishing it) added.
     """
     rows = []
+    keys_seen = _dkim_keys_seen(assets)
     for d in roots:
         found = _by(assets, "subdomain-mail", d)
         if not found:
@@ -2671,26 +2715,31 @@ def _discovered_rows(req: dict, assets: list[Any], roots: list[str],
         root = _by(assets, "dmarc", d)
         root_record = _dmarc_record(root[0]) if root else ""
         held = held_dmarc(assets, d)
-        verdicts = {n: judge(req, n, {**names[n], **({"policy": policy_record(n, held)}
-                                                     if held.walkable else {})},
+        verdicts = {n: judge(req, n, {**names[n], "dkim_keys_seen": keys_seen,
+                                      **({"policy": policy_record(n, held)}
+                                         if held.walkable else {})},
                              root_record)
                     for n in sorted(names)}
-        unsettled = [n for n, why in verdicts.items() if why == NOT_SETTLED]
-        short = {n: why for n, why in verdicts.items() if why and why != NOT_SETTLED}
+        unsettled = {n: why for n, why in verdicts.items() if isinstance(why, Unsettled)}
+        short = {n: why for n, why in verdicts.items() if why and n not in unsettled}
         settled = [n for n in sorted(names) if n not in unsettled]
         why_mail = "; ".join(f"{n} {names[n].get('because') or 'handles mail'}"
                              for n in sorted(names))
         note = "; ".join(x for x in [
-            (f"{len(unsettled)} of the {len(names)} name(s) counted neither way, because a "
-             "name between them and the domain was not read, and its DMARC record could "
-             f"govern them (RFC 9989 §4.10): {', '.join(unsettled)}" if unsettled else ""),
+            (f"{len(unsettled)} of the {len(names)} name(s) counted neither way: "
+             + "; ".join(f"{n} ({why})" for n, why in unsettled.items()) if unsettled else ""),
             f"read {extra.get('read_at', '')} via {', '.join(extra.get('resolvers') or [])}",
             _control_note(extra), f"why each is read as handling mail: {why_mail}"] if x)
         if not short and not settled:
+            never_read = all(isinstance(why, NotRead) for why in unsettled.values())
             rows.append(Conformance(
                 req["id"], req["title"], req["level"], req["scope"], subject, NOT_MEASURED,
-                reason=INCONCLUSIVE, observed=f"none of {len(names)} settled",
-                evidence=("no mail-handling sub-domain could be read against this "
+                reason=NOT_COLLECTED if never_read else INCONCLUSIVE,
+                observed=f"none of {len(names)} settled",
+                evidence=("this observation did not read what the requirement needs on these "
+                          "names; an observation taken with the sub-domain sweep reads it"
+                          if never_read else
+                          "no mail-handling sub-domain could be read against this "
                           "requirement, so nothing is graded in either direction"),
                 source=req["source"], subject_note=note, discovered=True))
             continue
@@ -2711,13 +2760,28 @@ def _discovered_rows(req: dict, assets: list[Any], roots: list[str],
                 reason=NOT_COLLECTED, observed=f"all {len(settled)} read meet it",
                 evidence=(f"every mail-handling sub-domain read ({', '.join(settled)}) "
                           "meets it, and that is not the same as every one doing so: "
-                          + _SWEEP_POPULATION + ". No verdict is claimed in either direction"),
+                          + _MAIL_POPULATION + ". No verdict is claimed in either direction"),
                 source=req["source"], subject_note=note, discovered=True))
     return rows
 
 
 def _discovered_record(req: dict, records: dict) -> str:
-    key = "spf_record" if req["id"].startswith("SGE-SPF") else "dmarc_record"
+    """The record a discovered-name row quotes for ``req``: the one its judge read."""
+    rid = req["id"]
+    if rid.startswith("SGE-MTASTS"):
+        sts = records.get("mta_sts") or {}
+        mx = ", ".join(sts.get("mx") or [])
+        return (f"{sts.get('record') or 'no _mta-sts record'}; policy mode="
+                f"{sts.get('mode') or 'unread'}" + (f"; policy mx: {mx}" if mx else "")
+                + (f"; MX: {', '.join(_mx_host_names(records.get('mx_records') or []))}"
+                   if rid == "SGE-MTASTS-02" else ""))
+    if rid.startswith("SGE-TLSRPT"):
+        return str((records.get("tls_rpt") or {}).get("record") or "none published")
+    if rid.startswith("SGE-DKIM"):
+        keys = [k for k in records.get("dkim") or [] if k.get("public_key")]
+        return ", ".join(f"selector {k.get('selector')} ({k.get('key_bits') or '?'}-bit)"
+                         for k in keys) or "no key answered"
+    key = "spf_record" if rid.startswith("SGE-SPF") else "dmarc_record"
     return str(records.get(key) or "none published")
 
 
@@ -2729,6 +2793,36 @@ def _judge_spf(req: dict, name: str, records: dict, root_record: str) -> str:
     return ("" if ends == "-all" else
             "its record ends ~all (softfail), and the standard requires -all" if ends else
             "its record ends neither -all nor ~all, so no sender is denied")
+
+
+def _governing_dmarc(records: dict, root_record: str) -> tuple[str, str] | Unsettled:
+    """The DMARC record a receiver applies to a discovered name, and where it is published.
+
+    The name's own record (published at "the name itself", given as ``""``
+    for where); otherwise the record RFC 9989 §4.10.1 discovery finds
+    (``records["policy"]``, :func:`policy_record`), or the organisational
+    domain's own record (``root_record``) for an observation that holds no
+    walk. :data:`NOT_SETTLED` when the walk passes a name that was not read.
+    ``("", "")`` when no record applies.
+    """
+    own = str(records.get("dmarc_record") or "")
+    if own:
+        return "", own
+    if "policy" in records:
+        if records["policy"] is UNREAD:
+            return NOT_SETTLED
+        at, record = records["policy"]
+        return str(at), str(record)
+    return "", root_record
+
+
+def _applied_where(at: str, records: dict) -> str:
+    """Words for which DMARC record was applied: the name's own, or the one at ``at``."""
+    if records.get("dmarc_record"):
+        return "its own DMARC record"
+    return (f"the DMARC record at {at}, which a receiver applies to it (RFC 9989 §4.10.1)"
+            if at else "the organisational domain's DMARC record, which a receiver applies "
+            "to it (RFC 9989 §4.10.1)")
 
 
 def _judge_dmarc(req: dict, name: str, records: dict, root_record: str) -> str:
@@ -2749,11 +2843,10 @@ def _judge_dmarc(req: dict, name: str, records: dict, root_record: str) -> str:
         return (f"its own record reads p={tags.get('p') or 'absent'}"
                 + (f", pct={tags['pct']}" if tags.get("pct") else "")
                 + "; the standard requires p=reject on all of its failing mail")
-    at, governing = "", root_record
-    if "policy" in records:
-        if records["policy"] is UNREAD:
-            return NOT_SETTLED
-        at, governing = records["policy"]
+    got = _governing_dmarc(records, root_record)
+    if isinstance(got, Unsettled):
+        return got
+    at, governing = got
     if not governing:
         return ("publishes no DMARC record of its own, and no record at or above it "
                 "publishes one for it to fall back to")
@@ -2785,14 +2878,223 @@ def _judge_unused_tags(req: dict, name: str, records: dict, root_record: str) ->
             "requirement breached" if present else "")
 
 
-#: The judge for each requirement read on discovered mail-handling sub-domains. A
-#: first cut from the records the sweep already holds (SPF, DMARC and MX); the
-#: MTA-STS, TLS-RPT and DKIM records of these names are not read.
+def _judge_dmarc_reporting(req: dict, name: str, records: dict, root_record: str) -> str:
+    """SGE-DMARC-04 on one name: the ``rua=`` of the DMARC record a receiver applies to it.
+
+    One-directional, like the email-domain row: no reporting address means no
+    reporting tool can be receiving reports; an address proves no tool.
+    """
+    got = _governing_dmarc(records, root_record)
+    if isinstance(got, Unsettled):
+        return got
+    at, record = got
+    if not record:
+        return ("publishes no DMARC record of its own and none at or above it applies, so "
+                "no receiver sends an aggregate report about mail claiming it and no "
+                "reporting tool can be receiving one")
+    if _dmarc_tags(record).get("rua"):
+        return ""
+    return (f"{_applied_where(at, records)} publishes no rua= aggregate reporting address, "
+            "so no receiver sends a report about mail claiming it and no reporting tool can "
+            "be receiving one")
+
+
+def _judge_spf_alignment(req: dict, name: str, records: dict, root_record: str) -> str:
+    """SGE-DMARC-R02 on one name: the ``aspf=`` of the DMARC record a receiver applies to it."""
+    got = _governing_dmarc(records, root_record)
+    if isinstance(got, Unsettled):
+        return got
+    at, record = got
+    if not record:
+        return ("no DMARC record applies to it, so no alignment is published at all; the "
+                "DMARC guide recommends strict (aspf=s) — a recommendation unmet, not a "
+                "requirement breached")
+    tags = _dmarc_tags(record)
+    if (tags.get("aspf") or "r").lower() == "s":
+        return ""
+    return (f"{_applied_where(at, records)} publishes relaxed SPF alignment"
+            + ("" if "aspf" in tags else ", by omitting the tag, which RFC 9989 §4.7 reads "
+               "as relaxed")
+            + "; the DMARC guide recommends strict (aspf=s) — a recommendation unmet, not a "
+              "requirement breached")
+
+
+def _mail_reading(records: dict, key: str, label: str) -> dict | Unsettled:
+    """A discovered name's ``key`` reading (``mta_sts``, ``tls_rpt``), or why it was not read."""
+    if key in records:
+        return dict(records[key] or {})
+    why = (records.get("not_read") or {}).get(label)
+    if why:
+        return Unsettled(f"its {label} lookup did not settle ({why}), so nothing is claimed "
+                         "either way")
+    return NotRead(f"this observation did not read its {label} record")
+
+
+def _judge_mta_sts(req: dict, name: str, records: dict, root_record: str) -> str:
+    """SGE-MTASTS-01 on one name, read as :func:`_eval_mta_sts` reads an email domain.
+
+    Fails a missing ``_mta-sts`` record (RFC 8461 §3.1), a policy that is not
+    valid (an invalid certificate, a non-200 answer or a redirect, §3.3; a
+    missing ``version: STSv1`` or a bad ``max_age``, §3.2), and a mode other
+    than enforce. A policy the instrument could not fetch is not settled.
+    """
+    sts = _mail_reading(records, "mta_sts", "MTA-STS")
+    if isinstance(sts, Unsettled):
+        return sts
+    if not sts.get("published"):
+        return ("publishes no _mta-sts TXT record, so no sender fetches a policy for it "
+                "(RFC 8461 §3.1) and no mode, enforce or otherwise, is in effect")
+    faults = _mta_sts_policy_faults(sts)
+    if faults:
+        return ("its policy is not valid: " + "; ".join(faults) + ". A sender that holds no "
+                "cached policy delivers as though MTA-STS were not implemented (RFC 8461 §3.3)")
+    mode = str(sts.get("mode") or "")
+    if not mode and sts.get("policy_reachable") is False:
+        return Unsettled("its _mta-sts record is published but its policy file could not be "
+                         "fetched from this machine, which is a limit of this instrument"
+                         + (f"; curl reported: {sts['policy_fetch_error']}"
+                            if sts.get("policy_fetch_error") else ""))
+    if mode == "enforce":
+        return ""
+    return (f"its policy mode is {mode or 'unknown'}; only enforce mandates TLS and prevents "
+            "a downgrade to sending in the clear")
+
+
+def _judge_mta_sts_mx(req: dict, name: str, records: dict, root_record: str) -> str:
+    """SGE-MTASTS-02 on one name: its policy's mx lines against its MX records, no wildcards."""
+    sts = _mail_reading(records, "mta_sts", "MTA-STS")
+    if isinstance(sts, Unsettled):
+        return sts
+    if not sts.get("published") or _mta_sts_policy_faults(sts):
+        return Unsettled("it has no valid MTA-STS policy, so there are no mx entries a sender "
+                         "would apply; that is graded under SGE-MTASTS-01")
+    if sts.get("policy_reachable") is False:
+        return Unsettled("its policy file could not be fetched from this machine, so its mx "
+                         "entries were not read")
+    entries = [str(e).strip() for e in sts.get("mx") or [] if str(e).strip()]
+    hosts = _mx_host_names(records.get("mx_records") or [])
+    wild = [e for e in entries if "*" in e]
+    unmatched = [h for h in hosts if not any(_mta_sts_matches(e, h) for e in entries)]
+    faults = []
+    if unmatched:
+        faults.append(f"its MX host(s) {', '.join(unmatched)} are matched by no mx entry in "
+                      "its policy, so a sending server enforcing the policy refuses to deliver "
+                      "to them")
+    if wild:
+        faults.append(f"its policy uses the wildcard entry {', '.join(wild)}, which the "
+                      "MTA-STS guide says must not be used")
+    return "; ".join(faults)
+
+
+def _judge_tls_rpt(req: dict, name: str, records: dict, root_record: str) -> str:
+    """SGE-TLSRPT-01 on one name: a ``v=TLSRPTv1`` record with a ``rua=`` at ``_smtp._tls``."""
+    rpt = _mail_reading(records, "tls_rpt", "TLS-RPT")
+    if isinstance(rpt, Unsettled):
+        return rpt
+    if not rpt.get("published"):
+        return ("publishes no _smtp._tls TXT record (RFC 8460 §3), so TLS Reporting is not "
+                "enabled for it")
+    if not re.search(r"rua=([^;\s]+)", str(rpt.get("record") or "")):
+        return ("its v=TLSRPTv1 record carries no rua= reporting address, so a report has "
+                "nowhere to go; the standard's expected value is "
+                "'v=TLSRPTv1; rua=mailto:<address>'")
+    return ""
+
+
+def _dkim_reading(records: dict) -> list[dict] | Unsettled:
+    """The DKIM keys that answered at a discovered name, or why there are none to read.
+
+    An answer with the empty key ``v=DKIM1; p=`` publishes no key, and is left
+    out. No key at all is not settled, never a pass or a fail: selector names
+    cannot be listed, so silence under the selectors tried proves nothing.
+    """
+    if "dkim" not in records:
+        return NotRead("this observation did not read its DKIM selectors")
+    answered = list(records.get("dkim") or [])
+    keys = [k for k in answered if k.get("public_key")]
+    if keys:
+        return keys
+    if answered:
+        return Unsettled("every selector that answered gives the empty key v=DKIM1; p=, "
+                         "which publishes no key")
+    tried = records.get("dkim_selectors_tried")
+    return Unsettled(f"none of the {tried or 'known'} selector(s) tried answered; selector "
+                     "names cannot be listed, so this is silence rather than proof that no "
+                     "key is published")
+
+
+def _judge_dkim_keysize(req: dict, name: str, records: dict, root_record: str) -> str:
+    """SGE-DKIM-R01 on one name: each key found under a known selector is at least 2048-bit."""
+    keys = _dkim_reading(records)
+    if isinstance(keys, Unsettled):
+        return keys
+    minimum = int(req.get("minimum_bits", 2048))
+    weak = [k for k in keys if k.get("key_bits") and int(k["key_bits"]) < minimum]
+    if weak:
+        named = ", ".join(f"{k.get('selector')} ({k.get('key_bits')}-bit)" for k in weak)
+        return (f"selector(s) {named} publish an RSA key below the {minimum}-bit the DKIM "
+                "guide strongly recommends — permitted on legacy systems, so a "
+                "recommendation unmet rather than a requirement breached")
+    if any(not k.get("key_bits") for k in keys):
+        return Unsettled("a selector answered with a key whose size could not be read")
+    return ""
+
+
+def _dkim_keys_seen(assets: list[Any]) -> dict[str, list[str]]:
+    """Every DKIM public key the observation read, with the selector names that publish it.
+
+    From the email domains' DKIM rows and the mail-handling sub-domains' readings.
+    """
+    seen: dict[str, set[str]] = {}
+    for a in _by(assets, "dkim"):
+        extra = _get(a, "extra") or {}
+        if extra.get("public_key"):
+            seen.setdefault(str(extra["public_key"]), set()).add(str(extra.get("selector") or ""))
+    for a in _by(assets, "subdomain-mail"):
+        for rec in ((_get(a, "extra") or {}).get("names") or {}).values():
+            for k in (rec or {}).get("dkim") or []:
+                if k.get("public_key"):
+                    seen.setdefault(str(k["public_key"]), set()).add(str(k.get("selector") or ""))
+    return {k: sorted(v) for k, v in seen.items()}
+
+
+def _judge_dkim_distinct_keys(req: dict, name: str, records: dict, root_record: str) -> str:
+    """SGE-DKIM-R02 on one name: no key of its own is published under another selector name.
+
+    Read as :func:`_eval_dkim_distinct_keys` reads an email domain, across
+    every key the observation holds (``records["dkim_keys_seen"]``).
+    """
+    keys = _dkim_reading(records)
+    if isinstance(keys, Unsettled):
+        return keys
+    seen = records.get("dkim_keys_seen") or {}
+    shared = sorted({sel for k in keys for sel in seen.get(str(k["public_key"]), [])
+                     if len(seen.get(str(k["public_key"]), [])) > 1})
+    if not shared:
+        return ""
+    return (f"the selectors {', '.join(shared)} publish one public key, so they sign with one "
+            "private key; the DKIM guide gives each platform its own selector and says not "
+            "to share a private key across services — a recommendation unmet, not a "
+            "requirement breached")
+
+
+#: The judge for each requirement read on discovered mail-handling sub-domains,
+#: from the records the sweep holds (SPF, DMARC and MX) and the MTA-STS, TLS-RPT
+#: and DKIM readings taken of each such name (``ct_dns.read_mail_subdomains``).
+#: SGE-DMARC-R01 is left out: its email-domain row never fails, because whether a
+#: domain sends bulk mail is not visible, and these rows can only fail.
 _DISCOVERED_JUDGES: dict[str, Callable[[dict, str, dict, str], str]] = {
     "SGE-SPF-01": _judge_spf,
     "SGE-DMARC-01": _judge_dmarc,
     "SGE-DMARC-R05": _judge_sp_tag,
     "SGE-DMARC-R03": _judge_unused_tags,
+    "SGE-DMARC-04": _judge_dmarc_reporting,
+    "SGE-DMARC-R02": _judge_spf_alignment,
+    "SGE-MTASTS-01": _judge_mta_sts,
+    "SGE-MTASTS-02": _judge_mta_sts_mx,
+    "SGE-TLSRPT-01": _judge_tls_rpt,
+    "SGE-DKIM-R01": _judge_dkim_keysize,
+    "SGE-DKIM-R02": _judge_dkim_distinct_keys,
 }
 
 #: The requirements discovered mail-handling sub-domains are read against.

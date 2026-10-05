@@ -201,9 +201,18 @@ hosts:
   Each sweep also writes a row of protocol `subdomain-mail`, named
   `Mail-handling sub-domains of <domain>`, whose `extra.names` holds, for each
   swept name that shows signs of handling mail, its SPF, DMARC and MX records,
-  whether it exists, and why it was judged to handle mail. Only a name whose
+  whether it exists, and why it was judged to handle mail. Each such name is
+  then read as an email domain is: `mta_sts` (the `_mta-sts` TXT record and,
+  when it is published, the policy file, with the same fields as an email
+  domain's `mta-sts` row), `tls_rpt` (the `_smtp._tls` TXT record, its
+  `published` and `rua`), `dkim` (each selector tried that answered: its
+  `selector`, `key_bits`, `public_key` and the name it was read `via`), and
+  `dkim_selectors_tried`. A lookup that did not settle leaves its reading out
+  and is named, with the replies, in the name's `not_read` and in
+  `extra.names_mail_records_not_read`. Only a name whose
   lookups were all answered and whose resolvers agreed is counted either way;
-  the rest are listed in `extra.names_unread` and `extra.names_unsettled`.
+  the rest are listed in `extra.names_unread` and `extra.names_unsettled`, and
+  are not read further.
   The sweep's absence control is trusted when it comes back NXDOMAIN, or when a
   published wildcard answered it with exactly the wildcard's own record and a
   random name under the reserved `invalid` domain came back NXDOMAIN;

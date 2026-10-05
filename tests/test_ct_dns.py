@@ -414,6 +414,95 @@ def test_mail_handling_names_get_a_row_and_unsettled_names_are_counted_neither_w
         "mx_records": ["10 mx.example.net."], "because": "publishes an MX record"}}
 
 
+SUB_DNS = {
+    ("mail.example.com", "MX"): ["10 mx.example.net."],
+    ("_mta-sts.mail.example.com", "TXT"): ['"v=STSv1; id=20300101T000000"'],
+    ("_smtp._tls.mail.example.com", "TXT"): ['"v=TLSRPTv1; rua=mailto:t@example.com"'],
+    ("s1._domainkey.mail.example.com", "TXT"): ['"v=DKIM1; k=rsa; p=' + "A" * 216 + '"'],
+    ("quiet.example.com", "MX"): ["10 mx.example.net."],
+}
+
+
+def read_names(monkeypatch, table: dict, status: dict | None = None,
+               policy: tuple[str, dict] = (POLICY, {"status": 200})) -> list[str]:
+    """Stub DNS and the policy fetch from ``table``; return the URLs fetched."""
+    fetched: list[str] = []
+    monkeypatch.setattr(ct_dns, "dig", lambda n, t="A", short=True: table.get((n, t), []))
+    monkeypatch.setattr(dnsevidence, "run", resolving(table, status))
+    monkeypatch.setattr(ct_dns, "http_get_full",
+                        lambda url, *a, **k: (fetched.append(url), policy)[1])
+    return fetched
+
+
+def test_a_mail_handling_name_is_read_for_mta_sts_tls_rpt_and_dkim(monkeypatch):
+    fetched = read_names(monkeypatch, SUB_DNS)
+    got = ct_dns.mail_subdomain_records("mail.example.com", ["s1", "s2"], dnsfake.RESOLVERS)
+    assert got["not_read"] == {}
+    sts = got["mta_sts"]
+    assert (sts["published"], sts["mode"], sts["mx"]) == (True, "enforce", ["mx1.example.com"])
+    assert (sts["policy_http_status"], sts["policy_certificate_valid"]) == (200, True)
+    assert sts["policy_faults"] == []
+    assert fetched == ["https://mta-sts.mail.example.com/.well-known/mta-sts.txt"]
+    assert got["tls_rpt"]["published"] and got["tls_rpt"]["rua"] == "mailto:t@example.com"
+    assert [(k["selector"], k["key_bits"]) for k in got["dkim"]] == [("s1", 1024)]
+    assert got["dkim_selectors_tried"] == 2
+    # No _mta-sts record: no sender fetches a policy (RFC 8461 §3.1), so neither does this.
+    fetched.clear()
+    quiet = ct_dns.mail_subdomain_records("quiet.example.com", [], dnsfake.RESOLVERS)
+    assert quiet["mta_sts"]["published"] is False and quiet["mta_sts"]["policy_fetched"] is False
+    assert fetched == [] and quiet["tls_rpt"]["published"] is False and quiet["dkim"] == []
+
+
+def test_a_mail_handling_name_lookup_that_did_not_settle_is_recorded_not_read(monkeypatch):
+    read_names(monkeypatch, SUB_DNS, {"_mta-sts.mail.example.com": "SERVFAIL",
+                                      "_smtp._tls.mail.example.com": "timeout"})
+    got = ct_dns.mail_subdomain_records("mail.example.com", [], dnsfake.RESOLVERS)
+    assert "mta_sts" not in got and "tls_rpt" not in got
+    assert got["not_read"] == {"MTA-STS": "_mta-sts.mail.example.com: SERVFAIL",
+                               "TLS-RPT": "_smtp._tls.mail.example.com: no reply"}
+
+
+def _mail_cap(usable: bool = True) -> dict:
+    return {
+        "domain": "example.com", "resolvers": ["192.0.2.53"], "tries": 3,
+        "captured_at": "2030-06-15T00:00:00Z",
+        "control": {"name": "x", "rcode": "NXDOMAIN", "usable": usable},
+        "names_offered": 3, "names_dropped_by_cap": 0,
+        "wildcard_spf": {"name": "*.example.com", "record": "", "rcode": "NXDOMAIN",
+                         "agreed": True},
+        "wildcard_dkim": {"name": "*._domainkey.example.com", "record": "",
+                          "rcode": "NXDOMAIN", "agreed": True},
+        "subdomains": [
+            _sub("www.example.com"),
+            _sub("mail.example.com", enabled=True, spf=False, settled=True,
+                 spf_record="v=spf1 mx -all", mx_records=["10 mx.example.net."],
+                 email_enabled_because="publishes an MX record"),
+            _sub("split.example.com", enabled=True, agreed=False, settled=False),
+        ],
+    }
+
+
+def test_only_settled_mail_handling_names_are_read_and_the_row_carries_the_readings(monkeypatch):
+    read_names(monkeypatch, SUB_DNS, {"_smtp._tls.mail.example.com": "SERVFAIL"})
+    cap = _mail_cap()
+    asked: list[str] = []
+    real = ct_dns.mail_subdomain_records
+    monkeypatch.setattr(ct_dns, "mail_subdomain_records",
+                        lambda name, *a: (asked.append(name), real(name, *a))[1])
+    ct_dns.read_mail_subdomains(cap, ["s1"], dnsfake.RESOLVERS)
+    assert asked == ["mail.example.com"]
+    mail = {a.protocol: a for a in ct_dns.ned_rows("example.com", cap, NOW)}[
+        ct_dns.SUBDOMAIN_MAIL]
+    held = mail.extra["names"]["mail.example.com"]
+    assert held["mta_sts"]["mode"] == "enforce" and held["dkim"][0]["selector"] == "s1"
+    assert mail.extra["names_mail_records_not_read"] == {
+        "mail.example.com": {"TLS-RPT": "_smtp._tls.mail.example.com: SERVFAIL"}}
+    # A sweep whose absence control was not trusted grades nothing, so reads nothing more.
+    asked.clear()
+    ct_dns.read_mail_subdomains(_mail_cap(usable=False), ["s1"], dnsfake.RESOLVERS)
+    assert asked == []
+
+
 def test_only_the_domain_and_names_beneath_it_are_kept(monkeypatch):
     fake, _ = serve({"": [issuance("1", ["widgets.test", "www.widgets.test", "notwidgets.test"],
                                    "2030-01-01T00:00:00Z", "2031-01-01T00:00:00Z")], "1": []})

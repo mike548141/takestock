@@ -18,7 +18,9 @@ Two passive readings, neither of which touches the organisation's hosts:
   profile and sender policies, :func:`sweep_names`) for the denying SPF,
   empty DKIM and DMARC records a name that sends no mail should publish. The swept names that show
   signs of handling mail are kept in a row of their own, with their SPF, DMARC
-  and MX records, to be read against the rules for email domains. A record the
+  and MX records, and are read further for MTA-STS (record and policy file),
+  TLS-RPT and the DKIM keys under each selector tried, to be read against the
+  rules for email domains. A record the
   resolvers settle as missing is written as a row saying so (a measured
   absence); a lookup that does not settle is a failure, and claims nothing
   either way.
@@ -44,6 +46,7 @@ wrong. An endpoint that is configured and does not answer is a failure.
 
 from __future__ import annotations
 
+import concurrent.futures as futures
 import json
 import os
 import re
@@ -687,7 +690,9 @@ def _ned_sweep(domain: str, discovered: set[str], ref_time: datetime | None,
     The names are the transparency read's (``discovered``) and, from
     ``target``, the supplied zone files', the profile's and the scan targets'
     (:func:`sweep_names`). Where the profile attests a zone file complete, the
-    rows carry that attestation (:func:`zone_population`).
+    rows carry that attestation (:func:`zone_population`). The names found
+    handling mail are read for MTA-STS, TLS-RPT and DKIM under the profile's
+    selectors and the common ones (:func:`read_mail_subdomains`).
     """
     held = zone_files()
     sources = sweep_names(domain, discovered, target or {}, held)
@@ -696,7 +701,8 @@ def _ned_sweep(domain: str, discovered: set[str], ref_time: datetime | None,
     note(f"    · sub-domain SPF, DKIM and DMARC records under {domain}"
          f"{' (parked)' if parked else ''} "
          f"({len(beneath)} name(s), 4 corroborated lookups each) …")
-    return _ned_assets(domain, beneath, ref_time, resolvers, parked, sources, population)
+    return _ned_assets(domain, beneath, ref_time, resolvers, parked, sources, population,
+                       selectors=dnsevidence.dkim_selectors(target), note=note)
 
 
 #: Where the supplied zone files are read from: the inbox folder the
@@ -970,6 +976,65 @@ def mta_sts_policy_faults(fetch: dict[str, Any]) -> list[str]:
                                       fields.get("version"), fields.get("max_age"))
 
 
+def mta_sts_reading(domain: str, sts: TxtLookup, fetch_unpublished: bool = True
+                    ) -> dict[str, Any]:
+    """``domain``'s MTA-STS record from a settled lookup, and its policy file.
+
+    The policy is fetched with :func:`mta_sts_fetch`, which keeps the HTTP
+    status, the certificate result and the policy's fields. A sender fetches
+    a policy only when the ``_mta-sts`` TXT record is published (RFC 8461
+    §3.1), so with ``fetch_unpublished`` False an unpublished record is not
+    followed by a fetch, and ``policy_fetched`` says so. ``policy_faults``
+    lists why the fetched policy is not valid (:func:`mta_sts_policy_faults`).
+    """
+    published = any("v=STSv1" in t for t in sts.answers)
+    fetched = published or fetch_unpublished
+    fetch = (mta_sts_fetch(domain) if fetched else
+             {"reachable": None, "http_status": None, "certificate_valid": None,
+              "error": "", "fields": {}})
+    fields = fetch["fields"]
+    return {"published": published, "policy_fetched": fetched,
+            "policy_reachable": fetch["reachable"],
+            "policy_http_status": fetch["http_status"],
+            "policy_certificate_valid": fetch["certificate_valid"],
+            "policy_fetch_error": fetch["error"],
+            "policy_version": str(fields.get("version") or ""),
+            "policy_max_age": str(fields.get("max_age") or ""),
+            "policy_faults": mta_sts_policy_faults(fetch) if fetched else [],
+            "mode": str(fields.get("mode") or ""),
+            "mx": list(fields.get("mx") or []),
+            "record": " ".join(sts.answers),
+            "lookup": sts.evidence()}
+
+
+def dkim_keys(domain: str, selectors: list[str] | None = None) -> list[dict[str, Any]]:
+    """The DKIM key records that answer under each selector tried beneath ``domain``.
+
+    Each ``<selector>._domainkey.<domain>`` is asked for a CNAME first, since a
+    mail platform may publish a key by delegation, then for the TXT record
+    at the name it points to (or at the name itself). Each answer gives
+    ``selector``, ``key_bits`` (None or 0 when no key size could be read),
+    ``public_key`` ("" for the empty key ``p=``) and ``via``, the name the
+    record was read at. A selector that gives no DKIM record is left out:
+    selector names cannot be listed, so silence proves nothing. With no
+    ``selectors`` the common defaults are tried
+    (:data:`takestock.dnsevidence.DEFAULT_DKIM_SELECTORS`).
+    """
+    out = []
+    for sel in selectors if selectors is not None else list(dnsevidence.DEFAULT_DKIM_SELECTORS):
+        base = f"{sel}._domainkey.{domain}"
+        cname = dig(base, "CNAME")
+        target_name = cname[0].rstrip(".") if cname else base
+        rec = " ".join(dig(target_name, "TXT")).replace('"', "")
+        if "p=" not in rec and "DKIM1" not in rec:
+            continue
+        key_match = re.search(r"p=([A-Za-z0-9+/=]*)", rec.replace(" ", ""))
+        out.append({"selector": sel, "key_bits": rsa_key_bits_from_dkim(rec),
+                    "public_key": key_match.group(1) if key_match else "",
+                    "via": target_name})
+    return out
+
+
 def _email_assets(domain: str, ref_time: datetime | None = None,
                   selectors: list[str] | None = None,
                   resolvers: tuple[str, ...] = ("",)) -> tuple[list[CryptoAsset], list[str]]:
@@ -1005,11 +1070,10 @@ def _email_assets(domain: str, ref_time: datetime | None = None,
     if not sts.measured:
         unsettled.append(f"MTA-STS ({sts.name}: {sts.why_unsettled()})")
     else:
-        published = any("v=STSv1" in t for t in sts.answers)
-        fetch = mta_sts_fetch(domain)
-        fields = fetch["fields"]
-        mode, mx_lines = str(fields.get("mode") or ""), list(fields.get("mx") or [])
-        invalid = mta_sts_policy_faults(fetch)
+        reading = mta_sts_reading(domain, sts)
+        published, mode = reading["published"], reading["mode"]
+        mx_lines = reading["mx"]
+        invalid = reading["policy_faults"]
         out.append(CryptoAsset(
             name=f"MTA-STS {domain}", role=roles.email_record("mta-sts", domain),
             protocol="mta-sts",
@@ -1021,16 +1085,7 @@ def _email_assets(domain: str, ref_time: datetime | None = None,
                    + (f"; policy not valid: {'; '.join(invalid)}" if invalid else "")
                    if published
                    else "no _mta-sts TXT record published, so no sender fetches a policy"),
-            extra={"published": published, "policy_reachable": fetch["reachable"],
-                   "policy_http_status": fetch["http_status"],
-                   "policy_certificate_valid": fetch["certificate_valid"],
-                   "policy_fetch_error": fetch["error"],
-                   "policy_version": str(fields.get("version") or ""),
-                   "policy_max_age": str(fields.get("max_age") or ""),
-                   "mode": mode,
-                   "mx": mx_lines,
-                   "record": " ".join(sts.answers),
-                   "lookup": sts.evidence()}, **common))
+            extra={k: v for k, v in reading.items() if k != "policy_faults"}, **common))
 
     tls_rpt = read_txt(f"_smtp._tls.{domain}", resolvers)
     if not tls_rpt.measured:
@@ -1047,23 +1102,15 @@ def _email_assets(domain: str, ref_time: datetime | None = None,
             extra={"record": rpt, "published": rpt_published,
                    "lookup": tls_rpt.evidence()}, **common))
 
-    for sel in selectors if selectors is not None else list(dnsevidence.DEFAULT_DKIM_SELECTORS):
-        base = f"{sel}._domainkey.{domain}"
-        cname = dig(base, "CNAME")
-        target_name = cname[0].rstrip(".") if cname else base
-        rec = " ".join(dig(target_name, "TXT")).replace('"', "")
-        if "p=" not in rec and "DKIM1" not in rec:
-            continue
-        bits = rsa_key_bits_from_dkim(rec)
-        key_match = re.search(r"p=([A-Za-z0-9+/=]*)", rec.replace(" ", ""))
-        public_key = key_match.group(1) if key_match else ""
+    for key in dkim_keys(domain, selectors):
+        sel, bits = key["selector"], key["key_bits"]
         flags = ["weak-key-1024"] if bits and bits <= 1024 else []
         out.append(CryptoAsset(
             name=f"DKIM {sel}.{domain}", role=roles.email_signing_key(domain, sel),
             protocol="dkim",
             signatures=[f"rsa_{bits}"] if bits else [],
-            flags=flags, notes=f"selector={sel}; key~{bits}-bit RSA; via {target_name}",
-            extra={"selector": sel, "key_bits": bits, "public_key": public_key},
+            flags=flags, notes=f"selector={sel}; key~{bits}-bit RSA; via {key['via']}",
+            extra={"selector": sel, "key_bits": bits, "public_key": key["public_key"]},
             **common))
 
     failures: list[str] = ([MailLookupFailure(
@@ -1251,10 +1298,91 @@ def _ned_assets(domain: str, names: list[str],
                 resolvers: tuple[str, ...] = ("",),
                 parked: bool = False,
                 sources: dict[str, list[str]] | None = None,
-                population: dict[str, Any] | None = None) -> list[CryptoAsset]:
-    """The rows summarising a sub-domain sweep (see :func:`ned_rows`)."""
+                population: dict[str, Any] | None = None,
+                selectors: list[str] | None = None,
+                note: Progress | None = None) -> list[CryptoAsset]:
+    """The rows summarising a sub-domain sweep (see :func:`ned_rows`).
+
+    The names the sweep finds handling mail are then read for MTA-STS,
+    TLS-RPT and DKIM under ``selectors`` (:func:`read_mail_subdomains`).
+    """
     cap = dnsevidence.capture_subdomains(domain, names, resolvers, sources=sources)
+    read_mail_subdomains(cap, selectors, resolvers, note)
     return ned_rows(domain, cap, ref_time, parked, population)
+
+
+# What :func:`mail_subdomain_records` reads, as named in its ``not_read`` entries.
+MAIL_SUB_MTA_STS = "MTA-STS"
+MAIL_SUB_TLS_RPT = "TLS-RPT"
+
+
+def mail_subdomain_records(name: str, selectors: list[str] | None = None,
+                           resolvers: tuple[str, ...] = ("",)) -> dict[str, Any]:
+    """The MTA-STS, TLS-RPT and DKIM readings of one sub-domain that handles mail.
+
+    Read as an email domain's are (:func:`_email_assets`): the TXT records at
+    ``_mta-sts.<name>`` (RFC 8461 §3.1) and ``_smtp._tls.<name>`` (RFC 8460
+    §3) asked of every resolver, the policy file fetched over HTTPS from
+    ``mta-sts.<name>`` when the record is published (:func:`mta_sts_reading`),
+    and the DKIM keys under each selector tried (:func:`dkim_keys`; RFC 6376
+    §3.6.2, the DNS binding, puts a key at ``<selector>._domainkey.<name>``).
+
+    Returns ``mta_sts`` and ``tls_rpt`` (each left out when its lookup did not
+    settle), ``dkim`` (the keys that answered), ``dkim_selectors_tried``, and
+    ``not_read``: for each record that was not read, why. A lookup that did
+    not settle claims nothing either way, as for an email domain.
+    """
+    out: dict[str, Any] = {"not_read": {}}
+    sts = read_txt(f"_mta-sts.{name}", resolvers)
+    if sts.measured:
+        reading = mta_sts_reading(name, sts, fetch_unpublished=False)
+        out["mta_sts"] = reading
+    else:
+        out["not_read"][MAIL_SUB_MTA_STS] = f"{sts.name}: {sts.why_unsettled()}"
+    rpt = read_txt(f"_smtp._tls.{name}", resolvers)
+    if rpt.measured:
+        record, published, rua = _tls_rpt_record(rpt.answers)
+        out["tls_rpt"] = {"published": published, "record": record, "rua": rua,
+                          "lookup": rpt.evidence()}
+    else:
+        out["not_read"][MAIL_SUB_TLS_RPT] = f"{rpt.name}: {rpt.why_unsettled()}"
+    tried = selectors if selectors is not None else list(dnsevidence.DEFAULT_DKIM_SELECTORS)
+    out["dkim"] = dkim_keys(name, tried)
+    out["dkim_selectors_tried"] = len(tried)
+    return out
+
+
+def read_mail_subdomains(cap: dict, selectors: list[str] | None = None,
+                         resolvers: tuple[str, ...] = ("",),
+                         note: Progress | None = None,
+                         workers: int = dnsevidence.SWEEP_WORKERS) -> None:
+    """Add :func:`mail_subdomain_records` to each settled mail-handling name in ``cap``.
+
+    ``cap`` is a :func:`takestock.dnsevidence.capture_subdomains` result, so
+    the names are already within the sweep's ceiling
+    (:data:`takestock.dnsevidence.SWEEP_MAX_NAMES`). They are read
+    concurrently, as the sweep's own names are, and each reading is kept on
+    the name as ``mail_records``. A name that did not settle in the sweep is
+    not read: it is counted neither way there either. Nothing is read when the
+    sweep's absence control was not trusted, because nothing in that batch is
+    graded.
+    """
+    if not (cap.get("control") or {}).get("usable", False):
+        return
+    mail = [r for r in cap.get("subdomains") or []
+            if r.get("email_enabled") and r.get("settled", r.get("read") and r.get("agreed"))]
+    if not mail:
+        return
+    tried = selectors if selectors is not None else list(dnsevidence.DEFAULT_DKIM_SELECTORS)
+    if note:
+        note(f"    · MTA-STS, TLS-RPT and DKIM for {len(mail)} mail-handling sub-domain(s) "
+             f"under {cap.get('domain', '')} (2 corroborated lookups, a policy fetch where "
+             f"one is published, and up to {2 * len(tried)} DKIM lookups each) …")
+    with futures.ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+        readings = list(pool.map(
+            lambda r: mail_subdomain_records(r["name"], tried, resolvers), mail))
+    for r, reading in zip(mail, readings, strict=True):
+        r["mail_records"] = reading
 
 
 def ned_rows(domain: str, cap: dict, ref_time: datetime | None = None,
@@ -1264,7 +1392,10 @@ def ned_rows(domain: str, cap: dict, ref_time: datetime | None = None,
 
     Three rows (SPF, DKIM and DMARC) read the names that show no sign of handling
     mail, and a :data:`SUBDOMAIN_MAIL` row holds, in ``extra.names``, the SPF,
-    DMARC and MX records of each name that does, with why it was judged to.
+    DMARC and MX records of each name that does, with why it was judged to,
+    and, where :func:`read_mail_subdomains` read them, its MTA-STS, TLS-RPT and
+    DKIM readings (:func:`mail_subdomain_records`), with any record that was
+    not read listed by name in ``extra.names_mail_records_not_read``.
     Only a settled name (every lookup answered, the resolvers agreeing) is
     counted either way; the others are listed in ``extra.names_unread`` and
     ``extra.names_unsettled``. ``extra.names_nonexistent`` lists the names in
@@ -1403,7 +1534,11 @@ def ned_rows(domain: str, cap: dict, ref_time: datetime | None = None,
                                   "dmarc_record": r.get("dmarc_record", ""),
                                   "mx_records": list(r.get("mx_records") or []),
                                   "exists": r["exists"],
-                                  "because": r.get("email_enabled_because", "")}
+                                  "because": r.get("email_enabled_because", ""),
+                                  **(r.get("mail_records") or {})}
                       for r in mail},
+            "names_mail_records_not_read": {
+                r["name"]: dict(r["mail_records"]["not_read"]) for r in mail
+                if (r.get("mail_records") or {}).get("not_read")},
         }, **common))
     return out

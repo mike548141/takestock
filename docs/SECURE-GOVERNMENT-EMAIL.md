@@ -251,15 +251,47 @@ rules for email domains instead (below).
 
 **Sub-domains that handle mail.** A name beneath an email or parked domain that
 publishes MX, is named in the parent's sender policy, or publishes a sender
-policy authorising senders is, to a receiver, an email domain. takestock grades
-these names against SGE-SPF-01, SGE-DMARC-01 and SGE-DMARC-R05, from the SPF,
-DMARC and MX records the sweep already holds, in rows marked *(discovered)*
-whose subject is *mail-handling sub-domains of* the parent. A name with no DMARC
-record of its own takes the record a receiver's policy discovery finds for it
-(see *DMARC policy discovery* below): its `sp=` for a name that exists, its
-`np=` for one that does not, then its `p=`. Their own DMARC records are also
-read for the tags SGE-DMARC-R03 says not to use. Their MTA-STS, TLS-RPT and DKIM records are not read in this first cut,
-so these rows can fail and never pass, even on an attested zone file.
+policy authorising senders is, to a receiver, an email domain. The framework's
+rules for email domains are written for *"all email sending domains"* (SPF,
+TLS-RPT) and, in the deployment checklist, *"all email enabled domains"*
+(MTA-STS), so takestock reads these names against them, in rows marked
+*(discovered)* whose subject is *mail-handling sub-domains of* the parent:
+
+| Requirement | What is read for each name |
+|---|---|
+| SGE-SPF-01 | Its SPF record, held by the sweep |
+| SGE-DMARC-01, SGE-DMARC-04, SGE-DMARC-R02 | The DMARC record a receiver applies to it: its own, or the one policy discovery finds (see *DMARC policy discovery* below), with its `sp=` for a name that exists, its `np=` for one that does not, then its `p=`; its `rua=`; its `aspf=` |
+| SGE-DMARC-R03, SGE-DMARC-R05 | Its own DMARC record, for the tags the guide says not to use, and for `sp=` |
+| SGE-MTASTS-01, SGE-MTASTS-02 | The TXT record at `_mta-sts.<name>` (RFC 8461 §3.1) and, when it is published, the policy file fetched from `https://mta-sts.<name>/.well-known/mta-sts.txt` with certificate validation. The same checks as for an email domain: a certificate that does not validate, an answer other than 200 or a redirect (§3.3), a missing `version: STSv1` or a bad `max_age` (§3.2) fail; so does a mode other than `enforce`; the policy's `mx:` lines are compared with the name's own MX records |
+| SGE-TLSRPT-01 | The TXT record at `_smtp._tls.<name>` (RFC 8460 §3), which must be `v=TLSRPTv1` with a `rua=` address |
+| SGE-DKIM-R01, SGE-DKIM-R02 | The DKIM key at `<selector>._domainkey.<name>` (RFC 6376 §3.6.2, the DNS binding) under each selector tried: the profile's `discovery.dkim_selectors`, then the common ones, as for an email domain. Key size, and a key published under two selector names |
+
+SGE-DMARC-R01 is not read for these names. It applies only where a domain sends
+no bulk mail, which is not visible from outside, so even an email domain's row
+for it never fails, and these rows can only fail.
+
+What each name costs: two TXT lookups asked of every configured resolver, one
+HTTPS fetch where an `_mta-sts` record is published (a sender fetches no policy
+without one, RFC 8461 §3.1, so neither does takestock), and a CNAME and a TXT
+lookup per DKIM selector tried. The names are those the sweep already read and
+settled, so the sweep's ceiling of names applies; they are read with the sweep's
+concurrency, and the TXT lookups with its tries and timeouts. Nothing is read beneath a domain whose sweep
+control was not trusted, and nothing at all in an observation run with
+`--offline`, which reads no DNS.
+
+A name is counted neither way, and listed with the reason, when what a
+requirement needs was not read: a lookup that did not settle (kept per name in
+`extra.names_mail_records_not_read`), a policy file the instrument could not
+fetch, no key under any selector tried (selector names cannot be listed, so
+silence proves nothing), or a DMARC policy walk through a name that was not
+read. An observation taken before these records were read shows the rows as
+not collected.
+
+These rows can fail and never pass, even on an attested zone file. An attested
+zone file makes the list of *names* complete; it does not make the list of
+*sending domains* complete, because which names send mail is judged from what
+DNS shows (an MX record, a sender policy that authorises senders, the parent's
+sender policy naming the name), and a name can send mail with none of those.
 
 **Which names the sweep reads.** The sweep reads every name the observation
 knows beneath a domain, and keeps with each where it came from
@@ -309,7 +341,8 @@ meets the requirement and all of these hold:
 
 The passing row names the attestation, so a reader sees what the verdict rests
 on. Where a zone file is attested and one of these fails, the row stays not
-measured and says which. The rows for names that handle mail never pass.
+measured and says which. The rows for names that handle mail never pass (see
+*Sub-domains that handle mail* above).
 
 **DMARC policy discovery.** RFC 9989, which obsoletes RFC 7489, replaces RFC
 7489's reliance on a public suffix list with a *DNS Tree Walk* (§4.10). For a name with no DMARC
@@ -384,7 +417,7 @@ without credentials. Three kinds of evidence are available.
 
 | Probe | What it shows | Requirements it can grade |
 |---|---|---|
-| DNS queries | The SPF, DMARC, TLS-RPT and MTA-STS records; DKIM keys at selectors that are already known; the MX records | SPF `-all`; `ptr` use; `spf2.0` records; DMARC `p=`, `sp=`, `np=`, alignment tags, unwanted tags, presence of `rua=`; TLS-RPT record form; MTA-STS record; the non-email-enabled records on every name takestock knows of; DKIM key length on known selectors |
+| DNS queries | The SPF, DMARC, TLS-RPT and MTA-STS records; DKIM keys at selectors that are already known; the MX records; the same for each sub-domain found handling mail | SPF `-all`; `ptr` use; `spf2.0` records; DMARC `p=`, `sp=`, `np=`, alignment tags, unwanted tags, presence of `rua=`; TLS-RPT record form; MTA-STS record; the non-email-enabled records on every name takestock knows of; DKIM key length on known selectors |
 | HTTPS fetch of the MTA-STS policy, with certificate validation | The policy's `version`, `mode`, `max_age` and `mx:` lines, the HTTP status, and whether the policy host presents a valid certificate | MTA-STS in `enforce`, in a policy valid under RFC 8461 §3.2 and §3.3; MX list complete and without wildcards |
 | SMTP connection to each inbound MX, on port 25 | Whether STARTTLS is offered, which TLS versions the server accepts, and its certificate | Whether the domain's receiving servers *accept* TLS below 1.2, or accept mail without TLS |
 

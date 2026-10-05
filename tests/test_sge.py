@@ -675,6 +675,172 @@ def test_mail_handling_names_beneath_a_parked_domain_are_marked_parked_and_disco
         sge.discovered_mail_subject("example.org"), True, True, sge.FAIL)
 
 
+# ── Discovered mail-handling names: MTA-STS, TLS-RPT and DKIM ─────────
+
+def sts_read(mode: str = "enforce", published: bool = True, status: int | None = 200,
+             valid: bool | None = True, mx: list[str] | None = None, **more) -> dict:
+    return {"published": published, "policy_fetched": published,
+            "policy_reachable": status is not None, "policy_http_status": status,
+            "policy_certificate_valid": valid, "policy_fetch_error": "",
+            "policy_version": "STSv1" if status == 200 else "",
+            "policy_max_age": "604800" if status == 200 else "",
+            "mode": mode if status == 200 else "",
+            "mx": (["mx.example.net"] if mx is None else mx) if status == 200 else [],
+            "record": "v=STSv1; id=20300101T000000" if published else "", **more}
+
+
+def read_sub(mta_sts: dict | None = None, rpt: str | None = "v=TLSRPTv1; rua=mailto:t@example.com",
+             keys: list[dict] | None = None, not_read: dict | None = None, **base) -> dict:
+    """A mail-handling name as the sweep row holds it once its mail records were read."""
+    out = {**sub(**base), "not_read": dict(not_read or {}), "dkim": list(keys or []),
+           "dkim_selectors_tried": 11}
+    if mta_sts is not None:
+        out["mta_sts"] = mta_sts
+    if rpt is not None:
+        out["tls_rpt"] = {"published": rpt.startswith("v=TLSRPTv1"), "record": rpt}
+    return out
+
+
+KEY_1024, KEY_2048 = "A" * 216, "B" * 392
+
+
+def test_a_discovered_name_is_graded_for_mta_sts_as_an_email_domain_is():
+    names = {"a.example.com": read_sub(sts_read()),
+             "b.example.com": read_sub(sts_read("testing")),
+             "c.example.com": read_sub(sts_read(published=False, status=None, valid=None)),
+             "d.example.com": read_sub(sts_read(status=None, valid=False)),
+             "e.example.com": read_sub(sts_read(status=404))}
+    row = discovered("SGE-MTASTS-01", [mail_subs(names)])
+    assert (row.status, row.observed) == (sge.FAIL, "4 of 5 short of it") and row.breaches_must
+    assert "b.example.com: its policy mode is testing" in row.reason
+    assert "c.example.com: publishes no _mta-sts TXT record" in row.reason
+    assert "d.example.com: its policy is not valid: the policy host's certificate" in row.reason
+    assert "e.example.com: its policy is not valid: the policy host answered HTTP 404" in row.reason
+    assert "a.example.com:" not in row.reason
+    # A policy the instrument could not fetch is counted neither way, never a breach.
+    lost = {"a.example.com": read_sub(sts_read(status=None, valid=None,
+                                               policy_fetch_error="curl: (28) timed out"))}
+    row = discovered("SGE-MTASTS-01", [mail_subs(lost)])
+    assert (row.status, row.reason) == (sge.NOT_MEASURED, sge.INCONCLUSIVE)
+    assert "could not be fetched from this machine" in row.subject_note
+    # Every name read meeting it is still not a pass.
+    clean = discovered("SGE-MTASTS-01", [mail_subs({"a.example.com": read_sub(sts_read())})])
+    assert (clean.status, clean.reason) == (sge.NOT_MEASURED, sge.NOT_COLLECTED)
+
+
+def test_a_discovered_name_policy_must_list_its_mx_hosts_without_wildcards():
+    names = {"a.example.com": read_sub(sts_read(mx=["mx.example.net"])),
+             "b.example.com": read_sub(sts_read(mx=["other.example.net"])),
+             "c.example.com": read_sub(sts_read(mx=["*.example.net"]))}
+    row = discovered("SGE-MTASTS-02", [mail_subs(names)])
+    assert (row.status, row.observed) == (sge.FAIL, "2 of 3 short of it")
+    assert "b.example.com: its MX host(s) mx.example.net are matched by no mx entry" in row.reason
+    assert "c.example.com: its policy uses the wildcard entry *.example.net" in row.reason
+    # A null MX (RFC 7505) names no host for the policy to list.
+    null = discovered("SGE-MTASTS-02", [mail_subs(
+        {"a.example.com": {**read_sub(sts_read()), "mx_records": ["0 ."]}})])
+    assert null.status == sge.NOT_MEASURED
+    # No valid policy: graded under SGE-MTASTS-01, counted neither way here.
+    none = discovered("SGE-MTASTS-02", [mail_subs(
+        {"a.example.com": read_sub(sts_read(published=False, status=None, valid=None))})])
+    assert none.status == sge.NOT_MEASURED and "graded under SGE-MTASTS-01" in none.subject_note
+
+
+def test_a_discovered_name_needs_tls_reporting_with_an_address():
+    names = {"a.example.com": read_sub(sts_read()),
+             "b.example.com": read_sub(sts_read(), rpt="v=TLSRPTv1;"),
+             "c.example.com": read_sub(sts_read(), rpt="")}
+    row = discovered("SGE-TLSRPT-01", [mail_subs(names)])
+    assert (row.status, row.observed) == (sge.FAIL, "2 of 3 short of it") and row.breaches_must
+    assert "b.example.com: its v=TLSRPTv1 record carries no rua=" in row.reason
+    assert "c.example.com: publishes no _smtp._tls TXT record" in row.reason
+
+
+def test_a_record_whose_lookup_did_not_settle_counts_neither_way_and_says_why():
+    names = {"a.example.com": read_sub(sts_read(), rpt=None, not_read={
+                 "TLS-RPT": "_smtp._tls.a.example.com: SERVFAIL"}),
+             "b.example.com": read_sub(sts_read(), rpt="")}
+    row = discovered("SGE-TLSRPT-01", [mail_subs(names)])
+    assert (row.status, row.observed) == (sge.FAIL, "1 of 1 short of it")
+    assert "1 of the 2 name(s) counted neither way" in row.subject_note
+    assert "a.example.com (its TLS-RPT lookup did not settle" in row.subject_note
+    assert "SERVFAIL" in row.subject_note
+
+
+def test_an_observation_that_never_read_the_records_reads_not_collected():
+    # A sweep row taken before mail-handling names were read holds no such readings.
+    row = discovered("SGE-TLSRPT-01", [mail_subs({"a.example.com": sub()})])
+    assert (row.status, row.reason) == (sge.NOT_MEASURED, sge.NOT_COLLECTED)
+    assert "did not read its TLS-RPT record" in row.subject_note
+    for req_id in ("SGE-MTASTS-01", "SGE-MTASTS-02", "SGE-DKIM-R01", "SGE-DKIM-R02"):
+        old = discovered(req_id, [mail_subs({"a.example.com": sub()})])
+        assert (old.status, old.reason) == (sge.NOT_MEASURED, sge.NOT_COLLECTED), req_id
+
+
+def test_a_discovered_name_dkim_key_is_graded_only_under_a_selector_that_answered():
+    weak = {"selector": "s1", "key_bits": 1024, "public_key": KEY_1024}
+    strong = {"selector": "s2", "key_bits": 2048, "public_key": KEY_2048}
+    names = {"a.example.com": read_sub(sts_read(), keys=[weak, strong]),
+             "b.example.com": read_sub(sts_read(), keys=[strong])}
+    row = discovered("SGE-DKIM-R01", [mail_subs(names)])
+    assert (row.status, row.observed) == (sge.FAIL, "1 of 2 short of it")
+    assert not row.breaches_must and "s1 (1024-bit)" in row.reason
+    # No selector answering is silence: counted neither way, never a pass or a fail.
+    silent = discovered("SGE-DKIM-R01", [mail_subs({"a.example.com": read_sub(sts_read())})])
+    assert (silent.status, silent.reason) == (sge.NOT_MEASURED, sge.INCONCLUSIVE)
+    assert "none of the 11 selector(s) tried answered" in silent.subject_note
+    # The empty key publishes no key to size.
+    blank = {"selector": "s1", "key_bits": None, "public_key": ""}
+    empty = discovered("SGE-DKIM-R01", [mail_subs({"a.example.com": read_sub(sts_read(),
+                                                                              keys=[blank])})])
+    assert empty.status == sge.NOT_MEASURED and "the empty key" in empty.subject_note
+
+
+def test_a_discovered_name_sharing_a_key_with_another_selector_is_a_recommendation_unmet():
+    names = {"a.example.com": read_sub(sts_read(), keys=[
+        {"selector": "s2", "key_bits": 2048, "public_key": KEY_2048}])}
+    row = discovered("SGE-DKIM-R02", [dkim("s1", 2048, KEY_2048), mail_subs(names)])
+    assert row.status == sge.FAIL and not row.breaches_must
+    assert "the selectors s1, s2 publish one public key" in row.reason
+    alone = discovered("SGE-DKIM-R02", [dkim("s1", 2048, KEY_1024), mail_subs(names)])
+    assert alone.status == sge.NOT_MEASURED
+
+
+def test_reporting_and_alignment_on_a_discovered_name_come_from_the_record_applied_to_it():
+    names = {"a.example.com": read_sub(sts_read())}
+    bare = discovered("SGE-DMARC-04", [dmarc("v=DMARC1; p=reject"), mail_subs(names)])
+    assert bare.status == sge.FAIL and bare.breaches_must
+    assert "the organisational domain's DMARC record" in bare.reason
+    reported = discovered("SGE-DMARC-04", [dmarc("v=DMARC1; p=reject; rua=mailto:d@example.com"),
+                                           mail_subs(names)])
+    assert reported.status == sge.NOT_MEASURED
+    # The name's own record, when it has one, is the one read.
+    own = {"a.example.com": read_sub(sts_read(), dmarc="v=DMARC1; p=reject; aspf=s")}
+    assert discovered("SGE-DMARC-R02", [dmarc("v=DMARC1; p=reject; aspf=s"),
+                                        mail_subs(own)]).status == sge.NOT_MEASURED
+    relaxed = discovered("SGE-DMARC-R02", [dmarc("v=DMARC1; p=reject"), mail_subs(names)])
+    assert relaxed.status == sge.FAIL and not relaxed.breaches_must
+    assert "by omitting the tag" in relaxed.reason
+    # A walk through a name that was not read settles neither.
+    sweep = walked_sweep({}, [], intermediate_unsettled=["mail.example.com"])
+    deep = {"a.mail.example.com": read_sub(sts_read())}
+    row = discovered("SGE-DMARC-04", [dmarc("v=DMARC1; p=reject"), sweep, mail_subs(deep)])
+    assert (row.status, row.reason) == (sge.NOT_MEASURED, sge.INCONCLUSIVE)
+
+
+def test_an_attested_complete_zone_does_not_let_a_mail_handling_row_pass():
+    names = {"a.example.com": read_sub(sts_read())}
+    complete = mail_subs(names)
+    complete["extra"]["population"] = {"zone": D, "complete": True, "zones": [D],
+                                       "attested_by": "Example Widgets Ltd, DNS administrator",
+                                       "attested_on": "2030-01-31"}
+    for req_id in ("SGE-SPF-01", "SGE-MTASTS-01", "SGE-TLSRPT-01"):
+        row = discovered(req_id, [dmarc("v=DMARC1; p=reject"), complete])
+        assert row.status == sge.NOT_MEASURED, req_id
+        assert "a complete list of names is not a complete list of sending domains" in (
+            row.evidence)
+
+
 # ── TLS on the mail path ──────────────────────────────────────────────
 
 def gateway(host: str, versions: list[str], flags: list[str] | None = None,
