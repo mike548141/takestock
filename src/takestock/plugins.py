@@ -2,8 +2,9 @@
 
 A **plug-in** lives in its own package, outside takestock. It declares itself
 with a :class:`Plugin`: a name, a **kind** (one of the record schemas in
-:mod:`takestock.plugin_kinds`, or one of the two kinds that write no rows),
-the input it reads, and a **step** function. takestock calls the step during
+:mod:`takestock.plugin_kinds`, the ``general`` kind for finished rows that fit
+no schema, or one of the two kinds that write no rows), the input it reads,
+and a **step** function. takestock calls the step during
 an observation with a :class:`Context` carrying what a built-in ingest
 collector gets, checks what comes back, and turns valid records into graded
 rows.
@@ -24,9 +25,9 @@ An absent plug-in never reads as a clean result.
 **What a step may return** is a :class:`StepResult` (or a plain list of
 records). Records are mappings checked against the kind's fields; a plug-in
 may also return finished :class:`~takestock.model.CryptoAsset` rows, checked
-against the kind's row constraints. Invalid records are left out and counted
-in a gap. A step that raises becomes a gap carrying the error; it never stops
-the observation.
+against the kind's row constraints. A ``general`` plug-in returns finished
+rows only. Invalid records are left out and counted in a gap. A step that
+raises becomes a gap carrying the error; it never stops the observation.
 
 **When steps run.** Ordinary steps run after the built-in collectors' early
 steps; ``late`` steps run after every built-in step and see the rows already
@@ -89,7 +90,11 @@ class Plugin:
     the plug-in's own reference files, found in ``data_dir`` (default: the
     directory of the module defining ``step``). ``summarise``, when given, is
     called after grading with the plug-in's own graded rows and returns its
-    contribution to ``summary.json``.
+    contribution to ``summary.json``. ``gap_prefix`` (default true) starts
+    each gap the step returns with ``plug-in `<name>`:``; false files the
+    step's gaps exactly as written, for a plug-in whose gap sentences are
+    written for the report's reader. Gaps takestock writes about the plug-in
+    always name it.
     """
 
     name: str
@@ -101,6 +106,7 @@ class Plugin:
     data_files: tuple[str, ...] = ()
     data_dir: str = ""
     summarise: Summarise | None = None
+    gap_prefix: bool = True
 
     def __post_init__(self) -> None:
         if not isinstance(self.name, str) or not _NAME.match(self.name):
@@ -113,6 +119,8 @@ class Plugin:
             raise TypeError(f"plug-in {self.name!r}: step must be callable")
         if self.summarise is not None and not callable(self.summarise):
             raise TypeError(f"plug-in {self.name!r}: summarise must be callable")
+        if not isinstance(self.gap_prefix, bool):
+            raise TypeError(f"plug-in {self.name!r}: gap_prefix must be true or false")
         if self.kind == plugin_kinds.ANNOTATION and self.late:
             raise ValueError(f"plug-in {self.name!r}: an annotation runs after grading; it "
                              "cannot also be late")
@@ -351,6 +359,13 @@ def resolve(target: Mapping) -> tuple[list[Declared], list[str]]:
 
 # ── running them ──
 
+def _as_gap(g: Any) -> coverage.Gap:
+    """A plug-in's gap exactly as written, as a classified Gap."""
+    if isinstance(g, coverage.Gap):
+        return g
+    return coverage.gap(coverage.COULD_NOT_TEST, str(g), nature=coverage.NATURE_UNSTATED)
+
+
 def _prefixed(name: str, g: Any) -> coverage.Gap:
     """A plug-in's gap, with the plug-in named, as a classified Gap."""
     if not isinstance(g, coverage.Gap):
@@ -382,9 +397,11 @@ def _not_run_gap(d: Declared, why: str, kind: str, missing_input: bool = False) 
 
 
 def _invalid_gap(name: str, kind: str, bad: int, total: int, problems: list[str]) -> coverage.Gap:
+    what = ("row(s) did not meet the constraints every row shares" if kind == plugin_kinds.GENERAL
+            else "record(s) did not match the kind's schema")
     return coverage.gap(
         coverage.EXTENT_UNKNOWN,
-        f"plug-in `{name}` ({kind}): {bad} of {total} record(s) did not match the kind's schema "
+        f"plug-in `{name}` ({kind}): {bad} of {total} {what} "
         f"and were left out. First problems: {'; '.join(problems[:PROBLEM_SAMPLE])}",
         impact_kind=coverage.NARROWS_CONFIDENCE,
         impact=("Whatever those records described is missing from this observation. Every "
@@ -512,8 +529,9 @@ class Host:
             self.gaps.append(_not_run_gap(d, rec.reason, ctx.kind))
             return None
         rec.status = "ran"
+        own = d.plugin is None or d.plugin.gap_prefix
         for g in out.gaps:
-            self.gaps.append(_prefixed(d.name, g))
+            self.gaps.append(_prefixed(d.name, g) if own else _as_gap(g))
         problem = _json_ok(out.summary) if isinstance(out.summary, dict) else "not a mapping"
         if problem:
             self.gaps.append(_problem_gap(d.name, "its summary was not written", [problem]))
@@ -551,7 +569,11 @@ class Host:
         finished: list[CryptoAsset] = []
         problems: list[str] = []
         bad = 0
+        mappings = 0
         for n, item in enumerate(out.records, 1):
+            if p.kind == plugin_kinds.GENERAL and not isinstance(item, CryptoAsset):
+                mappings += 1
+                continue
             if isinstance(item, CryptoAsset):
                 found = plugin_kinds.check_asset(p.kind, item)
                 if found:
@@ -567,12 +589,21 @@ class Host:
             else:
                 records.append(clean)
         rec.records = len(out.records)
-        rec.invalid = bad
-        rec.problems = problems[:PROBLEM_SAMPLE]
+        rec.invalid = bad + mappings
+        refused = [f"{mappings} record mapping(s): the general kind has no record schema"]
+        rec.problems = ((refused if mappings else []) + problems)[:PROBLEM_SAMPLE]
+        if mappings:
+            self.gaps.append(_problem_gap(
+                p.name, "a general plug-in returns finished rows only, so its record mappings "
+                "were not written", [f"{mappings} record mapping(s) returned"]))
         if bad:
-            self.gaps.append(_invalid_gap(p.name, p.kind, bad, len(out.records), problems))
+            self.gaps.append(_invalid_gap(p.name, p.kind, bad, len(out.records) - mappings,
+                                          problems))
         if not out.records:
-            self.gaps.append(plugin_kinds.scope_gap(p.name, p.kind, rec.input or "its input"))
+            # A general plug-in says for itself what an empty result means, and
+            # a step that returned a gap of its own has already said it.
+            if p.kind != plugin_kinds.GENERAL and not out.gaps:
+                self.gaps.append(plugin_kinds.scope_gap(p.name, p.kind, rec.input or "its input"))
             return []
         build = plugin_kinds.Build(
             plugin=p.name, kind=p.kind, title=p.title, policy=self.policy,

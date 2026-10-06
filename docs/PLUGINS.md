@@ -19,7 +19,8 @@ translates its export into records and stops there.
 - **Plug-in**: one reader, declared with a `Plugin` object.
 - **Kind**: the sort of evidence a plug-in reads. Each row kind has a fixed
   **record schema** (the fields a record may carry), listed
-  [below](#the-kinds).
+  [below](#the-kinds). The [`general`](#general) kind has none: its plug-ins
+  return finished rows.
 - **Record**: one mapping of field names to values, which a plug-in returns
   for each thing it read.
 - **Row**, **coverage gap**: as in [`ARCHITECTURE.md`](ARCHITECTURE.md#terms-used-here).
@@ -122,7 +123,7 @@ from takestock.plugins import Context, Plugin, StepResult
 | `Plugin` field | Holds |
 |---|---|
 | `name` | Lower-case letters, digits, `-` and `_`, starting with a letter. It is the `source` of the rows the plug-in writes, unless the kind fixes one |
-| `kind` | One of the [row kinds](#the-kinds), or `coverage-check`, or `annotation` |
+| `kind` | One of the [row kinds](#the-kinds), or [`general`](#general), `coverage-check` or `annotation` |
 | `step` | The function takestock calls: `step(ctx: Context)` |
 | `input` | The default input path (`inbox/<file>`), or `""` when the step reads none |
 | `late` | `True` to run after every built-in collector, seeing their rows |
@@ -130,6 +131,7 @@ from takestock.plugins import Context, Plugin, StepResult
 | `data_files` | The plug-in's own reference files, by plain file name |
 | `data_dir` | Where those files are; by default the directory of the module defining `step` |
 | `summarise` | Optional: `summarise(ctx, rows)` called after grading with the plug-in's own graded rows, returning a mapping for `summary.json` |
+| `gap_prefix` | `True` (the default) starts each gap the step returns with ``plug-in `<name>`:``. `False` files the step's gaps exactly as written, for a plug-in whose gap sentences are written for the report's reader rather than the tool's operator |
 
 A malformed declaration (an unknown kind, a name with spaces, a data file
 given as a path) raises when the plug-in's module is imported. takestock
@@ -160,7 +162,7 @@ A `StepResult`, or a plain list of records:
 
 | `StepResult` field | Holds |
 |---|---|
-| `records` | One mapping per thing read, with the kind's fields. A finished `CryptoAsset` is accepted too (see below) |
+| `records` | One mapping per thing read, with the kind's fields. A finished `CryptoAsset` is accepted too (see below), and is the only thing a `general` plug-in returns |
 | `gaps` | What the plug-in could not read, made with `takestock.coverage.gap(...)`. A plain string is filed as a could-not-test gap |
 | `summary` | A mapping written under the plug-in's name in `summary.json`. It must be expressible as JSON |
 | `annotations` | For the `annotation` kind only: `{bom_ref: {key: value}}` |
@@ -262,7 +264,13 @@ Two more gaps record a plug-in that ran but returned less than it should:
   required field, a value outside a choice). The valid records are written;
 - a row kind that returned no records at all is a gap, because an empty
   result may be an empty export, a filter, or a layout the plug-in does not
-  read.
+  read. That gap is not added when the step returned a gap of its own, which
+  has already said why nothing came back, nor for a `general` plug-in, which
+  says for itself what an empty result means.
+
+Whatever `gap_prefix` says, the gaps takestock writes about a plug-in (not
+run, records refused, a summary not written) always name it, and
+`summary.json["plugins"]` always holds its record.
 
 ### What `summary.json` records
 
@@ -554,6 +562,37 @@ upgrade in band is flagged `unverified-encryption:<protocol>`, a coverage
 question rather than a finding; an encrypted one stays unknown until a probe
 grades it. An out-of-band management port seen only from the host is
 recorded with its exposure unmeasured.
+
+### `general`
+
+Evidence that fits none of the record schemas above, such as a certificate
+inventory, a configuration audit, or a key store listing. A `general` plug-in has no record schema, so
+it builds its rows itself and returns them as finished `CryptoAsset` rows. It
+may be ordinary or `late`.
+
+Each row is held to what every row must satisfy, whatever its kind: a name, a
+verdict from the verdict order (`weak`, `acceptable`, `strong`, `pqc`,
+`unknown` or `n/a`), and an `extra` expressible as JSON. Any data state and
+protocol are accepted. A row that fails is left out and counted in a gap, as
+for any kind. The rows that pass are stamped and graded like every other
+row: `source` becomes the plug-in's name, and the grader reads the row's
+algorithms against the baseline.
+
+A record mapping returned under `general` is refused, counted under
+`invalid`, and named in one gap, because there is no schema to build a row
+from. An empty result is not a gap by itself: a `general` plug-in that found
+nothing, and wants a reader to know why, returns a gap saying so.
+
+```python
+def read(ctx: Context) -> StepResult:
+    rows = [CryptoAsset(name=f"Configuration audit {device}", data_state="configuration",
+                        protocol="config-audit", host=device, extra={"compliant": ok})
+            for device, ok in audit_results(ctx.input)]
+    return StepResult(records=rows)
+
+PLUGIN = Plugin(name="example-config-audit", kind="general", step=read,
+                input="inbox/config-audit.csv", title="Configuration audit export (example tool)")
+```
 
 ## Making a new kind
 

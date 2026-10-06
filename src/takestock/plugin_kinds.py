@@ -10,7 +10,9 @@ reads.
 
 A plug-in may instead return finished rows. :func:`check_asset` holds those to
 the kind's row constraints (the data states and protocols the kind's rows use,
-and any ``extra`` keys downstream readers rely on).
+and any ``extra`` keys downstream readers rely on). The ``general`` kind has
+no record schema: its plug-ins return finished rows only, of any data state,
+held to the constraints every row shares.
 
 The schema file is the contract, so it is always read from the package; a
 workspace's ``data/`` copy is never consulted.
@@ -41,6 +43,8 @@ COMMON_FIELDS = ("collected_on",)
 #: Fields starting with this are the plug-in's own, copied into ``extra`` unchanged.
 CUSTOM_PREFIX = "x_"
 
+#: A kind whose step returns finished rows only, of any data state, with no record schema.
+GENERAL = "general"
 #: A kind whose step returns no rows, only coverage gaps; it always runs late.
 COVERAGE_CHECK = "coverage-check"
 #: A kind whose step adds ``extra`` keys to rows other collectors wrote.
@@ -96,7 +100,7 @@ def row_kinds() -> tuple[str, ...]:
 
 def kinds() -> tuple[str, ...]:
     """Every kind a plug-in may declare."""
-    return row_kinds() + (COVERAGE_CHECK, ANNOTATION)
+    return row_kinds() + (GENERAL, COVERAGE_CHECK, ANNOTATION)
 
 
 def spec(kind: str) -> dict:
@@ -109,6 +113,8 @@ def spec(kind: str) -> dict:
 
 def fixed_source(kind: str) -> str:
     """The ``source`` every row of ``kind`` carries, or "" when it is the plug-in's name."""
+    if kind == GENERAL:
+        return ""
     return str(spec(kind).get("source") or "")
 
 
@@ -240,10 +246,15 @@ def validate(kind: str, record: Any) -> tuple[dict | None, list[str]]:
 
 
 def check_asset(kind: str, asset: Any) -> list[str]:
-    """Problems with a finished row a plug-in returned for ``kind``; [] when it is acceptable."""
+    """Problems with a finished row a plug-in returned for ``kind``; [] when it is acceptable.
+
+    Every row needs a name, a verdict from the verdict order, and an ``extra``
+    expressible as JSON. A row kind adds its own constraints; the ``general``
+    kind adds none.
+    """
     if not isinstance(asset, CryptoAsset):
         return [f"expected a record or a CryptoAsset, not {type(asset).__name__}"]
-    row = spec(kind).get("row") or {}
+    row = {} if kind == GENERAL else (spec(kind).get("row") or {})
     problems = []
     if not str(asset.name or "").strip():
         problems.append("the row has no name")

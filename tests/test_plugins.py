@@ -579,6 +579,88 @@ def test_an_empty_result_is_not_a_clean_one(workspace, monkeypatch):
     assert _gaps(result, "returned no records")
 
 
+def test_a_step_that_explains_an_empty_result_gets_no_second_gap(workspace, monkeypatch):
+    _install(monkeypatch, _plugin("explained", step=lambda ctx: StepResult(
+        gaps=["the export held no volumes for the selected sites"])))
+    result = _observe(_target("explained"))
+    assert _gaps(result, "plug-in `explained`: the export held no volumes")
+    assert not _gaps(result, "returned no records")
+
+
+# ── the general kind ──
+
+def _general_row(name: str = "Configuration audit device-01.example.test",
+                 **over: object) -> CryptoAsset:
+    fields: dict = {"name": name, "data_state": "configuration", "protocol": "config-audit",
+                    "host": "device-01.example.test", "extra": {"compliant": True}}
+    fields.update(over)
+    return CryptoAsset(**fields)
+
+
+def test_a_general_plugin_writes_finished_rows_of_any_data_state(workspace, monkeypatch):
+    rows = [_general_row(), _general_row("Key store device-02.example.test", data_state="key-store",
+                                         protocol="", symmetric=["aes256_gcm"],
+                                         source="netdev"),
+            _general_row("", data_state="inventory"),
+            _general_row("Bad verdict", verdict="excellent"),
+            {"device": "device-03.example.test"}]
+    _install(monkeypatch, _plugin("audit", kind=plugin_kinds.GENERAL, records=rows))
+    result = _observe(_target("audit"))
+    written = {a.name: a for a in _rows(result, "audit")}
+    assert set(written) == {"Configuration audit device-01.example.test",
+                            "Key store device-02.example.test"}
+    assert written["Key store device-02.example.test"].verdict == "strong"
+    assert written["Key store device-02.example.test"].extra["plugin"] == "audit"
+    assert written["Configuration audit device-01.example.test"].source_class == "private"
+    record = result.summary["plugins"]["audit"]
+    assert (record["records"], record["rows"], record["invalid"]) == (5, 2, 3)
+    assert "general kind has no record schema" in record["problems"][0]
+    assert _gaps(result, "returns finished rows only, so its record mappings were not written")
+    gap = _gaps(result, "2 of 4 row(s) did not meet the constraints every row shares")[0]
+    assert "the row has no name" in gap and "verdict 'excellent'" in gap
+
+
+def test_an_empty_general_result_is_not_a_gap_by_itself(workspace, monkeypatch):
+    _install(monkeypatch, _plugin("quiet", kind=plugin_kinds.GENERAL, records=[]))
+    result = _observe(_target("quiet"))
+    assert result.summary["plugins"]["quiet"]["status"] == "ran"
+    assert not _gaps(result, "`quiet`")
+
+
+def test_general_is_a_kind_with_no_record_schema():
+    assert plugin_kinds.GENERAL in plugin_kinds.kinds()
+    assert plugin_kinds.GENERAL not in plugin_kinds.row_kinds()
+    assert plugin_kinds.fixed_source(plugin_kinds.GENERAL) == ""
+    assert plugin_kinds.check_asset(plugin_kinds.GENERAL, _general_row(data_state="anything")) == []
+    assert "### `general`" in DOC.read_text()
+
+
+# ── gaps as the step wrote them ──
+
+def test_gap_prefix_false_files_the_steps_gaps_as_written(workspace, monkeypatch):
+    from takestock import coverage
+    written = coverage.gap(coverage.EXTENT_UNKNOWN, "Two sites supplied no export",
+                           impact_kind=coverage.NARROWS_CONFIDENCE, impact="Those sites are unread.",
+                           nature=coverage.NO_DATA)
+    _install(monkeypatch,
+             _plugin("plain", step=lambda ctx: StepResult(records=[_disk()],
+                                                          gaps=[written, "One volume was unreadable"]),
+                     gap_prefix=False),
+             _plugin("absent", input="inbox/absent.csv", gap_prefix=False))
+    result = _observe(_target("plain", "absent"))
+    texts = result.summary["gaps"]
+    assert "Two sites supplied no export" in texts and "One volume was unreadable" in texts
+    assert not _gaps(result, "plug-in `plain`")
+    assert _gaps(result, "plug-in `absent` (endpoint-encryption) not run")
+    assert result.summary["plugins"]["plain"]["status"] == "ran"
+
+
+def test_gap_prefix_is_true_or_false():
+    assert _plugin("p").gap_prefix is True
+    with pytest.raises(TypeError, match="gap_prefix"):
+        _plugin("p", gap_prefix="no")
+
+
 # ── schema validation inside an observation ──
 
 def test_invalid_records_are_a_gap_and_valid_ones_are_written(workspace, monkeypatch):
