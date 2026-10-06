@@ -7,7 +7,12 @@ An observation is a directory ``observations/<UTC stamp>/`` in the workspace
 * ``assets.json``: every row, graded and placed;
 * ``summary.json``: counts, readings across the estate, coverage gaps, any
   collector failures, the findings, and each row's dispensation state (see
-  :mod:`takestock.dispensation`), assessed on the observation's date;
+  :mod:`takestock.dispensation`), assessed on the observation's date. Its
+  ``observation`` block records how the run went: which collectors ran, were
+  skipped (with the reason) or failed (``failed_collectors``), and
+  ``dispositions_digest``, a hash of the disposition set the rows were
+  judged under (:func:`takestock.disposition.set_digest`), so a later report
+  re-applying dispositions can tell whether they are still that set;
 * ``bom.cdx.json``: the rows as a CycloneDX 1.6 cryptographic bill of
   materials. It is written last, so its presence marks a finished run.
 
@@ -59,7 +64,7 @@ from . import (
     sge,
 )
 from .collectors import ct_dns
-from .disposition import load_dispositions_for_target
+from .disposition import load_dispositions_for_target, set_digest
 from .exits import EXIT_CLEAN, EXIT_ERROR, EXIT_FINDINGS
 from .model import CryptoAsset, dump_assets, to_cyclonedx, write_json
 from .policy import Policy
@@ -114,6 +119,8 @@ class Run:
     :func:`observe` uses, without grading or writing anything. ``raw`` is
     where the collectors keep their transcripts; ``observations`` is where
     earlier observations are looked for (see :mod:`takestock.ctcache`).
+    ``failed`` names, once each, the collectors that reported a real failure
+    or stopped with an error; their messages are in ``failures``.
     """
 
     target: dict
@@ -125,6 +132,7 @@ class Run:
     failures: list[str] = field(default_factory=list)
     ran: list[str] = field(default_factory=list)
     skipped: dict[str, str] = field(default_factory=dict)
+    failed: list[str] = field(default_factory=list)
     ct_deferral: ct_dns.CTDeferral | None = None
     ct_failures: list[str] = field(default_factory=list)
     ct_reused: list[ctcache.Cached] = field(default_factory=list)
@@ -389,11 +397,14 @@ def run_step(run: Run, name: str) -> StepOutput:
     except Exception as exc:  # noqa: BLE001 - one broken collector must not end the run
         failed = f"{name}: stopped with {type(exc).__name__}: {exc}"
         run.failures.append(failed)
+        _mark_failed(run, name)
         return [], [failed], []
     real, unconfigured = split_failures(list(failures))
     added = list(gaps) + unconfigured
     run.assets += rows
     run.failures += real
+    if real:
+        _mark_failed(run, name)
     run.gaps += added
     if name not in run.skipped:
         run.ran.append(name)
@@ -419,7 +430,14 @@ def resume_ct(run: Run) -> StepOutput:
     run.assets += rows
     run.gaps += gaps
     run.failures += failures
+    if failures:
+        _mark_failed(run, "ct_dns")
     return list(rows), failures, gaps
+
+
+def _mark_failed(run: Run, name: str) -> None:
+    if name not in run.failed:
+        run.failed.append(name)
 
 
 def _skip_gaps(run: Run) -> list[coverage.Gap]:
@@ -583,6 +601,8 @@ def observe(target: dict, options: Options | None = None) -> Result:
             "organisation": _organisation(target), "target": rel,
             "scan": options.scan, "offline": options.offline,
             "collectors_run": run.ran, "collectors_skipped": run.skipped,
+            "failed_collectors": run.failed,
+            "dispositions_digest": set_digest(rules),
         },
         "complete": complete,
         "collector_failures": run.failures,

@@ -149,3 +149,47 @@ def test_a_completion_marker_is_a_plain_file_name(name, monkeypatch):
     monkeypatch.setattr(ctcache, "_registered_markers", [])
     with pytest.raises(ValueError):
         ctcache.register_completion_marker(name)
+
+
+def _archive_one(root: Path) -> Path:
+    obs = _observation(root, "2030-06-01T0000Z")
+    (obs / "finished.json").write_text(json.dumps({"done": True}))
+    _observation(root, "2030-06-15T1200Z")
+    (root / "latest").symlink_to("2030-06-15T1200Z")
+    done, kept = obsarchive.archive_past(root, say=lambda _line: None)
+    assert done == ["2030-06-01T0000Z"] and kept == []
+    return root / obsarchive.UNPACKED / "2030-06-01T0000Z"
+
+
+def test_a_registered_light_file_is_stored_and_unpacked_with_the_results(tmp_path, monkeypatch):
+    monkeypatch.setattr(obsarchive, "_registered_light", [])
+    assert not obsarchive.is_light("finished.json")
+    obsarchive.register_light_file("finished.json", "finished.json")
+    assert obsarchive.light_files() == ("bom.cdx.json", "assets.json", "summary.json",
+                                        "finished.json")
+    assert obsarchive.is_light("finished.json")
+    _archive_one(tmp_path)
+    entry = obsarchive.read_manifest(tmp_path)["archives"][0]
+    paths = [m["path"] for m in entry["members"]]
+    assert paths.index("finished.json") < paths.index("notes.txt")
+    (unpacked,) = [p for p in obsarchive.observations(tmp_path) if p.name == "2030-06-01T0000Z"]
+    assert (unpacked / "finished.json").is_file()
+    assert not (unpacked / "notes.txt").exists() and not (unpacked / "evidence").exists()
+
+
+def test_a_light_file_registered_after_archiving_is_still_found(tmp_path, monkeypatch):
+    monkeypatch.setattr(obsarchive, "_registered_light", [])
+    home = _archive_one(tmp_path)
+    obsarchive.observations(tmp_path)
+    assert not (home / "finished.json").exists()  # unpacked before it was registered
+    obsarchive.register_light_file("finished.json")
+    (unpacked,) = [p for p in obsarchive.observations(tmp_path) if p.name == "2030-06-01T0000Z"]
+    assert (unpacked / "finished.json").is_file()
+    assert not (unpacked / "evidence").exists()
+
+
+@pytest.mark.parametrize("name", ["", "raw/finished.json", ".."])
+def test_a_light_file_is_a_plain_file_name(name, monkeypatch):
+    monkeypatch.setattr(obsarchive, "_registered_light", [])
+    with pytest.raises(ValueError):
+        obsarchive.register_light_file(name)

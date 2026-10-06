@@ -14,7 +14,9 @@ archive on demand into ``observations/.unpacked/``.
 Members are stored in three tiers, lightest first, so a reader wanting only
 the bill of materials stops early: the top-level results and the raw
 certificate-transparency answers, then everything else, then the bulky
-evidence and register directories.
+evidence and register directories. A tool that runs takestock's collectors
+inside its own observations, and names a finished-run file of its own, adds
+it to the first tier with :func:`register_light_file`.
 """
 
 from __future__ import annotations
@@ -41,10 +43,33 @@ _LIGHT = ("bom.cdx.json", "assets.json", "summary.json")
 _LIGHT_RAW = "raw/ct-"
 _HEAVY = ("evidence/", "cmdb/")
 
+_registered_light: list[str] = []
+
+
+def register_light_file(*names: str) -> None:
+    """Add further top-level file names to the first tier.
+
+    For a tool that writes its finished-run results under other names: once
+    registered, such a file is stored with the lightest members and unpacked
+    with them, so a reader of archived observations finds it without
+    unpacking the rest. Registering the same name twice has no further
+    effect.
+    """
+    for name in names:
+        if not name or "/" in name or name in (".", ".."):
+            raise ValueError(f"a light file is a plain file name, not {name!r}")
+        if name not in _LIGHT and name not in _registered_light:
+            _registered_light.append(name)
+
+
+def light_files() -> tuple[str, ...]:
+    """Every top-level file in the first tier: the built-in ones, then registered ones."""
+    return (*_LIGHT, *_registered_light)
+
 
 def is_light(rel: str) -> bool:
     """True for members in the first tier: results and raw transparency answers."""
-    return rel in _LIGHT or rel.startswith(_LIGHT_RAW)
+    return rel in light_files() or rel.startswith(_LIGHT_RAW)
 
 
 def _tier(rel: str) -> int:
@@ -235,12 +260,19 @@ def extract(root: Path, stamp: str, dest: Path, *, upto: int = 2) -> Path:
     path = archive_file(root, entry)
     if path is None:
         raise FileNotFoundError(f"{entry['archive']} is not on this machine")
+    # Members are stored lightest tier first, so the read ends at the first
+    # heavier one. A file registered as light after its archive was written
+    # sits further in, so the read goes on, unpacking nothing more, until
+    # every member the tier asks for has been found.
+    wanted = {m["path"] for m in entry["members"] if _tier(m["path"]) <= upto}
     with tarfile.open(path, "r:gz") as tar:
         for info in tar:
             rel = info.name.removeprefix(prefix)
-            # Members are stored lightest tier first, so the first heavier one ends the read.
             if _tier(rel) > upto:
-                break
+                if not wanted:
+                    break
+                continue
+            wanted.discard(rel)
             tar.extract(info, dest, filter="tar")
             got = dest / stamp / rel
             if info.isfile() and _sha256(got) != hashes.get(rel):
@@ -253,12 +285,22 @@ def unpacked(root: Path, stamp: str, upto: int = 0) -> Path:
     home = root / UNPACKED
     got = home / stamp
     marker = got / _DONE
-    if marker.is_file() and int(marker.read_text() or 0) >= upto:
+    if (marker.is_file() and int(marker.read_text() or 0) >= upto
+            and not _light_missing(root, stamp, got)):
         return got
     shutil.rmtree(got, ignore_errors=True)
     extract(root, stamp, home, upto=upto)
     marker.write_text(str(upto))
     return got
+
+
+def _light_missing(root: Path, stamp: str, got: Path) -> bool:
+    """True when an earlier unpacking lacks a registered light file the archive holds."""
+    if not _registered_light:
+        return False
+    entry = entry_for(read_manifest(root), stamp) or {"members": []}
+    held = {m["path"] for m in entry["members"]}
+    return any(name in held and not (got / name).exists() for name in _registered_light)
 
 
 def observations(root: Path) -> list[Path]:

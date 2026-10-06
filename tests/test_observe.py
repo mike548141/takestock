@@ -95,6 +95,11 @@ def test_an_offline_observation_reads_only_the_supplied_exports(workspace, monke
     sources = {r["source"] for r in json.loads((obs / "assets.json").read_text())}
     assert {"ssh_audit", "dns_zones", "netdev", "winrm_config", "software_inventory"} <= sources
     assert s["complete"] is False and s["collector_failures"] == []
+    assert s["observation"]["failed_collectors"] == []
+    from takestock.disposition import load_dispositions_for_target, set_digest
+    digest = s["observation"]["dispositions_digest"]
+    assert digest.startswith("sha256:")
+    assert digest == set_digest(load_dispositions_for_target(config.load_target("example-widgets")))
 
     rows = {r["name"]: r for r in json.loads((obs / "assets.json").read_text())}
     legacy = rows["SSH build-01.example.test:22"]
@@ -194,7 +199,9 @@ def test_a_collector_that_raises_is_a_failure_not_a_crash(workspace, monkeypatch
     result = observe.observe(config.load_target("example-widgets"), opts)
     assert result.failures == ["ssh_audit_inbox: stopped with RuntimeError: synthetic defect"]
     assert result.exit_code == observe.EXIT_ERROR
-    assert json.loads((result.observation / "summary.json").read_text())["complete"] is False
+    summary = json.loads((result.observation / "summary.json").read_text())
+    assert summary["complete"] is False
+    assert summary["observation"]["failed_collectors"] == ["ssh_audit_inbox"]
 
 
 # ── running one step outside an observation ──
@@ -237,6 +244,12 @@ def test_a_broken_step_is_returned_as_a_failure(tmp_path, monkeypatch):
     assert observe.run_step(run, "netdev") == (
         [], ["netdev: stopped with RuntimeError: synthetic defect"], [])
     assert run.failures == ["netdev: stopped with RuntimeError: synthetic defect"]
+    assert run.failed == ["netdev"] and run.ran == []
+    monkeypatch.setitem(observe.PLANS, "netdev", observe.Plan(
+        lambda run: ([], ["netdev: export unreadable", "netdev: second file unreadable"], []),
+        offline=True))
+    observe.run_step(run, "netdev")
+    assert run.failed == ["netdev"] and len(run.failures) == 3
 
 
 def test_resume_ct_finishes_deferred_reads_and_files_the_failure_gap(tmp_path, monkeypatch):
@@ -249,6 +262,7 @@ def test_resume_ct_finishes_deferred_reads_and_files_the_failure_gap(tmp_path, m
     assert rows == [] and failures == ["ct_dns: example.com: HTTP 429"]
     assert len(gaps) == 1 and run.gaps == gaps and run.failures == failures
     assert run.ct_failures == failures
+    assert run.failed == ["ct_dns"]
 
 
 # ── the command line ──

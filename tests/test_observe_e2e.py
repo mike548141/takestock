@@ -309,5 +309,6 @@ def test_a_configured_service_that_errors_is_a_failure(net: FakeNet, tmp_path: P
     assert code == 2
     (failure,) = summary["collector_failures"]
     assert failure.startswith("dnssec: no resolver rejected")
+    assert summary["observation"]["failed_collectors"] == ["dnssec"]
     assert summary["complete"] is False
     assert not any(g.startswith("not measured: no ") for g in summary["gaps"])
