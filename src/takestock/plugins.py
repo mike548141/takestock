@@ -31,10 +31,13 @@ raises becomes a gap carrying the error; it never stops the observation.
 
 **When steps run.** Ordinary steps run after the built-in collectors' early
 steps; ``late`` steps run after every built-in step and see the rows already
-collected (``Context.assets``, as copies). A ``coverage-check`` plug-in is
+collected (``Context.assets``, as copies) and how the run went so far
+(``Context.run``, a :class:`RunInfo`). A ``coverage-check`` plug-in is
 always late and returns gaps only. An ``annotation`` plug-in runs after
 grading and returns ``extra`` keys to add to other rows, keyed by each row's
-``bom_ref()``; it can add a key but never change one.
+``bom_ref()``; it can add a key but never change one. The keys it declares in
+``annotation_keys`` are cleared from every row before it runs, so a row
+carried from an earlier observation never keeps an earlier run's label.
 """
 
 from __future__ import annotations
@@ -69,6 +72,8 @@ UNDECLARED_KEY = "plugins_installed_not_declared"
 DEFAULT_ATTRIBUTE = "PLUGIN"
 
 _NAME = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
+#: The ``extra`` key naming the plug-in that wrote a row.
+_OWN_KEY = "plugin"
 _DATA_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 #: How many invalid-record problems a gap and the summary quote.
 PROBLEM_SAMPLE = 5
@@ -94,7 +99,9 @@ class Plugin:
     each gap the step returns with ``plug-in `<name>`:``; false files the
     step's gaps exactly as written, for a plug-in whose gap sentences are
     written for the report's reader. Gaps takestock writes about the plug-in
-    always name it.
+    always name it. ``annotation_keys``, for an annotation only, names the
+    ``extra`` keys it writes; takestock removes them from every row before
+    the annotation runs.
     """
 
     name: str
@@ -107,6 +114,7 @@ class Plugin:
     data_dir: str = ""
     summarise: Summarise | None = None
     gap_prefix: bool = True
+    annotation_keys: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.name, str) or not _NAME.match(self.name):
@@ -126,6 +134,17 @@ class Plugin:
                              "cannot also be late")
         if self.kind == plugin_kinds.COVERAGE_CHECK:
             object.__setattr__(self, "late", True)
+        keys = (self.annotation_keys,) if isinstance(self.annotation_keys, str) \
+            else tuple(self.annotation_keys)
+        if keys and self.kind != plugin_kinds.ANNOTATION:
+            raise ValueError(f"plug-in {self.name!r}: only an annotation declares annotation_keys")
+        for k in keys:
+            if not isinstance(k, str) or not k.strip():
+                raise ValueError(f"plug-in {self.name!r}: annotation key {k!r} is not text")
+            if k == _OWN_KEY:
+                raise ValueError(f"plug-in {self.name!r}: {_OWN_KEY!r} is takestock's own key on "
+                                 "every plug-in row, so an annotation cannot clear it")
+        object.__setattr__(self, "annotation_keys", keys)
         files = tuple(self.data_files)
         for f in files:
             if not isinstance(f, str) or not _DATA_NAME.match(f):
@@ -153,7 +172,8 @@ class StepResult:
     filed as a could-not-test gap). ``summary`` is written under the
     plug-in's name in ``summary.json`` and must be expressible as JSON.
     ``annotations`` is for the ``annotation`` kind only: ``{bom_ref: {key:
-    value}}``, each value text, a number, true or false.
+    value}}``, each value anything expressible as JSON (text, a number, true
+    or false, or a list or mapping of those).
     """
 
     records: list = field(default_factory=list)
@@ -162,9 +182,38 @@ class StepResult:
     annotations: dict = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class RunInfo:
+    """How the observation has gone so far, for a late step, a coverage check or an annotation.
+
+    ``collectors`` names every registered built-in collector; ``ran`` those
+    that ran; ``skipped`` those that did not, each with the reason;
+    ``failed`` those that reported a real failure or stopped with an error.
+    ``plugins`` gives each declared plug-in's status so far: ``ran``,
+    ``not-run`` (its record in ``summary.json`` says why) or ``pending`` (its
+    turn has not come, which includes the plug-in reading it). ``scan`` and
+    ``offline`` are the observation's options. A coverage check can so tell
+    a collector that was never built into the run from one skipped, and both
+    from one that ran and found nothing.
+    """
+
+    collectors: tuple[str, ...] = ()
+    ran: tuple[str, ...] = ()
+    skipped: Mapping[str, str] = field(default_factory=dict)
+    failed: tuple[str, ...] = ()
+    plugins: Mapping[str, str] = field(default_factory=dict)
+    scan: bool = False
+    offline: bool = False
+
+
 @dataclass
 class Context:
-    """Everything a step receives. Rows and the profile are copies: changing them changes nothing."""
+    """Everything a step receives. Rows and the profile are copies: changing them changes nothing.
+
+    ``run`` is filled for a late step, a coverage check and an annotation
+    when the caller supplies it (an observation always does); it is None for
+    an ordinary step, which runs before the run's picture is complete.
+    """
 
     plugin: Plugin
     target: dict
@@ -178,6 +227,7 @@ class Context:
     port_table: dict
     collected_on: str
     assets: tuple[CryptoAsset, ...] = ()
+    run: RunInfo | None = None
 
     @property
     def name(self) -> str:
@@ -428,9 +478,6 @@ def _json_ok(value: Any) -> str:
     return ""
 
 
-_SCALAR = (str, int, float, bool)
-
-
 class Host:
     """Runs the declared plug-ins of one observation and keeps their records."""
 
@@ -487,7 +534,13 @@ class Host:
                 out.append(d)
         return out
 
-    def _context(self, d: Declared, assets: Iterable[CryptoAsset]) -> Context | None:
+    def _statuses(self) -> dict[str, str]:
+        """Each declared plug-in's status so far: ran, not-run, or pending."""
+        return {name: "ran" if rec.status == "ran" else "not-run" if rec.reason else "pending"
+                for name, rec in self.records.items()}
+
+    def _context(self, d: Declared, assets: Iterable[CryptoAsset],
+                 run: RunInfo | None = None) -> Context | None:
         p = d.plugin
         assert p is not None
         rec = self.records[d.name]
@@ -508,7 +561,9 @@ class Host:
             baseline=copy.deepcopy(self.baseline), dictionary=copy.deepcopy(self.dictionary),
             port_table=copy.deepcopy(self.port_table),
             collected_on=mtime or now_date(self.ref_time),
-            assets=tuple(copy.deepcopy(list(assets))))
+            assets=tuple(copy.deepcopy(list(assets))),
+            run=None if run is None else replace(run, skipped=dict(run.skipped),
+                                                 plugins=self._statuses()))
         self._contexts[d.name] = ctx
         return ctx
 
@@ -539,14 +594,20 @@ class Host:
             rec.summary.update(out.summary)
         return out
 
-    def run(self, late: bool, assets: list[CryptoAsset]) -> tuple[list[CryptoAsset], list]:
-        """Run the early (or late) plug-ins; return their rows and gaps."""
+    def run(self, late: bool, assets: list[CryptoAsset],
+            run: RunInfo | None = None) -> tuple[list[CryptoAsset], list]:
+        """Run the early (or late) plug-ins; return their rows and gaps.
+
+        ``run`` describes the observation so far; late steps and coverage
+        checks receive it as ``Context.run`` (with each plug-in's status
+        filled in), and ordinary steps never do.
+        """
         rows_out: list[CryptoAsset] = []
         for d in self._runnable("late" if late else "early"):
             p = d.plugin
             assert p is not None
             self.say(f"  · plug-in {p.name} ({p.kind})")
-            ctx = self._context(d, assets if late else ())
+            ctx = self._context(d, assets if late else (), run if late else None)
             if ctx is None:
                 continue
             out = self._call(d, ctx)
@@ -626,13 +687,21 @@ class Host:
         self._rows[p.name] = [a.bom_ref() for a in rows]
         return rows
 
-    def annotate(self, assets: list[CryptoAsset]) -> list:
-        """Run the annotation plug-ins over the graded rows; return their gaps."""
+    def annotate(self, assets: list[CryptoAsset], run: RunInfo | None = None) -> list:
+        """Run the annotation plug-ins over the graded rows; return their gaps.
+
+        Each annotation's declared ``annotation_keys`` are removed from every
+        row first, whether or not its step then runs, so no row keeps a label
+        from an earlier observation it was carried or re-read from.
+        """
         for d in self._runnable("annotate"):
             p = d.plugin
             assert p is not None
             self.say(f"  · plug-in {p.name} (annotation)")
-            ctx = self._context(d, assets)
+            for a in assets:
+                for key in p.annotation_keys:
+                    a.extra.pop(key, None)
+            ctx = self._context(d, assets, run)
             if ctx is None:
                 continue
             out = self._call(d, ctx)
@@ -665,14 +734,14 @@ class Host:
             for key, value in keys.items():
                 if not isinstance(key, str) or not key.strip():
                     problems.append(f"{ref}: key {key!r} is not text")
-                elif not isinstance(value, _SCALAR):
+                elif value is None or _json_ok(value):
                     problems.append(f"{ref}: {key} holds {type(value).__name__}; a value is "
-                                    "text, a number, true or false")
+                                    "anything expressible as JSON except null")
                 elif key in target.extra and target.extra[key] != value:
                     problems.append(f"{ref}: {key} is already {target.extra[key]!r}, and an "
                                     "annotation adds keys, never changes them")
                 else:
-                    target.extra[key] = value
+                    target.extra[key] = copy.deepcopy(value)
                     changed = True
             stamped += changed
         if problems:

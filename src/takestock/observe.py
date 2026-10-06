@@ -440,6 +440,13 @@ def _mark_failed(run: Run, name: str) -> None:
         run.failed.append(name)
 
 
+def run_info(run: Run) -> plugins.RunInfo:
+    """How ``run`` has gone so far, as late plug-ins, coverage checks and annotations see it."""
+    return plugins.RunInfo(collectors=tuple(collectors.names()), ran=tuple(run.ran),
+                           skipped=dict(run.skipped), failed=tuple(run.failed),
+                           scan=run.options.scan, offline=run.options.offline)
+
+
 def _skip_gaps(run: Run) -> list[coverage.Gap]:
     """One gap per reason a group of collectors did not run."""
     by_reason: dict[str, list[str]] = {}
@@ -565,7 +572,7 @@ def observe(target: dict, options: Options | None = None) -> Result:
     run.gaps += gaps
     for name in late:
         run_step(run, name)
-    rows, gaps = host.run(late=True, assets=run.assets)
+    rows, gaps = host.run(late=True, assets=run.assets, run=run_info(run))
     run.assets += rows
     run.gaps += gaps
     run.gaps += _skip_gaps(run)
@@ -578,7 +585,7 @@ def observe(target: dict, options: Options | None = None) -> Result:
     assets, passes = normalise.finalise(run.assets, policy, config.load_dictionary(),
                                         dispositions=rules,
                                         lifecycle=target.get("lifecycle") or {})
-    run.gaps += host.annotate(assets)
+    run.gaps += host.annotate(assets, run=run_info(run))
     run.gaps += host.summarise(assets)
     run.gaps += normalise.not_measured_gaps(assets)
     email_domains = [str(d) for d in (target.get("discovery") or {}).get("email_domains") or []]

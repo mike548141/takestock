@@ -131,6 +131,7 @@ from takestock.plugins import Context, Plugin, StepResult
 | `data_files` | The plug-in's own reference files, by plain file name |
 | `data_dir` | Where those files are; by default the directory of the module defining `step` |
 | `summarise` | Optional: `summarise(ctx, rows)` called after grading with the plug-in's own graded rows, returning a mapping for `summary.json` |
+| `annotation_keys` | For an annotation only: the `extra` keys it writes. takestock removes them from every row before the annotation runs (see [below](#capabilities)) |
 | `gap_prefix` | `True` (the default) starts each gap the step returns with ``plug-in `<name>`:``. `False` files the step's gaps exactly as written, for a plug-in whose gap sentences are written for the report's reader rather than the tool's operator |
 
 A malformed declaration (an unknown kind, a name with spaces, a data file
@@ -154,7 +155,23 @@ copies, so a step that changes them changes nothing outside itself.
 | `dictionary` | The daemon dictionary: process binary names mapped to products |
 | `port_table` | The port-encryption table, indexed as `takestock.plaintext` reads it |
 | `assets` | The rows collected so far. Empty for an ordinary step; filled for a late step, a coverage check and an annotation |
+| `run` | How the observation has gone so far, as a `RunInfo` (below). `None` for an ordinary step; filled for a late step, a coverage check and an annotation |
 | `data_file(name)` | The path of one of the plug-in's declared data files |
+
+`ctx.run` is a `RunInfo`:
+
+| `RunInfo` field | Holds |
+|---|---|
+| `collectors` | Every built-in collector registered in this takestock |
+| `ran` | The built-in collectors that ran |
+| `skipped` | The built-in collectors that did not run, each with the reason (such as `active probes need --scan`) |
+| `failed` | The built-in collectors that reported a real failure or stopped with an error |
+| `plugins` | Each declared plug-in's status so far: `ran`, `not-run` (its `summary.json` record says why) or `pending` (its turn has not come; a plug-in reading this sees itself as pending) |
+| `scan`, `offline` | The observation's options |
+
+A tool that runs the plug-ins itself passes one to `Host.run(..., run=)`
+and `Host.annotate(..., run=)`; `takestock.observe.run_info(run)` builds it
+from an observation's `Run`. When none is passed, `ctx.run` is `None`.
 
 ### What the step returns
 
@@ -165,7 +182,7 @@ A `StepResult`, or a plain list of records:
 | `records` | One mapping per thing read, with the kind's fields. A finished `CryptoAsset` is accepted too (see below), and is the only thing a `general` plug-in returns |
 | `gaps` | What the plug-in could not read, made with `takestock.coverage.gap(...)`. A plain string is filed as a could-not-test gap |
 | `summary` | A mapping written under the plug-in's name in `summary.json`. It must be expressible as JSON |
-| `annotations` | For the `annotation` kind only: `{bom_ref: {key: value}}` |
+| `annotations` | For the `annotation` kind only: `{bom_ref: {key: value}}`, each value anything expressible as JSON |
 
 Records are the normal return. They keep grading in one place: every plug-in
 of a kind is named and graded the same way, whatever product it reads. A
@@ -207,18 +224,48 @@ def check(ctx: Context) -> StepResult:
         nature=coverage.NO_DATA)] if missing else [])
 ```
 
+A check comparing a list of what should have run with what did
+reads `ctx.run`, so it can tell a collector that is not part of this
+takestock, one that was skipped (and why), and one that ran and found
+nothing:
+
+```python
+def expected(ctx: Context) -> StepResult:
+    gaps = []
+    for name in ("netdev", "software_inventory"):
+        if name not in ctx.run.collectors:
+            gaps.append(f"{name} is not a collector this takestock has")
+        elif name in ctx.run.skipped:
+            gaps.append(f"{name} did not run: {ctx.run.skipped[name]}")
+    return StepResult(gaps=gaps)
+```
+
 **Adding a label to other rows (annotations).** An annotation returns, for
-each row it labels, the row's `bom_ref()` and the keys to add to its `extra`,
-each value text, a number, true or false. It may add a key, and may repeat a
-key's existing value, but never change one: a key already holding another
-value is refused, and so is an unknown reference. Refusals are one gap. An
-annotation runs after grading, so it moves no verdict, flag or count.
+each row it labels, the row's `bom_ref()` and the keys to add to its `extra`.
+A value may be anything expressible as JSON except null: text, a number,
+true or false, or a list or mapping of those, so a label can carry its own
+date and source. It may add a key, and may repeat a key's existing value, but
+never change one: a key already holding another value is refused, and so is
+an unknown reference. Refusals are one gap. An annotation runs after grading,
+so it moves no verdict, flag or count.
+
+A row read again from an earlier observation, or carried into this one, may
+already hold a label an earlier run wrote. Declare the keys an annotation
+writes in `annotation_keys`, and takestock removes them from every row before
+the annotation runs (whether or not its step then runs), so each label is this
+run's own and a changed label is not refused as a change. Choose keys no
+other collector writes: every row loses them. `plugin`, which names the
+plug-in that wrote a row, cannot be declared.
 
 ```python
 def label(ctx: Context) -> StepResult:
     production = production_hosts(ctx)
-    return StepResult(annotations={a.bom_ref(): {"environment": "production"}
+    tag = {"name": "production", "source": "service register", "as_of": "2030-01-31"}
+    return StepResult(annotations={a.bom_ref(): {"environment": tag}
                                    for a in ctx.assets if a.host in production})
+
+PLUGIN = Plugin(name="environments", kind="annotation", step=label,
+                annotation_keys=("environment",))
 ```
 
 **Contributing to the summary.** Whatever the step returns as `summary`, and
@@ -566,9 +613,9 @@ recorded with its exposure unmeasured.
 ### `general`
 
 Evidence that fits none of the record schemas above, such as a certificate
-inventory, a configuration audit, or a key store listing. A `general` plug-in has no record schema, so
-it builds its rows itself and returns them as finished `CryptoAsset` rows. It
-may be ordinary or `late`.
+inventory, a configuration audit, or a key store listing. A `general` plug-in
+has no record schema, so it builds its rows itself and returns them as
+finished `CryptoAsset` rows. It may be ordinary or `late`.
 
 Each row is held to what every row must satisfy, whatever its kind: a name, a
 verdict from the verdict order (`weak`, `acceptable`, `strong`, `pqc`,

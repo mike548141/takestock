@@ -485,6 +485,103 @@ def test_an_annotation_adds_keys_and_never_changes_one(workspace, monkeypatch):
     assert "never changes them" in gap and "no row has bom_ref" in gap
 
 
+def test_an_annotation_may_write_structured_values(workspace, monkeypatch):
+    tag = {"name": "production", "source": "service register", "as_of": "2030-01-31"}
+
+    def label(ctx: Context) -> StepResult:
+        rows = [a for a in ctx.assets if a.source == "netdev" and a.host]
+        return StepResult(annotations={rows[0].bom_ref(): {"environment": tag, "owners": ["ops"]},
+                                       rows[1].bom_ref(): {"empty": None}})
+
+    _install(monkeypatch, Plugin(name="labels", kind=plugin_kinds.ANNOTATION, step=label))
+    result = _observe(_target("labels"))
+    (labelled,) = [a for a in result.assets if "environment" in a.extra]
+    assert labelled.extra["environment"] == tag and labelled.extra["owners"] == ["ops"]
+    assert labelled.extra["environment"] is not tag
+    on_disk = json.loads((result.observation / "assets.json").read_text())
+    assert [r["extra"]["environment"] for r in on_disk if "environment" in r["extra"]] == [tag]
+    assert "anything expressible as JSON except null" in _gaps(result, "annotation(s) not applied")[0]
+
+
+def test_declared_annotation_keys_are_cleared_before_the_annotation_runs(workspace, monkeypatch):
+    carried = [_general_row(f"Key store device-0{n}.example.test", host=f"device-0{n}.example.test",
+                            extra={"environment": "earlier run"}) for n in (1, 2)]
+    seen: list = []
+
+    def label(ctx: Context) -> StepResult:
+        seen.extend(a.extra.get("environment") for a in ctx.assets if a.source == "carried")
+        first = next(a for a in ctx.assets if a.host == "device-01.example.test")
+        return StepResult(annotations={first.bom_ref(): {"environment": {"name": "test"}}})
+
+    _install(monkeypatch, _plugin("carried", kind=plugin_kinds.GENERAL, records=carried),
+             Plugin(name="labels", kind=plugin_kinds.ANNOTATION, step=label,
+                    annotation_keys=("environment",)))
+    result = _observe(_target("carried", "labels"))
+    rows = {a.host: a for a in _rows(result, "carried")}
+    assert seen == [None, None]
+    assert rows["device-01.example.test"].extra["environment"] == {"name": "test"}
+    assert "environment" not in rows["device-02.example.test"].extra
+    assert rows["device-01.example.test"].extra["plugin"] == "carried"
+    assert not _gaps(result, "annotation(s) not applied")
+
+
+def test_annotation_keys_are_declared_by_an_annotation_only():
+    assert _plugin("p", kind=plugin_kinds.ANNOTATION, annotation_keys="environment"
+                   ).annotation_keys == ("environment",)
+    with pytest.raises(ValueError, match="only an annotation"):
+        _plugin("p", annotation_keys=("environment",))
+    with pytest.raises(ValueError, match="takestock's own key"):
+        _plugin("p", kind=plugin_kinds.ANNOTATION, annotation_keys=("plugin",))
+    with pytest.raises(ValueError, match="not text"):
+        _plugin("p", kind=plugin_kinds.ANNOTATION, annotation_keys=("",))
+
+
+# ── what late steps are told about the run ──
+
+def test_late_steps_coverage_checks_and_annotations_see_the_run(workspace, monkeypatch):
+    from takestock import collectors
+    seen: dict = {}
+
+    def keep(key: str):
+        def step(ctx: Context) -> StepResult:
+            seen[key] = ctx.run
+            return StepResult(records=[_general_row()]) if key == "late" else StepResult()
+        return step
+
+    _install(monkeypatch,
+             Plugin(name="early", kind=plugin_kinds.GENERAL, step=keep("early")),
+             Plugin(name="absent", kind=plugin_kinds.GENERAL, step=keep("absent"),
+                    input="inbox/absent.csv"),
+             Plugin(name="late", kind=plugin_kinds.GENERAL, step=keep("late"), late=True),
+             Plugin(name="check", kind=plugin_kinds.COVERAGE_CHECK, step=keep("check")),
+             Plugin(name="labels", kind=plugin_kinds.ANNOTATION, step=keep("labels")))
+    _observe(_target("early", "absent", "late", "check", {"name": "missing", "required": False},
+                     "labels"))
+    assert seen["early"] is None
+    run = seen["late"]
+    assert run.collectors == tuple(collectors.names())
+    assert "netdev" in run.ran and "netdev" not in run.skipped
+    assert run.skipped["dnssec"] == "the observation was run offline"
+    assert set(run.ran) | set(run.skipped) == set(run.collectors) and run.failed == ()
+    assert (run.scan, run.offline) == (False, True)
+    assert run.plugins == {"early": "ran", "absent": "not-run", "late": "pending",
+                           "check": "pending", "missing": "not-run", "labels": "pending"}
+    assert seen["check"].plugins["late"] == "ran" and seen["check"].plugins["check"] == "pending"
+    assert seen["labels"].plugins == {"early": "ran", "absent": "not-run", "late": "ran",
+                                      "check": "ran", "missing": "not-run", "labels": "pending"}
+
+
+def test_a_late_step_run_without_a_run_record_is_told_none(workspace):
+    seen: list = []
+    p = Plugin(name="late", kind=plugin_kinds.GENERAL, late=True,
+               step=lambda ctx: seen.append(ctx.run))
+    host = plugins.Host(_target(), workspace / "raw", NOW)
+    host.declared[0:0] = [plugins.Declared(name="late", plugin=p)]
+    host.records["late"] = plugins._Record(kind=p.kind)
+    host.run(late=True, assets=[])
+    assert seen == [None]
+
+
 # ── (c) summary contributions ──
 
 def test_a_summary_lands_under_the_plugins_own_key(workspace, monkeypatch):
