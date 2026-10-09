@@ -105,6 +105,10 @@ rules:
   # table. `flags_none` is an exact string comparison, so this excludes only
   # `cleartext-exposure:metadata`; a cleartext port nobody has classified
   # carries no exposure flag and still lands here, which is the safe direction.
+  # It never matches `plaintext-scan-inconclusive:` or `unverified-encryption:`
+  # (neither starts with `plaintext:`), which say the check could not settle
+  # it. A cleartext service carrying only device metadata goes to
+  # `cleartext-device-metadata` further down instead.
   - id: cleartext-service
     match:
       flags_prefix_any: ["plaintext:"]
@@ -122,10 +126,7 @@ rules:
       port-encryption table rather than a measured probe, the flag names the
       assumed protocol and the first action is to confirm what is actually
       listening; a service genuinely running TLS on an unusual port is a false
-      positive and should be recorded as such, not left to sit. (This never
-      matches `plaintext-scan-inconclusive:` or `unverified-encryption:`,
-      which say the check could not settle it. Nor does it match a cleartext
-      service that carries only device metadata: that has its own rule below.)
+      positive and should be recorded as such, not left to sit.
 
   # ── critical: exploitable now ──
   #
@@ -181,8 +182,9 @@ rules:
       published, tooled attacks against them (DROWN against SSLv2, POODLE
       against SSLv3) that recover the plaintext of a session rather than
       merely weakening it. Disable them; nothing in current use needs either.
-      Act out of cycle. (TLS 1.0 and 1.1 are deprecated but do not clear this
-      bar and are handled by the scheduled rules below.)
+      Act out of cycle. TLS 1.0 and 1.1 are deprecated too, but they are
+      weakened rather than broken in this way, so where they are still
+      offered they are scheduled work, not out of cycle.
 
   # Export-grade suites are the one strength case that clears the
   # exploitability bar: a 512-bit export key or a 40-bit cipher falls to hours
@@ -419,7 +421,8 @@ rules:
   # replacement, with a pattern in the target profile's `lifecycle:` block:
   # whether a planned change replaces a control is a judgement only a person
   # can make. It requires a non-weak verdict, so it can never contradict the
-  # rail above.
+  # rail above: the critical rules, `internet-facing-weak` and
+  # `weak-not-internet-facing` are all checked before it.
   - id: accept-replacement-tolerable-control
     match:
       extra_true: replaced_by
@@ -435,9 +438,9 @@ rules:
       cryptographic posture is acceptable until then, so no separate
       remediation is scheduled: effort spent here before the replacement
       would be thrown away. If the replacement slips, this acceptance should
-      be reviewed. (This never matches anything with a weak verdict; the
-      internet-facing weak rail above is checked first, and the critical
-      rules before that.)
+      be reviewed. It is given only because nothing here is graded weak:
+      weak cryptography is scheduled for fixing whether or not a replacement
+      is planned.
 
   # Dormant until a person marks an asset `retiring_by` a migration or
   # retirement, with a pattern in the target profile's `lifecycle:` block.
@@ -505,6 +508,9 @@ rules:
   # an asset with `quantum-vulnerable-kex` almost always carries
   # `quantum-vulnerable-signature` too. The key-establishment entry must come
   # first or every such asset would land in the bucket that cannot be started.
+  #
+  # Neither entry sets `pqc_deadline`, so an asset's deadline is the overlay
+  # programme's `pqc_target_year`.
   - id: pqc-migrate-key-establishment
     match:
       data_state: [in-transit, email-auth, certificate]
@@ -525,8 +531,8 @@ rules:
       now: enabling a hybrid group (TLS 1.3 with ML-KEM alongside the
       classical exchange) is a library or platform version move across a class
       of systems rather than a per-endpoint change, which is what the larger
-      size covers. The post-quantum deadline itself comes from the
-      organisation's own target year, not from this rule.
+      size covers. The deadline for it is the organisation's own
+      post-quantum target year.
 
   # Per rule, and the size covers the preparation (a purchasing condition and
   # a watch on issuers), not the replacement, which cannot be sized while it

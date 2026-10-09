@@ -170,7 +170,11 @@ require a verdict that is not weak, and `internet-facing-weak` and
 `weak-not-internet-facing` are checked before them in any case.
 
 Each rule's full `reason:` in the data file is written for the reader of a
-report: what the exposure is, why the rung, and what the fix involves.
+report: what the exposure is, why the rung, and what the fix involves. A
+report prints it beside the asset, so it never refers to the rule file
+itself. Notes for whoever maintains the rules (why one rule must sit above
+another, what a rule deliberately does not match) go in a YAML comment
+beside the rule, which neither the report nor the rule's hash reads.
 
 ## Writing an overlay
 

@@ -35,6 +35,22 @@ def test_the_ordering_the_dispositions_rely_on():
     assert ids.index("pqc-migrate-key-establishment") < ids.index("pqc-migrate-signature-only")
 
 
+# Wording that describes the rule file rather than the asset: rule order,
+# where another rule sits, what a rule does not match. A report prints the
+# reason beside the asset, where "the rule below" means nothing.
+_RULE_FILE_TALK = re.compile(
+    r"\b(?:rules?|rail|entry|entries)\s+(?:above|below)\b|never\s+matches|"
+    r"\bthis\s+rule\b|checked\s+first|\bown\s+rule\b",
+    re.IGNORECASE)
+
+
+def test_a_bundled_reason_speaks_to_the_reader_not_the_rule_author():
+    """A note about rule order or scope belongs in a YAML comment, not the reason."""
+    rules = config.load_yaml_strict(BUNDLED_DISPOSITIONS)["rules"]
+    talk = {r["id"]: m.group(0) for r in rules if (m := _RULE_FILE_TALK.search(r["reason"]))}
+    assert talk == {}
+
+
 def _crypto_register() -> list[dict[str, str]]:
     with (config.BUNDLED_DATA_DIR / "crypto-software.csv").open(newline="") as f:
         return list(csv.DictReader(f))
