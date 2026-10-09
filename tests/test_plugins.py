@@ -343,6 +343,8 @@ def test_a_plugin_declaration_is_checked():
         _plugin("p", data_files=("../baseline.yaml",))
     with pytest.raises(ValueError, match="takestock's own"):
         _plugin("p", data_dir=str(config.BUNDLED_DATA_DIR))
+    with pytest.raises(TypeError, match="date_rows"):
+        _plugin("p", date_rows="no")
     assert _plugin("p", kind=plugin_kinds.COVERAGE_CHECK).late is True
 
 
@@ -435,6 +437,38 @@ def test_finished_rows_are_accepted_and_cannot_borrow_another_source(workspace, 
     (written,) = _rows(result, "rows")
     assert written.verdict == "weak" and written.source_class == "private"
     assert not [a for a in result.assets if a.source == "ct_dns" and "laptop-05" in a.name]
+
+
+def _dating(late: bool, **kwargs: object) -> Plugin:
+    """A general plug-in returning one undated and one dated row, in the phase asked for."""
+    rows = [CryptoAsset(name="Undated row", data_state="inventory", host="device-01.example.test",
+                        verdict="unknown"),
+            CryptoAsset(name="Dated row", data_state="inventory", host="device-02.example.test",
+                        verdict="unknown", collected_at="2029-06-30")]
+    return _plugin("dating", kind=plugin_kinds.GENERAL, records=rows, late=late, **kwargs)
+
+
+@pytest.mark.parametrize("late", [False, True])
+def test_takestock_dates_an_undated_row_by_default(workspace, monkeypatch, late):
+    _install(monkeypatch, _dating(late))
+    written = {a.name: a.collected_at for a in _rows(_observe(_target("dating")), "dating")}
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", written["Undated row"])
+    assert written["Dated row"] == "2029-06-30"
+
+
+@pytest.mark.parametrize("late", [False, True])
+def test_date_rows_false_leaves_an_undated_row_undated(workspace, monkeypatch, late):
+    _install(monkeypatch, _dating(late, date_rows=False))
+    written = {a.name: a.collected_at for a in _rows(_observe(_target("dating")), "dating")}
+    assert written == {"Undated row": "", "Dated row": "2029-06-30"}
+
+
+def test_date_rows_false_keeps_a_records_own_date_and_supplies_none(workspace, monkeypatch):
+    records = [_disk(), _disk(device="laptop-02.example.test", collected_on="2029-06-30")]
+    _install(monkeypatch, _plugin("undated-disk", records=records, date_rows=False))
+    written = {a.host: a.collected_at for a in _rows(_observe(_target("undated-disk")),
+                                                     "undated-disk")}
+    assert written == {"laptop-01.example.test": "", "laptop-02.example.test": "2029-06-30"}
 
 
 # ── (a) late steps and coverage checks ──

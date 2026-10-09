@@ -133,6 +133,7 @@ from takestock.plugins import Context, Plugin, StepResult
 | `summarise` | Optional: `summarise(ctx, rows)` called after grading with the plug-in's own graded rows, returning a mapping for `summary.json` |
 | `annotation_keys` | For an annotation only: the `extra` keys it writes. takestock removes them from every row before the annotation runs (see [below](#capabilities)) |
 | `gap_prefix` | `True` (the default) starts each gap the step returns with ``plug-in `<name>`:``. `False` files the step's gaps exactly as written, for a plug-in whose gap sentences are written for the report's reader rather than the tool's operator |
+| `date_rows` | `True` (the default) dates a row the plug-in left undated. `False` leaves it undated (see [below](#capabilities)) |
 
 A malformed declaration (an unknown kind, a name with spaces, a data file
 given as a path) raises when the plug-in's module is imported. takestock
@@ -193,7 +194,8 @@ data states and protocols that kind's rows use, and any `extra` keys other
 parts of takestock read), its `extra` must be expressible as JSON, and its
 `source` is always replaced with the plug-in's name, so no plug-in can write
 rows that read as another collector's. A finished row keeps the
-`source_name` and `collected_at` the plug-in gave it.
+`source_name` and `collected_at` the plug-in gave it; one left undated is
+dated as a record without `collected_on` is, unless `date_rows` is `False`.
 
 ### When steps run
 
@@ -267,6 +269,29 @@ def label(ctx: Context) -> StepResult:
 
 PLUGIN = Plugin(name="environments", kind="annotation", step=label,
                 annotation_keys=("environment",))
+```
+
+**Leaving rows undated.** takestock dates every row a plug-in returns
+without a date: by the input file's modification date, or else the
+observation's date. That suits a row recording something read at a time. A
+row that instead states what a declaration says, or what a comparison
+between other rows found, was not read at any time, and a date would present
+it as a reading. Declare `date_rows=False` and takestock leaves such rows
+undated, in an ordinary or a late step alike. A date the plug-in gives a row
+itself (a finished row's `collected_at`, or a record's `collected_on`) is
+kept either way.
+
+```python
+def compare(ctx: Context) -> StepResult:
+    declared = declared_hosts(ctx)
+    seen = {a.host for a in ctx.assets}
+    return StepResult(records=[
+        CryptoAsset(name=f"Declared but not seen: {host}", data_state="inventory",
+                    host=host, verdict="unknown")
+        for host in sorted(declared - seen)])
+
+PLUGIN = Plugin(name="declared-vs-seen", kind="general", step=compare, late=True,
+                date_rows=False)
 ```
 
 **Contributing to the summary.** Whatever the step returns as `summary`, and
@@ -359,7 +384,8 @@ Each field has a type:
 Every row kind also accepts:
 
 - `collected_on` (date): when the record was true. Without it the row is
-  dated by the input file's modification date, then the observation's date;
+  dated by the input file's modification date, then the observation's date,
+  unless the plug-in declares `date_rows=False`, when it stays undated;
 - any field starting `x_`, the plug-in's own, copied into the row's `extra`
   unchanged (text, numbers, true or false, or a list of those).
 

@@ -101,7 +101,12 @@ class Plugin:
     written for the report's reader. Gaps takestock writes about the plug-in
     always name it. ``annotation_keys``, for an annotation only, names the
     ``extra`` keys it writes; takestock removes them from every row before
-    the annotation runs.
+    the annotation runs. ``date_rows`` (default true) lets takestock date a
+    row the plug-in left undated, from the input file's modification date or
+    the observation's date; false leaves every such row undated, for rows
+    that summarise a declaration or a comparison rather than record a
+    reading taken at a time. A date the plug-in gave a row, or a record's
+    ``collected_on``, is kept either way.
     """
 
     name: str
@@ -115,6 +120,7 @@ class Plugin:
     summarise: Summarise | None = None
     gap_prefix: bool = True
     annotation_keys: tuple[str, ...] = ()
+    date_rows: bool = True
 
     def __post_init__(self) -> None:
         if not isinstance(self.name, str) or not _NAME.match(self.name):
@@ -129,6 +135,8 @@ class Plugin:
             raise TypeError(f"plug-in {self.name!r}: summarise must be callable")
         if not isinstance(self.gap_prefix, bool):
             raise TypeError(f"plug-in {self.name!r}: gap_prefix must be true or false")
+        if not isinstance(self.date_rows, bool):
+            raise TypeError(f"plug-in {self.name!r}: date_rows must be true or false")
         if self.kind == plugin_kinds.ANNOTATION and self.late:
             raise ValueError(f"plug-in {self.name!r}: an annotation runs after grading; it "
                              "cannot also be late")
@@ -669,9 +677,12 @@ class Host:
             if p.kind != plugin_kinds.GENERAL and not out.gaps:
                 self.gaps.append(plugin_kinds.scope_gap(p.name, p.kind, rec.input or "its input"))
             return []
+        # Without date_rows, takestock supplies no date: a row is dated only
+        # by the plug-in itself or by its record's own collected_on.
         build = plugin_kinds.Build(
             plugin=p.name, kind=p.kind, title=p.title, policy=self.policy,
-            port_table=self.port_table, target=ctx.target, collected_on=ctx.collected_on,
+            port_table=self.port_table, target=ctx.target,
+            collected_on=ctx.collected_on if p.date_rows else "",
             shown=rec.input or p.title,
             names=identity.names_by_address(ctx.target))
         rows: list[CryptoAsset] = []
