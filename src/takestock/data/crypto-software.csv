@@ -19,5 +19,8 @@ Bouncy Castle,^(?:bouncy ?castle|bcprov)\b,crypto,,,"Legion of the Bouncy Castle
 Java platform,^(?:java|openjdk|jre|jdk)\b,tls,,,"OpenJDK, Java Security Developer's Guide (JCA and JSSE)",The Java runtime carries its own cryptography and TLS providers
 .NET platform,^(?:microsoft )?\.net\b,tls,,,".NET documentation, cryptography model",Applications reach the operating system's cryptography and TLS through it
 Go,^(?:go|golang)(?:\s|$),tls,,,"Go project, crypto and crypto/tls package documentation",Go programs carry the standard library's own TLS implementation
+Node.js,^node(?:\.?js)?(?:\s|$),tls,,,"Node.js documentation, TLS (SSL) module","Official Node.js builds carry their own copy of OpenSSL; a distribution's build may use the system's"
+Python,^python\s?(?:\d+(?:\.\d+)*)?(?:-libs)?(?:\s|$),tls,,,"Python documentation, ssl module","Python programs negotiate TLS through the ssl module, which wraps OpenSSL"
+XML Security Library,^(?:lib)?xmlsec1?(?:-(?:openssl|nss|gnutls|gcrypt))?(?:\s|$),signing,,,XML Security Library (xmlsec) documentation,"W3C XML Signature and XML Encryption, as used by SAML"
 OpenSSH,^openssh\b,ssh,,,"OpenSSH project, release notes",SSH client and server; version-to-capability mapping not established here
 GnuPG,^(?:gnupg2?|gpg4win|gpg)\b,signing,,,"GnuPG project, documentation",Signing and encryption for files and packages
