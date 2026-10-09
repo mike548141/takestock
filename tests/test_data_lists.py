@@ -264,6 +264,27 @@ class VendorDomainsTest(unittest.TestCase):
             self.assertTrue(r["vendor"] and r["notes"], r["domain"])
             self.assertIn(r["category"], self.CATEGORIES, r["domain"])
 
+    def test_the_loader_reads_every_row(self) -> None:
+        from takestock import config
+
+        _, rows = read_csv("vendor-domains.csv")
+        loaded = config.load_vendor_domains()
+        self.assertEqual(set(loaded), {r["domain"] for r in rows})
+        for r in rows:
+            self.assertEqual(loaded[r["domain"]]["vendor"], r["vendor"], r["domain"])
+
+    def test_a_domain_beneath_another_names_the_same_vendor(self) -> None:
+        # The lookup is by suffix, so an entry beneath another entry overrides it for its own
+        # names. That is only right where both name the same operator.
+        _, rows = read_csv("vendor-domains.csv")
+        vendor = {r["domain"]: r["vendor"] for r in rows}
+        for domain, owner in vendor.items():
+            labels = domain.split(".")
+            for i in range(1, len(labels) - 1):
+                parent = ".".join(labels[i:])
+                if parent in vendor:
+                    self.assertEqual(owner, vendor[parent], f"{domain} beneath {parent}")
+
 
 if __name__ == "__main__":
     unittest.main()

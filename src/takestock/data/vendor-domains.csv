@@ -27,13 +27,24 @@ microsoftonline.com,Microsoft,identity,Microsoft Entra ID sign-in
 msauth.net,Microsoft,identity,Microsoft sign-in page assets
 msftauth.net,Microsoft,identity,Microsoft sign-in page assets
 msappproxy.net,Microsoft,identity,Microsoft Entra application proxy external addresses
+microsoftazuread-sso.com,Microsoft,identity,Microsoft Entra seamless single sign-on
+msauthimages.net,Microsoft,identity,Microsoft sign-in page branding images
+msftauthimages.net,Microsoft,identity,Microsoft sign-in page branding images
+aadrm.com,Microsoft,identity,Azure Rights Management (Microsoft Purview Information Protection)
+microsoftonline.us,Microsoft,identity,Microsoft Entra ID sign-in in the US government cloud
 live.com,Microsoft,identity,Microsoft account and consumer Outlook
 windows.net,Microsoft,cloud,Azure service namespace (storage and directory endpoints)
 azure.com,Microsoft,cloud,Azure portal and services
 azure.net,Microsoft,cloud,Azure service endpoints
 azurewebsites.net,Microsoft,cloud,Azure App Service hosting
 cloudapp.net,Microsoft,cloud,Azure cloud service hosting
+azurecr.io,Microsoft,devtools,Azure Container Registry
+microsoft.us,Microsoft,cloud,Microsoft services in the US government cloud
 trafficmanager.net,Microsoft,infrastructure,Azure Traffic Manager DNS load balancing
+azure-dns.com,Microsoft,infrastructure,Azure DNS name servers
+azure-dns.net,Microsoft,infrastructure,Azure DNS name servers
+azure-dns.org,Microsoft,infrastructure,Azure DNS name servers
+azure-dns.info,Microsoft,infrastructure,Azure DNS name servers
 azureedge.net,Microsoft,cdn,Azure content delivery network
 azurefd.net,Microsoft,cdn,Azure Front Door
 msedge.net,Microsoft,cdn,Microsoft edge network
@@ -42,18 +53,42 @@ office.net,Microsoft,saas,Microsoft 365 service endpoints
 office365.com,Microsoft,saas,Microsoft 365 service endpoints
 outlook.com,Microsoft,saas,Exchange Online and Outlook
 sharepoint.com,Microsoft,saas,SharePoint Online and OneDrive for Business
+sharepointonline.com,Microsoft,saas,SharePoint Online service endpoints
+microsoft365.com,Microsoft,saas,Microsoft 365 applications
+cloud.microsoft,Microsoft,saas,Microsoft 365 applications (consolidated service domain)
+static.microsoft,Microsoft,cdn,Microsoft 365 static content (consolidated service domain)
+usercontent.microsoft,Microsoft,saas,Microsoft 365 user content (consolidated service domain)
+svc.ms,Microsoft,saas,Microsoft 365 and OneDrive service endpoints
+sfx.ms,Microsoft,saas,OneDrive sync client downloads
+onenote.com,Microsoft,saas,OneNote
+powerbi.com,Microsoft,saas,Power BI
+powerapps.com,Microsoft,saas,Power Apps
+yammer.com,Microsoft,collaboration,Viva Engage (formerly Yammer)
+skype.com,Microsoft,collaboration,Skype and Teams calling endpoints
+whiteboard.ms,Microsoft,collaboration,Microsoft Whiteboard
+wbd.ms,Microsoft,collaboration,Microsoft Whiteboard
+bing.com,Microsoft,saas,Bing and Microsoft Search in Bing
+virtualearth.net,Microsoft,saas,Bing Maps services
 windows.com,Microsoft,infrastructure,Windows services and updates
 windowsupdate.com,Microsoft,infrastructure,Windows Update
 visualstudio.com,Microsoft,devtools,Visual Studio and Azure DevOps services
+vsassets.io,Microsoft,devtools,Azure DevOps and Visual Studio assets
+vscode-cdn.net,Microsoft,devtools,Visual Studio Code downloads and extensions
+exp-tas.com,Microsoft,devtools,Visual Studio Code experiment service
 google.com,Google,cloud,Corporate site and many service endpoints
 googleapis.com,Google,cloud,Google APIs and Google Cloud endpoints
 gstatic.com,Google,cdn,Google static content
 googleusercontent.com,Google,cloud,User and Google Cloud hosted content
 appspot.com,Google,cloud,Google App Engine hosting
 1e100.net,Google,infrastructure,Google server reverse DNS names
+gvt1.com,Google,infrastructure,Chrome and other Google software updates
+pki.goog,Google,pki,Google Trust Services certificates and revocation status
+recaptcha.net,Google,security,reCAPTCHA (an alternative to its google.com address)
 gmail.com,Google,saas,Gmail
 googlevideo.com,Google,cdn,Video delivery
 youtube.com,Google,saas,YouTube
+ytimg.com,Google,cdn,YouTube images
+ggpht.com,Google,cdn,Google user content images
 amazonaws.com,Amazon Web Services,cloud,AWS service endpoints
 amazon.com,Amazon,cloud,Corporate site and AWS console
 cloudfront.net,Amazon Web Services,cdn,Amazon CloudFront
@@ -75,11 +110,13 @@ cloudflare.com,Cloudflare,cdn,Corporate site and dashboard
 cloudflare.net,Cloudflare,cdn,Cloudflare edge network
 cloudflare-dns.com,Cloudflare,infrastructure,Cloudflare public DNS resolver
 workers.dev,Cloudflare,cloud,Cloudflare Workers hosting
+pages.dev,Cloudflare,cloud,Cloudflare Pages hosting
 akamai.com,Akamai,cdn,Corporate site
 akamai.net,Akamai,cdn,Akamai edge network
 akamaiedge.net,Akamai,cdn,Akamai edge network
 akamaihd.net,Akamai,cdn,Akamai edge network
 akamaized.net,Akamai,cdn,Akamai edge network
+akadns.net,Akamai,infrastructure,Akamai DNS and global traffic management
 edgekey.net,Akamai,cdn,Akamai edge network
 edgesuite.net,Akamai,cdn,Akamai edge network
 fastly.com,Fastly,cdn,Corporate site
@@ -102,6 +139,7 @@ atlassian.net,Atlassian,saas,Jira and Confluence Cloud sites
 bitbucket.org,Atlassian,devtools,Bitbucket Cloud
 trello.com,Atlassian,collaboration,Trello
 statuspage.io,Atlassian,saas,Statuspage
+atl-paas.net,Atlassian,saas,Atlassian cloud platform services
 github.com,GitHub,devtools,GitHub
 githubusercontent.com,GitHub,devtools,GitHub hosted content
 github.io,GitHub,devtools,GitHub Pages hosting
@@ -117,6 +155,12 @@ myworkday.com,Workday,saas,Workday tenant sign-in
 sap.com,SAP,saas,Corporate site and SAP services
 adobe.com,Adobe,saas,Adobe Creative Cloud and Document Cloud
 adobelogin.com,Adobe,identity,Adobe sign-in
+adobe.io,Adobe,saas,Adobe service interfaces
+acrobat.com,Adobe,saas,Adobe Acrobat and Document Cloud services
+adobecces.com,Adobe,saas,Creative Cloud services
+adobess.com,Adobe,saas,Adobe notification service
+typekit.com,Adobe,cdn,Adobe Fonts
+typekit.net,Adobe,cdn,Adobe Fonts delivery
 dropbox.com,Dropbox,collaboration,Dropbox
 dropboxapi.com,Dropbox,collaboration,Dropbox API
 box.com,Box,collaboration,Box
@@ -183,3 +227,7 @@ canonical.com,Canonical,infrastructure,Corporate site and Canonical services
 snapcraft.io,Canonical,infrastructure,Snap package store
 debian.org,Debian project,infrastructure,Debian package archives
 suse.com,SUSE,infrastructure,SUSE customer centre and updates
+mozilla.org,Mozilla,infrastructure,Firefox updates and services
+mozilla.com,Mozilla,infrastructure,Firefox updates and services
+mozilla.net,Mozilla,infrastructure,Firefox updates and services
+firefox.com,Mozilla,infrastructure,Firefox accounts and services
