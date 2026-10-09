@@ -214,7 +214,7 @@ class DaemonDictionaryTest(unittest.TestCase):
         "directory", "authentication", "dns", "dhcp", "time", "logging", "monitoring", "container",
         "orchestration", "virtualisation", "cloud-agent", "endpoint-security", "vulnerability-scanner",
         "endpoint-management", "backup", "vpn-client", "ztna-client", "file-sharing", "mail", "print",
-        "secrets", "runtime",
+        "secrets", "runtime", "os-component", "desktop-app",
     }
 
     def test_shape_and_vocabulary(self) -> None:
@@ -232,8 +232,21 @@ class DaemonDictionaryTest(unittest.TestCase):
     def test_runtimes_are_marked_ambiguous(self) -> None:
         _, rows = read_csv("daemon-dictionary.csv")
         by_name = {r["binary"]: r for r in rows}
-        for name in ("java", "node", "python3", "svchost.exe", "dotnet"):
+        for name in ("java", "node", "python3", "svchost.exe", "dotnet", "System",
+                     "powershell.exe", "backgroundTaskHost.exe"):
             self.assertEqual(by_name[name]["confidence"], "ambiguous", name)
+
+    def test_the_loader_reads_every_row_by_exact_name(self) -> None:
+        from takestock import config
+
+        _, rows = read_csv("daemon-dictionary.csv")
+        loaded = config.load_dictionary()
+        self.assertEqual(set(loaded), {r["binary"] for r in rows})
+        # Windows and Linux spellings are separate keys: the lookup is exact, case included.
+        self.assertEqual(loaded["sshd.exe"]["product"], "OpenSSH server for Windows")
+        self.assertEqual(loaded["sshd"]["product"], "OpenSSH server")
+        self.assertNotIn("system", loaded)
+        self.assertEqual(loaded["imap-login"]["vendor"], loaded["dovecot"]["vendor"])
 
 
 class VendorDomainsTest(unittest.TestCase):

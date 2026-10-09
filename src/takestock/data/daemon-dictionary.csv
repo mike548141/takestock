@@ -5,7 +5,8 @@
 # the exact executable name as the operating system reports it, case included.
 #
 # Where the entries come from: each row is a widely used server daemon, platform service or
-# agent, chosen for how common it is, not for any one organisation. The name is the one the
+# agent, or an operating-system component or desktop application that holds network sockets of
+# its own, chosen for how common it is, not for any one organisation. The name is the one the
 # vendor's own documentation or manual page gives for the running process or service binary.
 # The notes column says which document. No row records where a binary was seen.
 #
@@ -17,7 +18,7 @@
 #               message-broker, directory, authentication, dns, dhcp, time, logging, monitoring,
 #               container, orchestration, virtualisation, cloud-agent, endpoint-security,
 #               vulnerability-scanner, endpoint-management, backup, vpn-client, ztna-client,
-#               file-sharing, mail, print, secrets, runtime
+#               file-sharing, mail, print, secrets, runtime, os-component, desktop-app
 #   confidence  certain   = the name belongs to this product alone
 #               likely    = this product is the usual owner, but another product can use the name
 #               ambiguous = the name is a runtime or host process (java, python, svchost.exe),
@@ -29,6 +30,7 @@
 # Lines starting with # are comments and are skipped by the reader.
 binary,product,vendor,category,confidence,notes
 sshd,OpenSSH server,OpenBSD project,remote-access,certain,OpenSSH sshd(8) manual page
+sshd.exe,OpenSSH server for Windows,Microsoft,remote-access,certain,"Microsoft Learn, OpenSSH for Windows"
 dropbear,Dropbear SSH server,Dropbear project,remote-access,certain,Dropbear dropbear(8) manual page
 xrdp,xrdp remote desktop server,xrdp project,remote-access,certain,xrdp project documentation
 TeamViewer_Service.exe,TeamViewer,TeamViewer,remote-access,certain,TeamViewer documentation (Windows service)
@@ -59,6 +61,13 @@ sqlagent.exe,SQL Server Agent,Microsoft,database,certain,SQL Server documentatio
 msmdsrv.exe,SQL Server Analysis Services,Microsoft,database,certain,SQL Server Analysis Services documentation
 tnslsnr,Oracle Net Listener,Oracle,database,certain,Oracle Database Net Services reference
 oracle,Oracle Database server process,Oracle,database,likely,Oracle Database administrator's guide; the name is generic
+sqlplus,Oracle SQL*Plus,Oracle,database,certain,"SQL*Plus user's guide; a command-line client, not a listener"
+ohasd.bin,Oracle High Availability Services daemon,Oracle,database,certain,Oracle Clusterware administration guide
+crsd.bin,Oracle Cluster Ready Services daemon,Oracle,database,certain,Oracle Clusterware administration guide
+ocssd.bin,Oracle Cluster Synchronization Services daemon,Oracle,database,certain,Oracle Clusterware administration guide
+evmd.bin,Oracle Event Manager daemon,Oracle,database,certain,Oracle Clusterware administration guide
+oraagent.bin,Oracle Grid Infrastructure agent,Oracle,database,certain,Oracle Clusterware administration guide
+orarootagent.bin,Oracle Grid Infrastructure root agent,Oracle,database,certain,Oracle Clusterware administration guide
 mongod,MongoDB server,MongoDB,database,certain,MongoDB mongod reference
 mongos,MongoDB sharded cluster router,MongoDB,database,certain,MongoDB mongos reference
 db2sysc,IBM Db2 database engine,IBM,database,certain,IBM Db2 documentation
@@ -70,6 +79,7 @@ nats-server,NATS server,Cloud Native Computing Foundation,message-broker,certain
 mosquitto,Eclipse Mosquitto MQTT broker,Eclipse Foundation,message-broker,certain,Mosquitto mosquitto(8) manual page
 slapd,OpenLDAP server,OpenLDAP Foundation,directory,certain,OpenLDAP slapd(8) manual page
 ns-slapd,389 Directory Server,389 Directory Server project,directory,certain,389 Directory Server documentation
+Microsoft.ActiveDirectory.WebServices.exe,Active Directory Web Services,Microsoft,directory,certain,"Microsoft Learn, Active Directory Web Services (runs on domain controllers)"
 lsass.exe,Local Security Authority Subsystem Service,Microsoft,authentication,certain,Microsoft Windows documentation; also hosts Active Directory Domain Services on a domain controller
 krb5kdc,MIT Kerberos key distribution centre,MIT Kerberos Consortium,authentication,certain,MIT Kerberos krb5kdc(8) manual page
 kadmind,MIT Kerberos administration server,MIT Kerberos Consortium,authentication,certain,MIT Kerberos kadmind(8) manual page
@@ -83,6 +93,7 @@ pdns_recursor,PowerDNS Recursor,PowerDNS,dns,certain,PowerDNS documentation
 dnsmasq,dnsmasq,dnsmasq project,dns,certain,dnsmasq dnsmasq(8) manual page; also serves DHCP
 coredns,CoreDNS,Cloud Native Computing Foundation,dns,certain,CoreDNS documentation
 dns.exe,Windows DNS Server,Microsoft,dns,certain,Windows Server DNS documentation
+mDNSResponder.exe,Bonjour service discovery,Apple,dns,certain,Apple Bonjour for Windows documentation (multicast DNS)
 kea-dhcp4,Kea DHCPv4 server,Internet Systems Consortium,dhcp,certain,Kea administrator reference manual
 kea-dhcp6,Kea DHCPv6 server,Internet Systems Consortium,dhcp,certain,Kea administrator reference manual
 dhcpd,ISC DHCP server,Internet Systems Consortium,dhcp,likely,ISC DHCP dhcpd(8) manual page; the ISC DHCP server is no longer maintained
@@ -98,6 +109,7 @@ auditbeat,Auditbeat,Elastic,logging,certain,Elastic Beats documentation
 fluent-bit,Fluent Bit,Cloud Native Computing Foundation,logging,certain,Fluent Bit documentation
 metricbeat,Metricbeat,Elastic,monitoring,certain,Elastic Beats documentation
 elastic-agent,Elastic Agent,Elastic,monitoring,certain,Elastic Agent documentation
+elastic-otel-collector,Elastic Distribution of OpenTelemetry Collector,Elastic,monitoring,certain,"Elastic documentation, Elastic Agent as an OpenTelemetry Collector"
 otelcol,OpenTelemetry Collector,Cloud Native Computing Foundation,monitoring,certain,OpenTelemetry Collector documentation
 otelcol-contrib,OpenTelemetry Collector (contrib distribution),Cloud Native Computing Foundation,monitoring,certain,OpenTelemetry Collector documentation
 node_exporter,Prometheus Node Exporter,Cloud Native Computing Foundation,monitoring,certain,Prometheus documentation
@@ -111,6 +123,7 @@ zabbix_agent2,Zabbix agent 2,Zabbix,monitoring,certain,Zabbix manual
 zabbix_server,Zabbix server,Zabbix,monitoring,certain,Zabbix manual
 nrpe,Nagios Remote Plugin Executor,Nagios Enterprises,monitoring,certain,Nagios NRPE documentation
 snmpd,Net-SNMP agent,Net-SNMP project,monitoring,certain,Net-SNMP snmpd(8) manual page
+snmp.exe,Windows SNMP Service,Microsoft,monitoring,certain,"Microsoft Learn, SNMP service (a Windows optional feature)"
 collectd,collectd,collectd project,monitoring,certain,collectd collectd(1) manual page
 newrelic-infra,New Relic infrastructure agent,New Relic,monitoring,certain,New Relic infrastructure agent documentation
 oneagentwatchdog,Dynatrace OneAgent,Dynatrace,monitoring,likely,Dynatrace OneAgent documentation
@@ -131,9 +144,14 @@ vault,Vault,HashiCorp,secrets,certain,Vault documentation
 vmtoolsd,VMware Tools,Broadcom,virtualisation,certain,VMware Tools documentation
 hostd,VMware ESXi host agent,Broadcom,virtualisation,likely,VMware ESXi documentation
 vpxa,VMware vCenter agent on ESXi,Broadcom,virtualisation,certain,VMware ESXi documentation
+vpxd,VMware vCenter Server,Broadcom,virtualisation,certain,VMware vCenter Server documentation
 libvirtd,libvirt daemon,libvirt project,virtualisation,certain,libvirt libvirtd(8) manual page
 qemu-system-x86_64,QEMU,QEMU project,virtualisation,certain,QEMU documentation
 qemu-ga,QEMU guest agent,QEMU project,virtualisation,certain,QEMU guest agent documentation
+ovs-vswitchd,Open vSwitch daemon,Open vSwitch project,virtualisation,certain,ovs-vswitchd(8) manual page
+ovsdb-server,Open vSwitch database server,Open vSwitch project,virtualisation,certain,ovsdb-server(1) manual page
+ovn-controller,OVN (Open Virtual Network) controller,Open vSwitch project,virtualisation,certain,ovn-controller(8) manual page
+ovn-northd,OVN (Open Virtual Network) central control daemon,Open vSwitch project,virtualisation,certain,ovn-northd(8) manual page
 amazon-ssm-agent,AWS Systems Manager Agent,Amazon Web Services,cloud-agent,certain,AWS Systems Manager documentation
 amazon-cloudwatch-agent,Amazon CloudWatch agent,Amazon Web Services,cloud-agent,certain,Amazon CloudWatch documentation
 google_guest_agent,Google guest agent,Google Cloud,cloud-agent,certain,Google Cloud guest environment documentation
@@ -165,7 +183,9 @@ ir_agent.exe,Rapid7 Insight Agent,Rapid7,vulnerability-scanner,certain,Rapid7 In
 TaniumClient.exe,Tanium Client,Tanium,endpoint-management,certain,Tanium Client documentation
 CcmExec.exe,Configuration Manager client,Microsoft,endpoint-management,certain,Microsoft Configuration Manager documentation
 Microsoft.Management.Services.IntuneWindowsAgent.exe,Intune Management Extension,Microsoft,endpoint-management,certain,Microsoft Intune documentation
+LMS.exe,Intel Local Manageability Service,Intel,endpoint-management,certain,Intel AMT documentation; the host-side service of Intel AMT
 cvd,Commvault Communications Service,Commvault,backup,certain,Commvault documentation
+cvfwd,Commvault Network Daemon,Commvault,backup,certain,"Commvault documentation, descriptions of services"
 bpcd,NetBackup client service,Cohesity,backup,certain,NetBackup documentation
 vnetd,NetBackup network daemon,Cohesity,backup,certain,NetBackup documentation
 nsrexecd,NetWorker client execution service,Dell Technologies,backup,certain,Dell NetWorker documentation
@@ -194,6 +214,8 @@ smbd,Samba file server,Samba project,file-sharing,certain,Samba smbd(8) manual p
 nmbd,Samba NetBIOS name server,Samba project,file-sharing,certain,Samba nmbd(8) manual page
 nfsd,Linux kernel NFS server,Linux kernel,file-sharing,certain,nfsd(8) manual page
 rpcbind,rpcbind,rpcbind project,file-sharing,certain,rpcbind(8) manual page
+rpc.mountd,NFS mount daemon,Linux nfs-utils project,file-sharing,certain,rpc.mountd(8) manual page
+rpc.statd,NFS status monitor,Linux nfs-utils project,file-sharing,certain,rpc.statd(8) manual page
 vsftpd,vsftpd,vsftpd project,file-sharing,certain,vsftpd(8) manual page
 proftpd,ProFTPD,ProFTPD project,file-sharing,certain,ProFTPD documentation
 dfsrs.exe,DFS Replication,Microsoft,file-sharing,certain,Windows Server DFS Replication documentation
@@ -201,15 +223,33 @@ exim,Exim,Exim project,mail,certain,Exim specification
 exim4,Exim (Debian packaging),Exim project,mail,certain,Debian exim4 packaging
 sendmail,Sendmail,Proofpoint,mail,likely,Sendmail documentation; other mail servers install a compatible sendmail binary
 dovecot,Dovecot,Open-Xchange,mail,certain,Dovecot documentation
+imap-login,Dovecot IMAP login process,Open-Xchange,mail,certain,"Dovecot documentation, login processes"
+pop3-login,Dovecot POP3 login process,Open-Xchange,mail,certain,"Dovecot documentation, login processes"
+submission-login,Dovecot submission login process,Open-Xchange,mail,certain,"Dovecot documentation, login processes"
+managesieve-login,Dovecot ManageSieve login process,Open-Xchange,mail,certain,"Dovecot Pigeonhole documentation, ManageSieve service"
+smtpd,SMTP server (Postfix or OpenSMTPD),Postfix project,mail,likely,Postfix smtpd(8) manual page; OpenSMTPD's daemon has the same name
 EdgeTransport.exe,Exchange Server transport worker,Microsoft,mail,certain,Exchange Server documentation
 cupsd,CUPS print server,OpenPrinting,print,certain,cupsd(8) manual page
 spoolsv.exe,Windows Print Spooler,Microsoft,print,certain,Windows documentation (Print Spooler service)
 certsrv.exe,Active Directory Certificate Services,Microsoft,authentication,certain,Windows Server AD CS documentation
 svchost.exe,Windows service host,Microsoft,runtime,ambiguous,Windows documentation; hosts many unrelated services
+System,Windows kernel (System process),Microsoft,runtime,ambiguous,Microsoft Learn; kernel-mode listeners such as SMB and HTTP.sys run as the System process
+backgroundTaskHost.exe,Windows background task host,Microsoft,runtime,ambiguous,"Microsoft Learn, background tasks; hosts tasks for many apps"
+msedgewebview2.exe,Microsoft Edge WebView2 Runtime,Microsoft,runtime,ambiguous,"Microsoft Learn, WebView2; hosts web content for many apps"
+services.exe,Windows Service Control Manager,Microsoft,os-component,certain,"Microsoft Learn, Service Control Manager"
+WUDFHost.exe,Windows User-Mode Driver Framework host,Microsoft,os-component,certain,"Microsoft Learn, User-Mode Driver Framework"
+dasHost.exe,Windows Device Association Framework host,Microsoft,os-component,certain,"Microsoft Learn, Device Association Framework"
+chrome.exe,Google Chrome,Google,desktop-app,certain,Google Chrome Enterprise documentation
+msedge.exe,Microsoft Edge,Microsoft,desktop-app,certain,"Microsoft Learn, Microsoft Edge"
+ms-teams.exe,Microsoft Teams,Microsoft,desktop-app,certain,"Microsoft Learn, the new Teams client"
 java,Java runtime,Various,runtime,ambiguous,Hosts any Java application server or service
 node,Node.js runtime,OpenJS Foundation,runtime,ambiguous,Hosts any Node.js service
 python,Python interpreter,Python Software Foundation,runtime,ambiguous,Hosts any Python service
 python3,Python interpreter,Python Software Foundation,runtime,ambiguous,Hosts any Python service
+python2.7,Python interpreter,Python Software Foundation,runtime,ambiguous,Hosts any Python service
 perl,Perl interpreter,Perl project,runtime,ambiguous,Hosts any Perl service
 ruby,Ruby interpreter,Ruby project,runtime,ambiguous,Hosts any Ruby service
 dotnet,.NET host,Microsoft,runtime,ambiguous,Hosts any .NET application
+powershell.exe,Windows PowerShell,Microsoft,runtime,ambiguous,"Microsoft Learn, Windows PowerShell; the script decides what it serves"
+pwsh.exe,PowerShell 7,Microsoft,runtime,ambiguous,"Microsoft Learn, PowerShell; the script decides what it serves"
+pwsh,PowerShell 7 on Linux and macOS,Microsoft,runtime,ambiguous,"Microsoft Learn, PowerShell; the script decides what it serves"
