@@ -256,8 +256,9 @@ For SGE-DMARC-R01, a domain whose sender policy authorises one of the
 recommendation may not apply, without changing the verdict.
 
 DKIM selectors cannot be listed from DNS, so only the selectors the target
-profile names under `discovery.dkim_selectors`, plus a short list of common
-defaults, are tried. A selector that does not answer proves nothing.
+profile names under `discovery.dkim_selectors`, any the supplied zone files
+publish beneath the domain, and a short list of common defaults are tried. A
+selector that does not answer proves nothing.
 
 ### Read from the sub-domain sweep
 

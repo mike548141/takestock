@@ -267,7 +267,7 @@ TLS-RPT) and, in the deployment checklist, *"all email enabled domains"*
 | SGE-DMARC-R03, SGE-DMARC-R05 | Its own DMARC record, for the tags the guide says not to use, and for `sp=` |
 | SGE-MTASTS-01, SGE-MTASTS-02 | The TXT record at `_mta-sts.<name>` (RFC 8461 §3.1) and, when it is published, the policy file fetched from `https://mta-sts.<name>/.well-known/mta-sts.txt` with certificate validation. The same checks as for an email domain: a certificate that does not validate, an answer other than 200 or a redirect (§3.3), a missing `version: STSv1` or a bad `max_age` (§3.2) fail; so does a mode other than `enforce`; the policy's `mx:` lines are compared with the name's own MX records |
 | SGE-TLSRPT-01 | The TXT record at `_smtp._tls.<name>` (RFC 8460 §3), which must be `v=TLSRPTv1` with a `rua=` address |
-| SGE-DKIM-R01, SGE-DKIM-R02 | The DKIM key at `<selector>._domainkey.<name>` (RFC 6376 §3.6.2, the DNS binding) under each selector tried: the profile's `discovery.dkim_selectors`, then the common ones, as for an email domain. Key size, and a key published under two selector names |
+| SGE-DKIM-R01, SGE-DKIM-R02 | The DKIM key at `<selector>._domainkey.<name>` (RFC 6376 §3.6.2, the DNS binding) under each selector tried: the profile's `discovery.dkim_selectors`, then any the supplied zone files publish beneath the domain, then the common ones, as for an email domain. Key size, and a key published under two selector names |
 
 SGE-DMARC-R01 is not read for these names. It applies only where a domain sends
 no bulk mail, which is not visible from outside, so even an email domain's row

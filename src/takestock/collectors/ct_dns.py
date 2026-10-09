@@ -13,7 +13,9 @@ Two passive readings, neither of which touches the organisation's hosts:
   reuse a complete, recent answer (:mod:`takestock.ctcache`).
 * **Mail authentication.** For each domain under ``discovery.email_domains``
   it reads MX, SPF, DMARC, MTA-STS (record and policy file), TLS-RPT and the
-  DKIM keys under each selector tried, and then sweeps the sub-domain names
+  DKIM keys under each selector tried (the profile's, any the supplied zone
+  files publish beneath the domain, then common defaults; each DKIM reading
+  says which in ``selector_from``), and then sweeps the sub-domain names
   known beneath it (from the transparency read, supplied zone files, the
   profile and sender policies, :func:`sweep_names`) for the denying SPF,
   empty DKIM and DMARC records a name that sends no mail should publish. The swept names that show
@@ -561,11 +563,17 @@ def collect(
                   if a.data_state == "discovery" and a.host}
     waiting = deferral is not None and bool(deferral.pending)
     asked = dnsevidence.resolvers(target)
-    selectors = dnsevidence.dkim_selectors(target)
+    zones = zone_files()
 
     for domain in disc.get("email_domains", []) or []:
         note(f"    · email-auth DNS records for {domain} …")
-        rows, unsettled = _email_assets(domain, ref_time, selectors, asked)
+        from_zones = zone_dkim_selectors(domain, zones)
+        if from_zones:
+            note(f"      DKIM selector(s) the zone files publish under {domain}: "
+                 + ", ".join(from_zones))
+        sources = dnsevidence.dkim_selector_sources(target, from_zones)
+        rows, unsettled = _email_assets(domain, ref_time, list(sources), asked,
+                                        selector_sources=sources)
         assets.extend(rows)
         failures.extend(unsettled)
         if not waiting:
@@ -692,17 +700,22 @@ def _ned_sweep(domain: str, discovered: set[str], ref_time: datetime | None,
     (:func:`sweep_names`). Where the profile attests a zone file complete, the
     rows carry that attestation (:func:`zone_population`). The names found
     handling mail are read for MTA-STS, TLS-RPT and DKIM under the profile's
-    selectors and the common ones (:func:`read_mail_subdomains`).
+    selectors, those the zone files publish beneath ``domain``
+    (:func:`zone_dkim_selectors`) and the common ones
+    (:func:`read_mail_subdomains`).
     """
     held = zone_files()
     sources = sweep_names(domain, discovered, target or {}, held)
     population = zone_population(domain, target or {}, held)
+    selector_sources = dnsevidence.dkim_selector_sources(target,
+                                                         zone_dkim_selectors(domain, held))
     beneath = sorted(sources)
     note(f"    · sub-domain SPF, DKIM and DMARC records under {domain}"
          f"{' (parked)' if parked else ''} "
          f"({len(beneath)} name(s), 4 corroborated lookups each) …")
     return _ned_assets(domain, beneath, ref_time, resolvers, parked, sources, population,
-                       selectors=dnsevidence.dkim_selectors(target), note=note)
+                       selectors=list(selector_sources), note=note,
+                       selector_sources=selector_sources)
 
 
 #: Where the supplied zone files are read from: the inbox folder the
@@ -724,6 +737,26 @@ def zone_files() -> list[zonefile.ZoneFile]:
         except (OSError, ValueError):
             continue
     return held
+
+
+def zone_dkim_selectors(domain: str, zones: list[zonefile.ZoneFile]) -> list[str]:
+    """The DKIM selectors the supplied zone files publish at or beneath ``domain``.
+
+    Public DNS offers no way to list selectors, but a zone file holds every
+    owner name. Each ``<selector>._domainkey.<name>`` (RFC 6376 §3.6.2, its namespace),
+    where ``<name>`` is ``domain`` or a name beneath it, gives ``<selector>``,
+    which may itself hold dots. The wildcard ``*._domainkey`` is not a
+    selector and is left out. In the order first found.
+    """
+    root = domain.lower().strip(".")
+    found = []
+    for z in zones:
+        for r in z.records:
+            selector, sep, parent = r.owner.partition("._domainkey.")
+            if (sep and selector and "*" not in selector
+                    and (parent == root or _beneath(parent, root))):
+                found.append(selector)
+    return list(dict.fromkeys(found))
 
 
 def _beneath(name: str, domain: str) -> bool:
@@ -1007,7 +1040,8 @@ def mta_sts_reading(domain: str, sts: TxtLookup, fetch_unpublished: bool = True
             "lookup": sts.evidence()}
 
 
-def dkim_keys(domain: str, selectors: list[str] | None = None) -> list[dict[str, Any]]:
+def dkim_keys(domain: str, selectors: list[str] | None = None,
+              selector_sources: dict[str, list[str]] | None = None) -> list[dict[str, Any]]:
     """The DKIM key records that answer under each selector tried beneath ``domain``.
 
     Each ``<selector>._domainkey.<domain>`` is asked for a CNAME first, since a
@@ -1018,7 +1052,9 @@ def dkim_keys(domain: str, selectors: list[str] | None = None) -> list[dict[str,
     record was read at. A selector that gives no DKIM record is left out:
     selector names cannot be listed, so silence proves nothing. With no
     ``selectors`` the common defaults are tried
-    (:data:`takestock.dnsevidence.DEFAULT_DKIM_SELECTORS`).
+    (:data:`takestock.dnsevidence.DEFAULT_DKIM_SELECTORS`). With
+    ``selector_sources`` (:func:`takestock.dnsevidence.dkim_selector_sources`)
+    each answer also gives ``selector_from``: where the selector came from.
     """
     out = []
     for sel in selectors if selectors is not None else list(dnsevidence.DEFAULT_DKIM_SELECTORS):
@@ -1029,15 +1065,20 @@ def dkim_keys(domain: str, selectors: list[str] | None = None) -> list[dict[str,
         if "p=" not in rec and "DKIM1" not in rec:
             continue
         key_match = re.search(r"p=([A-Za-z0-9+/=]*)", rec.replace(" ", ""))
-        out.append({"selector": sel, "key_bits": rsa_key_bits_from_dkim(rec),
-                    "public_key": key_match.group(1) if key_match else "",
-                    "via": target_name})
+        key: dict[str, Any] = {"selector": sel, "key_bits": rsa_key_bits_from_dkim(rec),
+                               "public_key": key_match.group(1) if key_match else "",
+                               "via": target_name}
+        if selector_sources is not None:
+            key["selector_from"] = list(selector_sources.get(sel, []))
+        out.append(key)
     return out
 
 
 def _email_assets(domain: str, ref_time: datetime | None = None,
                   selectors: list[str] | None = None,
-                  resolvers: tuple[str, ...] = ("",)) -> tuple[list[CryptoAsset], list[str]]:
+                  resolvers: tuple[str, ...] = ("",),
+                  selector_sources: dict[str, list[str]] | None = None,
+                  ) -> tuple[list[CryptoAsset], list[str]]:
     """MX, SPF, DMARC, NS, MTA-STS, TLS-RPT and DKIM rows for one email domain, and any failures.
 
     A settled lookup that returns no SPF or DMARC record still yields a row,
@@ -1045,7 +1086,8 @@ def _email_assets(domain: str, ref_time: datetime | None = None,
     the absence was measured. A lookup that did not settle (an error code or
     no reply) yields no row for that record and one failure line naming it.
     DKIM keys are looked for under guessed selectors, so a selector that does
-    not answer proves nothing and yields no row.
+    not answer proves nothing and yields no row. With ``selector_sources``,
+    each DKIM row's ``extra.selector_from`` says where its selector came from.
     """
     out: list[CryptoAsset] = []
     unsettled: list[str] = []
@@ -1102,7 +1144,7 @@ def _email_assets(domain: str, ref_time: datetime | None = None,
             extra={"record": rpt, "published": rpt_published,
                    "lookup": tls_rpt.evidence()}, **common))
 
-    for key in dkim_keys(domain, selectors):
+    for key in dkim_keys(domain, selectors, selector_sources):
         sel, bits = key["selector"], key["key_bits"]
         flags = ["weak-key-1024"] if bits and bits <= 1024 else []
         out.append(CryptoAsset(
@@ -1110,7 +1152,9 @@ def _email_assets(domain: str, ref_time: datetime | None = None,
             protocol="dkim",
             signatures=[f"rsa_{bits}"] if bits else [],
             flags=flags, notes=f"selector={sel}; key~{bits}-bit RSA; via {key['via']}",
-            extra={"selector": sel, "key_bits": bits, "public_key": key["public_key"]},
+            extra={"selector": sel, "key_bits": bits, "public_key": key["public_key"],
+                   **({"selector_from": key["selector_from"]} if "selector_from" in key
+                      else {})},
             **common))
 
     failures: list[str] = ([MailLookupFailure(
@@ -1300,14 +1344,15 @@ def _ned_assets(domain: str, names: list[str],
                 sources: dict[str, list[str]] | None = None,
                 population: dict[str, Any] | None = None,
                 selectors: list[str] | None = None,
-                note: Progress | None = None) -> list[CryptoAsset]:
+                note: Progress | None = None,
+                selector_sources: dict[str, list[str]] | None = None) -> list[CryptoAsset]:
     """The rows summarising a sub-domain sweep (see :func:`ned_rows`).
 
     The names the sweep finds handling mail are then read for MTA-STS,
     TLS-RPT and DKIM under ``selectors`` (:func:`read_mail_subdomains`).
     """
     cap = dnsevidence.capture_subdomains(domain, names, resolvers, sources=sources)
-    read_mail_subdomains(cap, selectors, resolvers, note)
+    read_mail_subdomains(cap, selectors, resolvers, note, selector_sources=selector_sources)
     return ned_rows(domain, cap, ref_time, parked, population)
 
 
@@ -1317,7 +1362,9 @@ MAIL_SUB_TLS_RPT = "TLS-RPT"
 
 
 def mail_subdomain_records(name: str, selectors: list[str] | None = None,
-                           resolvers: tuple[str, ...] = ("",)) -> dict[str, Any]:
+                           resolvers: tuple[str, ...] = ("",),
+                           selector_sources: dict[str, list[str]] | None = None,
+                           ) -> dict[str, Any]:
     """The MTA-STS, TLS-RPT and DKIM readings of one sub-domain that handles mail.
 
     Read as an email domain's are (:func:`_email_assets`): the TXT records at
@@ -1328,7 +1375,8 @@ def mail_subdomain_records(name: str, selectors: list[str] | None = None,
     §3.6.2, the DNS binding, puts a key at ``<selector>._domainkey.<name>``).
 
     Returns ``mta_sts`` and ``tls_rpt`` (each left out when its lookup did not
-    settle), ``dkim`` (the keys that answered), ``dkim_selectors_tried``, and
+    settle), ``dkim`` (the keys that answered, each with ``selector_from``
+    when ``selector_sources`` is given), ``dkim_selectors_tried``, and
     ``not_read``: for each record that was not read, why. A lookup that did
     not settle claims nothing either way, as for an email domain.
     """
@@ -1347,7 +1395,7 @@ def mail_subdomain_records(name: str, selectors: list[str] | None = None,
     else:
         out["not_read"][MAIL_SUB_TLS_RPT] = f"{rpt.name}: {rpt.why_unsettled()}"
     tried = selectors if selectors is not None else list(dnsevidence.DEFAULT_DKIM_SELECTORS)
-    out["dkim"] = dkim_keys(name, tried)
+    out["dkim"] = dkim_keys(name, tried, selector_sources)
     out["dkim_selectors_tried"] = len(tried)
     return out
 
@@ -1355,7 +1403,8 @@ def mail_subdomain_records(name: str, selectors: list[str] | None = None,
 def read_mail_subdomains(cap: dict, selectors: list[str] | None = None,
                          resolvers: tuple[str, ...] = ("",),
                          note: Progress | None = None,
-                         workers: int = dnsevidence.SWEEP_WORKERS) -> None:
+                         workers: int = dnsevidence.SWEEP_WORKERS,
+                         selector_sources: dict[str, list[str]] | None = None) -> None:
     """Add :func:`mail_subdomain_records` to each settled mail-handling name in ``cap``.
 
     ``cap`` is a :func:`takestock.dnsevidence.capture_subdomains` result, so
@@ -1380,7 +1429,8 @@ def read_mail_subdomains(cap: dict, selectors: list[str] | None = None,
              f"one is published, and up to {2 * len(tried)} DKIM lookups each) …")
     with futures.ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         readings = list(pool.map(
-            lambda r: mail_subdomain_records(r["name"], tried, resolvers), mail))
+            lambda r: mail_subdomain_records(r["name"], tried, resolvers, selector_sources),
+            mail))
     for r, reading in zip(mail, readings, strict=True):
         r["mail_records"] = reading
 

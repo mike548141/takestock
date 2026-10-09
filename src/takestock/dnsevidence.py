@@ -26,6 +26,7 @@ import json
 import re
 import secrets
 import subprocess
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -105,11 +106,34 @@ def parked_domains(target: dict | None = None) -> list[str]:
     return out
 
 
-def dkim_selectors(target: dict | None = None) -> list[str]:
-    """Selectors to try: the profile's own first, then the common defaults."""
+#: Where a DKIM selector tried came from, as a DKIM reading's ``selector_from`` lists it.
+SELECTOR_FROM_PROFILE = "target profile"
+SELECTOR_FROM_ZONE = "zone file"
+SELECTOR_FROM_DEFAULT = "common default"
+
+
+def dkim_selector_sources(target: dict | None = None,
+                          zone_selectors: Iterable[str] = ()) -> dict[str, list[str]]:
+    """Each DKIM selector to try, in the order tried, with where it came from.
+
+    The profile's own (``discovery.dkim_selectors``) first, then any the
+    supplied zone files publish (``zone_selectors``), then the common
+    defaults. A selector named in more than one place lists each.
+    """
     own = ((target or {}).get("discovery") or {}).get("dkim_selectors") or []
-    return list(dict.fromkeys([str(s).strip() for s in own if str(s).strip()]
-                              + list(DEFAULT_DKIM_SELECTORS)))
+    out: dict[str, list[str]] = {}
+    for names, source in ((own, SELECTOR_FROM_PROFILE), (zone_selectors, SELECTOR_FROM_ZONE),
+                          (DEFAULT_DKIM_SELECTORS, SELECTOR_FROM_DEFAULT)):
+        for raw in names:
+            name = str(raw).strip()
+            if name and source not in out.setdefault(name, []):
+                out[name].append(source)
+    return out
+
+
+def dkim_selectors(target: dict | None = None, zone_selectors: Iterable[str] = ()) -> list[str]:
+    """Selectors to try: the profile's own, then any the zone files publish, then the defaults."""
+    return list(dkim_selector_sources(target, zone_selectors))
 
 
 def _now() -> str:

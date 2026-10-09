@@ -206,7 +206,8 @@ hosts:
   when it is published, the policy file, with the same fields as an email
   domain's `mta-sts` row), `tls_rpt` (the `_smtp._tls` TXT record, its
   `published` and `rua`), `dkim` (each selector tried that answered: its
-  `selector`, `key_bits`, `public_key` and the name it was read `via`), and
+  `selector`, `key_bits`, `public_key`, the name it was read `via`, and
+  `selector_from`), and
   `dkim_selectors_tried`. A lookup that did not settle leaves its reading out
   and is named, with the replies, in the name's `not_read` and in
   `extra.names_mail_records_not_read`. Only a name whose
@@ -252,6 +253,18 @@ keychain item named `takestock-ct-token`; without one the service is asked
 anonymously. `discovery.dkim_selectors` lists the organisation's own DKIM
 selectors, tried before a short list of common defaults.
 
+**DKIM selectors from zone files.** DNS offers no way to list DKIM
+selectors, but a zone file holds every owner name. When zone files are
+supplied (the `dns_zones` inbox folder), every `<selector>._domainkey.<name>`
+they hold, where `<name>` is the email domain or a name beneath it, adds
+`<selector>` to the selectors tried for that domain and its swept
+sub-domains, after the profile's and before the defaults. The wildcard
+`*._domainkey` is not a selector and is left out. Each DKIM row's
+`extra.selector_from`, and each `selector_from` in a sub-domain's `dkim`
+readings, lists where the selector came from: `target profile`, `zone file`
+or `common default` (more than one when it was named in more than one
+place).
+
 **Rate limits.** Search services limit how often they may be asked. A
 recent answer (up to two days old) whose read finished is reused from an
 earlier observation instead of asking again, and reported as reused with its
@@ -260,8 +273,10 @@ finished later in the same run.
 
 **Cannot see.** Names that never appeared in a public certificate (an
 internal name, or a sub-domain nobody serves TLS on); whether a server
-actually presents a logged certificate; DKIM selectors nobody named, since
-DNS offers no way to list them.
+actually presents a logged certificate; DKIM selectors nobody named and no
+supplied zone file holds, since DNS offers no way to list them. A selector a
+zone file holds that public DNS does not answer gives no row, as for any
+selector.
 
 ### `spf_senders`
 
