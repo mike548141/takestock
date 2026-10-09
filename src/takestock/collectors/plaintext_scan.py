@@ -698,6 +698,16 @@ def _needs_verification(outcome: str, row: Mapping[str, str] | None) -> bool:
     return outcome == CLEARTEXT_SERVED and _speaks_http((row or {}).get("protocol", ""))
 
 
+def needs_cleartext_check(asset: CryptoAsset) -> bool:
+    """True when :func:`verify_cleartext_http` would send its request for ``asset``.
+
+    That is a row graded ``cleartext-served`` on a port the port table says
+    speaks HTTP. For any other row it sends nothing.
+    """
+    row = lookup(str(asset.port), "tcp", load_port_encryption())
+    return _needs_verification(str((asset.extra or {}).get("plaintext_outcome", "")), row)
+
+
 def _run_verify(host: str, port: str, raw_dir: Path | None) -> str:
     out = run(verify_command(host, port), timeout=hsts.RUN_TIMEOUT)
     if raw_dir:

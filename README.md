@@ -157,6 +157,16 @@ Collectors come in three kinds:
   ```
 
   `--scan` and `--offline` together are refused too.
+- `--carry-scan <observation>` takes a new observation without probing
+  again: the passive and ingest collectors run afresh, and the rows an
+  earlier `--scan` observation of the same target measured are carried in,
+  each keeping the date it was measured. An observation older than
+  `--carry-max-age` days (31 unless set) is refused. A carried row graded
+  cleartext-served on an HTTP port is re-checked with one plain-HTTP
+  request, so a carry needs the authorisation record too whenever there is
+  such a row; without it the carry is refused before anything is sent.
+  `summary.json` records the carry under `carried_scan`. See
+  [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#carrying-earlier-probe-rows).
 - Probes that run inside a network each need their own named, dated record
   as well, and every host must be named one at a time. Ranges, wildcards and
   lists over a ceiling are refused, never cut short.

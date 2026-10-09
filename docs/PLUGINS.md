@@ -166,6 +166,7 @@ copies, so a step that changes them changes nothing outside itself.
 | `ran` | The built-in collectors that ran |
 | `skipped` | The built-in collectors that did not run, each with the reason (such as `active probes need --scan`) |
 | `failed` | The built-in collectors that reported a real failure or stopped with an error |
+| `carried` | The active collectors whose rows were carried from an earlier observation instead of probing again (`--carry-scan`); in neither `ran` nor `skipped` |
 | `plugins` | Each declared plug-in's status so far: `ran`, `not-run` (its `summary.json` record says why) or `pending` (its turn has not come; a plug-in reading this sees itself as pending) |
 | `scan`, `offline` | The observation's options |
 

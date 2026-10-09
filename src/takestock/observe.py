@@ -23,7 +23,10 @@ Which collectors run (see :mod:`takestock.collectors` for the kinds):
   supplied files but looks nothing up;
 * **active** collectors send probes, and run only when ``scan`` is set and
   the target profile carries a complete ``authorisation:`` stanza. Without
-  one the observation is refused before anything is written or contacted;
+  one the observation is refused before anything is written or contacted.
+  With ``carry_scan`` instead, they do not run: the rows an earlier ``--scan``
+  observation of the same target measured are carried in, each keeping the
+  date it was measured (see :mod:`takestock.carry`);
 * **ingest** collectors read supplied exports and always run.
 
 Plug-in collectors the target profile declares (see :mod:`takestock.plugins`)
@@ -52,6 +55,7 @@ from types import ModuleType
 
 from . import (
     __version__,
+    carry,
     collectors,
     config,
     coverage,
@@ -63,6 +67,7 @@ from . import (
     plugins,
     sge,
 )
+from .carry import Held as CarryHeld
 from .collectors import ct_dns
 from .disposition import load_dispositions_for_target, set_digest
 from .exits import EXIT_CLEAN, EXIT_ERROR, EXIT_FINDINGS
@@ -86,6 +91,11 @@ class Options:
     offline: bool = False
     refresh_ct: bool = False
     now: datetime | None = None
+    #: An earlier observation (a directory, or a stamp under ``observations/``)
+    #: whose active-probe rows are carried in instead of probing again.
+    carry_scan: str | Path | None = None
+    #: How old, in days, the carried observation may be.
+    carry_max_age_days: int = carry.CARRY_MAX_AGE_DAYS
     announce: Callable[[str], None] = field(
         default=lambda line: print(line, file=sys.stderr, flush=True))
 
@@ -120,7 +130,9 @@ class Run:
     where the collectors keep their transcripts; ``observations`` is where
     earlier observations are looked for (see :mod:`takestock.ctcache`).
     ``failed`` names, once each, the collectors that reported a real failure
-    or stopped with an error; their messages are in ``failures``.
+    or stopped with an error; their messages are in ``failures``. ``carry``
+    is the earlier observation whose probe rows a carried run reuses, and
+    ``carried`` names the active collectors whose rows it brought.
     """
 
     target: dict
@@ -136,6 +148,8 @@ class Run:
     ct_deferral: ct_dns.CTDeferral | None = None
     ct_failures: list[str] = field(default_factory=list)
     ct_reused: list[ctcache.Cached] = field(default_factory=list)
+    carry: CarryHeld | None = None
+    carried: list[str] = field(default_factory=list)
 
     @property
     def ref_time(self) -> datetime | None:
@@ -198,6 +212,11 @@ def _relay_probe(run: Run) -> Callable[[str, str], tuple[CryptoAsset, list[str]]
 
 
 def _spf_senders(run: Run) -> tuple[list[CryptoAsset], list[str], list]:
+    if run.carry is not None:
+        # The relays' carried rows and gaps stand in for the probe.
+        rows, gaps = _mod("spf_senders").collect(
+            run.target, run.ref_time, carried=(run.carry.spf_rows, run.carry.spf_gaps()))
+        return rows, [], list(gaps)
     rows, gaps = _mod("spf_senders").collect(run.target, run.ref_time,
                                              scan=_active_allowed(run), probe=_relay_probe(run))
     return rows, [], list(gaps)
@@ -444,6 +463,7 @@ def run_info(run: Run) -> plugins.RunInfo:
     """How ``run`` has gone so far, as late plug-ins, coverage checks and annotations see it."""
     return plugins.RunInfo(collectors=tuple(collectors.names()), ran=tuple(run.ran),
                            skipped=dict(run.skipped), failed=tuple(run.failed),
+                           carried=tuple(run.carried),
                            scan=run.options.scan, offline=run.options.offline)
 
 
@@ -482,7 +502,8 @@ def _resolver_gaps(target: dict) -> list[coverage.Gap]:
         nature=coverage.LOW_FIDELITY)]
 
 
-def _metadata(target: dict, stamp: str, options: Options, complete: bool) -> dict:
+def _metadata(target: dict, stamp: str, options: Options, complete: bool,
+              carried_from: str = "") -> dict:
     props = {
         "organisation": _organisation(target),
         "observation": stamp,
@@ -490,6 +511,8 @@ def _metadata(target: dict, stamp: str, options: Options, complete: bool) -> dic
         "offline": str(options.offline).lower(),
         "complete": str(complete).lower(),
     }
+    if carried_from:
+        props["carried_scan"] = carried_from
     return {
         "timestamp": _iso(options.now),
         "tools": {"components": [{"type": "application", "name": "takestock",
@@ -524,17 +547,64 @@ def _point_latest(observations: Path, stamp: str) -> None:
         pass
 
 
+def _held(target: dict, ref: str | Path, now: datetime, max_age_days: int,
+          observations: Path) -> CarryHeld:
+    """The earlier observation to carry, checked; refuses before anything is sent."""
+    try:
+        held = carry.load(ref, target, observations, now, max_age_days,
+                          organisation=_organisation(target))
+    except carry.CarryRefused as exc:
+        raise ObserveRefused(f"--carry-scan: {exc}") from exc
+    to_check = carry.recheck_rows(held.rows)
+    if to_check:
+        problems = inside_scope.scan_authorisation_problems(target)
+        if problems:
+            raise ObserveRefused(
+                f"--carry-scan re-checks {len(to_check)} carried cleartext row(s) with one "
+                "plain-HTTP request each, and that needs an authorisation record in the "
+                "target profile: " + "; ".join(problems))
+    return held
+
+
+def _carry_in(run: Run, held: CarryHeld) -> dict:
+    """Add the carried probe rows and their gaps to ``run``; return the carry record."""
+    rows = held.probe_rows
+    to_check = carry.recheck_rows(rows)
+    if to_check:
+        run.say(f"  · re-checking {len(to_check)} carried cleartext row(s) with one plain-HTTP "
+                "request each: " + ", ".join(f"{a.host}:{a.port}" for a in to_check))
+    rows, rechecked = carry.recheck(rows, run.raw, run.ref_time)
+    copied = carry.copy_raw(held, run.raw)
+    run.assets += rows
+    run.gaps += held.gaps(run.target)
+    run.say(f"  \u21a9 active probes not run: carried {len(held.rows)} row(s) from {held.stamp} "
+            f"({held.age_days} day(s) old, measured {', '.join(held.dates()) or 'on no date'}); "
+            f"{copied} raw file(s) copied")
+    return carry.record(held, copied, rechecked)
+
+
 def observe(target: dict, options: Options | None = None) -> Result:
     """Take one observation of ``target`` (a loaded profile) into the workspace.
 
     Raises :class:`ObserveRefused`, before anything is written or contacted,
     when ``scan`` is asked for and the profile's authorisation stanza is
     missing or incomplete, when both ``scan`` and ``offline`` are asked for,
-    or when the observation directory already exists.
+    or when the observation directory already exists. With ``carry_scan``,
+    it also raises when the earlier observation may not be carried
+    (:func:`takestock.carry.load`), when ``scan`` or ``offline`` is asked for
+    too, and when a carried row would be re-checked and the authorisation
+    stanza is missing or incomplete.
     """
     options = options or Options()
     if options.scan and options.offline:
         raise ObserveRefused("--scan and --offline ask for opposite things; choose one")
+    if options.carry_scan is not None and options.scan:
+        raise ObserveRefused("--carry-scan and --scan ask for opposite things: one reuses "
+                             "earlier probe rows, the other probes again; choose one")
+    if options.carry_scan is not None and options.offline:
+        raise ObserveRefused("--carry-scan and --offline ask for opposite things: a carry "
+                             "runs the passive collectors and may re-check carried cleartext "
+                             "rows over the network; choose one")
     if options.scan:
         problems = inside_scope.scan_authorisation_problems(target)
         if problems:
@@ -543,6 +613,8 @@ def observe(target: dict, options: Options | None = None) -> Result:
     options.now = options.now or datetime.now(UTC)
     stamp = stamp_for(options.now)
     observations = config.observations_dir()
+    held = (_held(target, options.carry_scan, options.now, options.carry_max_age_days,
+                  observations) if options.carry_scan is not None else None)
     obs = observations / stamp
     if obs.exists() or obs.is_symlink():
         raise ObserveRefused(
@@ -552,20 +624,31 @@ def observe(target: dict, options: Options | None = None) -> Result:
     raw = obs / "raw"
     raw.mkdir(parents=True)
 
-    run = Run(target=target, raw=raw, observations=observations, options=options)
+    run = Run(target=target, raw=raw, observations=observations, options=options, carry=held)
     run.say(f"observing {_organisation(target) or 'the target'} into {config.display_path(obs)}")
     run.say(f"  inbox: {config.inbox_dir()}")
 
     host = plugins.Host(target, raw, options.now, announce=run.say)
     names = collectors.names()
     for name in names:
+        if held is not None and collectors.REGISTRY[name].kind == "active":
+            if name in held.carried:
+                run.carried.append(name)
+            else:
+                why = held.not_run.get(name) or "no reason recorded"
+                run.skipped[name] = (f"not run in the observation its probe rows were "
+                                     f"carried from ({held.stamp}): {why}")
+            continue
         why = _why_not(run, name)
         if why:
             run.skipped[name] = why
-    early = [n for n in names if n not in run.skipped and not PLANS[n].late]
-    late = [n for n in names if n not in run.skipped and PLANS[n].late]
+    early = [n for n in names if n not in run.skipped and n not in run.carried
+             and not PLANS[n].late]
+    late = [n for n in names if n not in run.skipped and n not in run.carried
+            and PLANS[n].late]
     for name in early:
         run_step(run, name)
+    carried_scan = _carry_in(run, held) if held is not None else None
     resume_ct(run)
     rows, gaps = host.run(late=False, assets=run.assets)
     run.assets += rows
@@ -608,6 +691,7 @@ def observe(target: dict, options: Options | None = None) -> Result:
             "organisation": _organisation(target), "target": rel,
             "scan": options.scan, "offline": options.offline,
             "collectors_run": run.ran, "collectors_skipped": run.skipped,
+            "collectors_carried": run.carried,
             "failed_collectors": run.failed,
             "dispositions_digest": set_digest(rules),
         },
@@ -623,10 +707,13 @@ def observe(target: dict, options: Options | None = None) -> Result:
             run.ct_reused, list((target.get("discovery") or {}).get("domains") or []),
             ctcache.CT_CACHE_DAYS, options.refresh_ct),
     })
+    if carried_scan is not None:
+        summary[carry.SUMMARY_KEY] = carried_scan
 
     write_json(dump_assets(assets), obs / "assets.json")
     write_json(summary, obs / "summary.json")
-    write_json(to_cyclonedx(assets, _metadata(target, stamp, options, complete)),
+    write_json(to_cyclonedx(assets, _metadata(target, stamp, options, complete,
+                                              held.stamp if held is not None else "")),
                obs / "bom.cdx.json")
     _point_latest(observations, stamp)
     return Result(observation=obs, assets=assets, summary=summary,

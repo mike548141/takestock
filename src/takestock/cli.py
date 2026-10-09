@@ -17,7 +17,7 @@ import textwrap
 from importlib import import_module
 from pathlib import Path
 
-from . import __version__, config
+from . import __version__, carry, config
 from .exits import EXIT_CLEAN, EXIT_ERROR, EXIT_FINDINGS, guarded
 from .observe import ObserveRefused, Options, observe
 
@@ -27,7 +27,7 @@ exit codes:
   {EXIT_FINDINGS}  findings present: observe found a weak verdict or work for an
      out-of-cycle rung; sge or sge-note found an unmet MUST requirement;
      requirements derived at least one requirement
-  {EXIT_ERROR}  error: bad arguments, an unreadable input, a refused scan, or an
+  {EXIT_ERROR}  error: bad arguments, an unreadable input, a refused scan or carry, or an
      observation that could not judge because a collector failed (the
      observation is still written, and summary.json lists the failures)
 """
@@ -64,16 +64,31 @@ def build_parser() -> argparse.ArgumentParser:
             "Run the collectors for one target profile and write observations/<UTC stamp>/ "
             "(assets.json, summary.json, bom.cdx.json and raw/). Passive collectors read "
             "public sources; active probes run only with --scan and the profile's "
-            "authorisation record; ingest collectors read supplied exports.", 78))
+            "authorisation record; ingest collectors read supplied exports. With "
+            "--carry-scan the active probes do not run: the rows an earlier --scan "
+            "observation measured are carried in, each keeping the date it was measured.",
+            78))
     p.add_argument("target", help="a target profile: a path, or a name under targets/")
     mode = p.add_mutually_exclusive_group()
     mode.add_argument("--scan", action="store_true",
                       help="also run the active probes (needs `authorisation:` in the profile)")
     mode.add_argument("--offline", action="store_true",
                       help="send nothing over the network: read supplied exports only")
+    mode.add_argument("--carry-scan", metavar="OBSERVATION",
+                      help="instead of probing, carry the active-probe rows (and their raw "
+                           "transcripts) of an earlier --scan observation of this target: a "
+                           "stamp under observations/, or a path. Each row keeps the date it "
+                           "was measured; passive and ingest collectors run afresh. Carried "
+                           "rows graded cleartext-served are re-checked with one plain-HTTP "
+                           "request each, which needs the authorisation record. Refused past "
+                           "--carry-max-age days")
     p.add_argument("--inbox", metavar="DIR",
                    help="read supplied exports from DIR (default: $TAKESTOCK_INBOX, "
                         "else <workspace>/inbox)")
+    p.add_argument("--carry-max-age", metavar="DAYS", type=int,
+                   default=carry.CARRY_MAX_AGE_DAYS,
+                   help="the oldest an observation may be, in days, and still be carried "
+                        f"(default: {carry.CARRY_MAX_AGE_DAYS})")
     p.add_argument("--refresh-ct", action="store_true",
                    help="ask the certificate-transparency service again rather than reuse "
                         "a recent answer from an earlier observation")
@@ -130,7 +145,8 @@ def _observe(args: argparse.Namespace) -> int:
     if args.inbox:
         config.set_inbox(args.inbox)
     target = config.load_target(args.target)
-    options = Options(scan=args.scan, offline=args.offline, refresh_ct=args.refresh_ct)
+    options = Options(scan=args.scan, offline=args.offline, refresh_ct=args.refresh_ct,
+                      carry_scan=args.carry_scan, carry_max_age_days=args.carry_max_age)
     try:
         result = observe(target, options)
     except ObserveRefused as exc:

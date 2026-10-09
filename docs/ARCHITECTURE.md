@@ -51,7 +51,10 @@ plan file + exports ─► ipam.py + ipam_view.py ─► IP address plan   (read
 2. **Decide what runs.** For each registered collector, `_why_not` gives a
    reason it does not run: an offline run, for anything but an ingest
    collector or an offline-safe step; or an active collector without `scan`. Each reason becomes one coverage gap naming the
-   collectors it held back.
+   collectors it held back. In a carried run (`carry_scan`, below) the
+   active collectors do not run either: those that ran in the earlier
+   observation are carried, and the rest are skipped with the reason that
+   observation recorded.
 3. **Run the early steps**, in registration order, then finish any
    certificate-transparency domains that were parked while a search service
    asked the run to wait, then the profile's ordinary **plug-ins**
@@ -69,6 +72,64 @@ plan file + exports ─► ipam.py + ipam_view.py ─► IP address plan   (read
 Each collector step returns `(rows, failures, gaps)`. The adapters in
 `observe.py` (`_rows_and_failures`, `_ingest`, `_port_probe`) fit each
 collector's own signature to that shape.
+
+### Carrying earlier probe rows (`carry.py`)
+
+`Options(carry_scan=<observation>)`, or `takestock observe <target>
+--carry-scan <observation>` on the command line, takes an observation without
+probing again. The passive and ingest collectors run afresh; in place of the
+active probes, the rows an earlier `--scan` observation of the same target
+measured are carried in, and the raw transcripts beside them are copied.
+
+- **What is carried.** Every row whose `source` is an active collector's,
+  except `ssh_audit` rows read from supplied files, plus the `spf_senders`
+  rows its relay probe wrote, which are handed to that collector in place of
+  the probe. Each row is unchanged: its `source`, `collected_at` and notes are
+  the earlier run's. The `ike_scan` and `hsts` gaps are worked out again from
+  the carried rows; the relays that did not answer are read back from the
+  earlier `summary.json`. Top-level raw files are copied except the
+  certificate-transparency answers (`ct-*`), and never over a file this run
+  wrote.
+- **Refused, before anything is written or sent:** with `scan` or `offline`;
+  when the earlier observation cannot be found or read, or has not finished;
+  when it is older than `carry_max_age_days` (`--carry-max-age`, default
+  `carry.CARRY_MAX_AGE_DAYS`, 31) or dated after this run; when it was taken
+  of another target or organisation; when it was not a `--scan` run (a carry
+  of a carry is refused, so a carry always reaches back to the run that
+  measured); and when an active collector or `spf_senders` failed in it. An
+  archived observation is unpacked first (`obsarchive.unpacked`).
+- **The one live contact.** A carried `plaintext_scan` row graded
+  `cleartext-served` on a port that speaks HTTP is re-checked with the one
+  plain-HTTP request `plaintext_scan.verify_cleartext_http` sends. The row
+  keeps its `collected_at`, and `extra.cleartext_verified_on` holds the
+  request's date. That request is a probe, so when there is such a row the
+  carry is refused, before anything is sent, unless the profile carries the
+  complete `authorisation:` record `--scan` needs.
+- **The record.** `summary.json` gains `carried_scan` (present only on a
+  carried run):
+
+  ```json
+  "carried_scan": {
+    "from_observation": "2030-01-20T0930Z",
+    "from_collected_at": "2030-01-20T09:30:00Z",
+    "measured": ["2030-01-20"],
+    "age_days": 11,
+    "max_age_days": 31,
+    "collectors": ["tls_scan", "ike_scan", "..."],
+    "rows": 5,
+    "by_source": {"plaintext_scan": 2, "spf_senders": 1, "ssh_audit": 1, "tls_scan": 1},
+    "raw_files": 1,
+    "rechecked": [{"host": "shop.example.test", "port": "80",
+                   "before": "cleartext-served", "after": "cleartext-served",
+                   "collected_at": "2030-01-20", "verified_on": "2030-01-31",
+                   "status": "HTTP/1.1 200 OK"}]
+  }
+  ```
+
+  The `observation` block's `scan` is `false` and `collectors_carried` names
+  the carried collectors; `bom.cdx.json` carries the property
+  `takestock:carried_scan` with the earlier stamp. Late plug-ins, coverage
+  checks and annotations see the carried collectors as `ctx.run.carried`.
 
 ### 2. Normalise and grade (`normalise.py`, `policy.py`, `disposition.py`)
 

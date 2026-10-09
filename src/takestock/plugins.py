@@ -188,7 +188,9 @@ class RunInfo:
 
     ``collectors`` names every registered built-in collector; ``ran`` those
     that ran; ``skipped`` those that did not, each with the reason;
-    ``failed`` those that reported a real failure or stopped with an error.
+    ``failed`` those that reported a real failure or stopped with an error;
+    ``carried`` the active collectors whose rows were carried from an earlier
+    observation instead of probing again (see :mod:`takestock.carry`).
     ``plugins`` gives each declared plug-in's status so far: ``ran``,
     ``not-run`` (its record in ``summary.json`` says why) or ``pending`` (its
     turn has not come, which includes the plug-in reading it). ``scan`` and
@@ -201,6 +203,7 @@ class RunInfo:
     ran: tuple[str, ...] = ()
     skipped: Mapping[str, str] = field(default_factory=dict)
     failed: tuple[str, ...] = ()
+    carried: tuple[str, ...] = ()
     plugins: Mapping[str, str] = field(default_factory=dict)
     scan: bool = False
     offline: bool = False

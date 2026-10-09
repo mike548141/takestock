@@ -170,6 +170,33 @@ _UNREACHABLE = (
     "unmeasured. Not necessarily a fault: a host that only SENDS mail has no reason "
     "to accept it, and this tool cannot tell that case apart from a filtered port")
 
+_UNREACHABLE_HEAD, _UNREACHABLE_TAIL = _UNREACHABLE.split("{host}")
+
+
+def unreachable_host(text: str) -> str:
+    """The relay a gap from :func:`unreachable_gap` names, or "" for any other text."""
+    t = str(text)
+    if not (t.startswith(_UNREACHABLE_HEAD) and t.endswith(_UNREACHABLE_TAIL)):
+        return ""
+    return t[len(_UNREACHABLE_HEAD):len(t) - len(_UNREACHABLE_TAIL)]
+
+
+def carried_gaps(rows: list[CryptoAsset], gap_texts: list[str]) -> list[Gap]:
+    """The relay-probe gaps of an earlier run, for passing its rows in as ``carried``.
+
+    ``rows`` are that run's relay rows; ``gap_texts`` its gaps as text (a
+    ``summary.json`` ``gaps`` list). A relay that did not answer is read back
+    from the gap text, for only a gap knows it; the certificates not read are
+    worked out from the rows.
+    """
+    probed = {a.host for a in rows}
+    unreachable = [h for h in (unreachable_host(t) for t in gap_texts) if h and h in probed]
+    gaps = [unreachable_gap(h) for h in dict.fromkeys(unreachable)]
+    gaps += [coverage.gap(coverage.COULD_NOT_TEST, line, nature=coverage.NO_DATA,
+                          harvest="Install nmap and run again.")
+             for line in cert_not_read_failure(SOURCE_KEY, rows)]
+    return gaps
+
 
 def _relays(surfaces: list[spf.Surface], skip: set[str]) -> list[tuple[str, list[str]]]:
     named_by: dict[str, list[str]] = {}

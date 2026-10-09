@@ -371,6 +371,12 @@ Every active collector checks the authorisation record before it contacts
 anything. A missing or incomplete record produces one failure line,
 `REFUSED, nothing contacted`, and no rows.
 
+With `--carry-scan`, none of them runs: their rows are carried, unchanged and
+dated when measured, from an earlier `--scan` observation of the same target,
+and only a carried `plaintext_scan` row graded cleartext-served on an HTTP
+port is re-checked (see `docs/ARCHITECTURE.md`, *Carrying earlier probe
+rows*).
+
 ### `tls_scan`
 
 **Probes** each endpoint in `scan_targets.vpn_gateways` (port 443),
