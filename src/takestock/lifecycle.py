@@ -31,7 +31,10 @@ identifies a product line exactly:
 
 Derived bands are computed as of the date the evidence was collected, never
 today's date, so the same observation always gives the same answer. A near
-match is left unmatched rather than guessed.
+match is left unmatched rather than guessed. A derived status carries
+``extra[SUPPORT_STATUS_BASIS_KEY] == DERIVED``; rows stored by an earlier run
+can be derived again against a newer Windows table with
+``derive_windows_support(..., rederive=True)``.
 
 **Plan marks** (``replaced_by``, ``retiring_by``) are two further lists of
 patterns, also declared by a person. A match sets ``extra[<key>] = True`` on
@@ -170,6 +173,9 @@ SUPPORT_STATUS_BASIS_KEY = "support_status_basis"
 DERIVED = "derived"
 #: ``extra`` key for what a derived band depends on, such as a paid extension.
 SUPPORT_CONDITION_KEY = "support_condition"
+#: ``extra`` key naming the ``data/software-lifecycle.yaml`` line a software
+#: inventory row was graded against (blank when none or several matched).
+LIFECYCLE_LINE_KEY = "lifecycle_line"
 
 #: ``extra`` keys a collector fills for a Windows device: the dotted version
 #: string (``10.0.<build>.<revision>``), the edition as the inventory reports
@@ -244,11 +250,57 @@ def _ga_table(dataset: dict, build: int, edition: str) -> dict | None:
     return None
 
 
-def derive_windows_support(assets: list[CryptoAsset], dataset: dict) -> dict:
+def _windows_band(a: CryptoAsset, dataset: dict) -> tuple[str, str, str] | str | None:
+    """(band, condition, end) for a Windows device the table matches.
+
+    For a device it does not match, the count key saying why; for a row that
+    is not a Windows device at all, None.
+    """
+    m = _WINDOWS_BUILD.match(str(a.extra.get(OS_VERSION_KEY) or "").strip())
+    build = m.group(1) if m else ""
+    name = str(a.extra.get(OS_NAME_KEY) or "")
+    row = _product_row(dataset, name)
+    if row is None:
+        if not build:
+            return None
+        if re.search(r"\b(server|ltsc|ltsb)\b", name, re.IGNORECASE):
+            return "unrecognised_product"
+    elif build and row.get("build") and str(row["build"]) != build:
+        return "unrecognised_product"
+    as_of = _as_of(a)
+    if row is not None:
+        if as_of is None:
+            return "uncollected_date"
+        return _product_band(row, as_of)
+    table = _ga_table(dataset, int(build), str(a.extra.get(OS_EDITION_KEY) or "").strip())
+    if table is None:
+        return "wrong_or_missing_edition"
+    ga = table.get(build)
+    if ga is None:
+        return "unrecognised_build"
+    if as_of is None:
+        return "uncollected_date"
+    end = str(ga["end"])
+    return (SUPPORTED if as_of <= date.fromisoformat(end) else END_OF_SUPPORT), "", end
+
+
+def _windows_derived(a: CryptoAsset) -> bool:
+    """True when ``a``'s status was set by :func:`derive_windows_support`.
+
+    The software lifecycle derivation sets the same basis mark, and also
+    records the line it matched, so a row carrying that line is not one of
+    these.
+    """
+    return a.extra.get(SUPPORT_STATUS_BASIS_KEY) == DERIVED and LIFECYCLE_LINE_KEY not in a.extra
+
+
+def derive_windows_support(assets: list[CryptoAsset], dataset: dict,
+                           *, rederive: bool = False) -> dict:
     """Fill ``support_status`` and ``support_end`` on Windows devices from ``dataset``.
 
     ``dataset`` is ``data/windows-lifecycle.yaml``. An asset already carrying
-    a status is skipped, so call this after :func:`apply_support_status`.
+    a status is skipped (but see ``rederive`` below), so call this after
+    :func:`apply_support_status`.
 
     A device whose product name (``extra["os"]``) names an LTSC or Server
     release is graded against that release's row, and the row's build must
@@ -258,51 +310,49 @@ def derive_windows_support(assets: list[CryptoAsset], dataset: dict) -> dict:
     a build alone is never enough, because editions of the same build have
     different end dates. Returns counts of what was matched and why the rest
     was not.
+
+    ``rederive=True`` is for rows stored by an earlier run, read back to be
+    graded against a newer table. A row whose status an earlier call of this
+    function derived (it carries ``extra[SUPPORT_STATUS_BASIS_KEY] ==
+    DERIVED``) is derived again rather than skipped:
+
+    * where the table still matches, the status, end and condition are
+      replaced in place, so ``extra`` keeps its key order;
+    * where it no longer matches, the status and end are cleared and the
+      basis mark and condition removed, and ``counts["cleared"]`` says how
+      many rows that happened to.
+
+    A declared status carries no basis mark and is never touched. Nor is a row
+    whose status the software lifecycle table derived (it carries
+    ``extra[LIFECYCLE_LINE_KEY]``), since this function never derived it.
     """
     counts = {"matched": 0, "wrong_or_missing_edition": 0, "unrecognised_build": 0,
               "unrecognised_product": 0, "uncollected_date": 0}
+    if rederive:
+        counts["cleared"] = 0
     for a in assets:
-        if a.support_status:
+        again = rederive and _windows_derived(a)
+        if a.support_status and not again:
             continue
-        m = _WINDOWS_BUILD.match(str(a.extra.get(OS_VERSION_KEY) or "").strip())
-        build = m.group(1) if m else ""
-        name = str(a.extra.get(OS_NAME_KEY) or "")
-        row = _product_row(dataset, name)
-        if row is None:
-            if not build:
-                continue
-            if re.search(r"\b(server|ltsc|ltsb)\b", name, re.IGNORECASE):
-                counts["unrecognised_product"] += 1
-                continue
-        elif build and row.get("build") and str(row["build"]) != build:
-            counts["unrecognised_product"] += 1
+        result = _windows_band(a, dataset)
+        if not isinstance(result, tuple):
+            if result is not None:
+                counts[result] += 1
+            if again:
+                counts["cleared"] += bool(a.support_status)
+                a.support_status = ""
+                a.support_end = ""
+                a.extra.pop(SUPPORT_STATUS_BASIS_KEY, None)
+                a.extra.pop(SUPPORT_CONDITION_KEY, None)
             continue
-        as_of = _as_of(a)
-        if row is not None:
-            if as_of is None:
-                counts["uncollected_date"] += 1
-                continue
-            band, condition, end = _product_band(row, as_of)
-        else:
-            table = _ga_table(dataset, int(build), str(a.extra.get(OS_EDITION_KEY) or "").strip())
-            if table is None:
-                counts["wrong_or_missing_edition"] += 1
-                continue
-            ga = table.get(build)
-            if ga is None:
-                counts["unrecognised_build"] += 1
-                continue
-            if as_of is None:
-                counts["uncollected_date"] += 1
-                continue
-            end = str(ga["end"])
-            band = SUPPORTED if as_of <= date.fromisoformat(end) else END_OF_SUPPORT
-            condition = ""
+        band, condition, end = result
         a.support_status = band
         a.support_end = end
         a.extra[SUPPORT_STATUS_BASIS_KEY] = DERIVED
         if condition:
             a.extra[SUPPORT_CONDITION_KEY] = condition
+        elif again:
+            a.extra.pop(SUPPORT_CONDITION_KEY, None)
         counts["matched"] += 1
     return counts
 

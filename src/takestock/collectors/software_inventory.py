@@ -248,7 +248,7 @@ def _apply_lifecycle(asset: CryptoAsset, record: dict | None) -> None:
         return
     line = str(record.get("line") or "")
     band = str(record.get("band_at_source_date") or lifecycle.UNKNOWN_SUPPORT)
-    asset.extra["lifecycle_line"] = line
+    asset.extra[lifecycle.LIFECYCLE_LINE_KEY] = line
     if line and band != lifecycle.UNKNOWN_SUPPORT:
         asset.support_status = band
         asset.support_end = str(record.get("holds_until") or "")

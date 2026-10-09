@@ -139,7 +139,10 @@ measured are carried in, and the raw transcripts beside them are copied.
    `CryptoAsset.bom_ref()`);
 2. **lifecycle**: migration strategy and support status from the profile,
    then support derived from the bundled Windows lifecycle data
-   (`lifecycle.py`);
+   (`lifecycle.py`). A derived status is marked
+   `extra.support_status_basis: derived`, and a program that reads stored
+   rows back can derive them again against a newer table with
+   `lifecycle.derive_windows_support(assets, dataset, rederive=True)`;
 3. **readings across rows**: a key served by more than one host, a port-80
    redirect nothing stops being stripped, HTTP readings carried onto the TLS
    row for the same endpoint, certificate expiry from a live handshake in

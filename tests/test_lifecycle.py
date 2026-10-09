@@ -134,6 +134,84 @@ def test_a_declared_status_is_never_overwritten(windows):
     assert a.support_status == "supported" and lc.SUPPORT_STATUS_BASIS_KEY not in a.extra
 
 
+def stored(version: str, edition: str = "", name: str = "", *, status: str, end: str,
+           condition: str = "") -> CryptoAsset:
+    """A device as an earlier run stored it: derived against an older table, then more keys."""
+    a = device(version, edition, name)
+    a.support_status, a.support_end = status, end
+    a.extra[lc.SUPPORT_STATUS_BASIS_KEY] = lc.DERIVED
+    if condition:
+        a.extra[lc.SUPPORT_CONDITION_KEY] = condition
+    a.extra["owner"] = "example-team"
+    return a
+
+
+def test_without_rederive_a_stored_derivation_is_kept(windows):
+    a = stored("10.0.26100.1000", "Enterprise", status="supported", end="2027-10-13")
+    counts = lc.derive_windows_support([a], windows)
+    assert (a.support_status, a.support_end) == ("supported", "2027-10-13")
+    assert counts["matched"] == 0 and "cleared" not in counts
+
+
+def test_rederive_replaces_a_stored_derivation_in_place(windows):
+    a = stored("10.0.26100.1000", "Enterprise", status="supported", end="2027-10-13")
+    keys = list(a.extra)
+    counts = lc.derive_windows_support([a], windows, rederive=True)
+    assert (a.support_status, a.support_end) == ("supported", "2027-10-12")
+    assert list(a.extra) == keys
+    assert (counts["matched"], counts["cleared"]) == (1, 0)
+
+
+def test_rederive_keeps_a_condition_in_place_and_drops_one_no_longer_due(windows):
+    server = stored("6.3.9600", name="Windows Server 2012 R2 Standard",
+                    status="security-only", end="2023-10-11", condition="an older condition")
+    keys = list(server.extra)
+    client = stored("10.0.26100.1000", "Enterprise", status="security-only",
+                    end="2027-10-13", condition="an older condition")
+    lc.derive_windows_support([server, client], windows, rederive=True)
+    assert list(server.extra) == keys
+    assert "Extended Security Updates" in server.extra[lc.SUPPORT_CONDITION_KEY]
+    assert server.support_end == "2023-10-10"
+    assert lc.SUPPORT_CONDITION_KEY not in client.extra
+    assert client.support_status == "supported"
+
+
+def test_rederive_clears_a_row_the_table_no_longer_matches(windows):
+    a = stored("10.0.12345.1", "Enterprise", status="supported", end="2030-01-01",
+               condition="an older condition")
+    counts = lc.derive_windows_support([a], windows, rederive=True)
+    assert (a.support_status, a.support_end) == ("", "")
+    assert lc.SUPPORT_STATUS_BASIS_KEY not in a.extra and lc.SUPPORT_CONDITION_KEY not in a.extra
+    assert a.extra["owner"] == "example-team"
+    assert (counts["cleared"], counts["unrecognised_build"], counts["matched"]) == (1, 1, 0)
+
+
+def test_rederive_never_touches_a_declared_status(windows):
+    a = device("10.0.19045.1", "Enterprise")
+    a.support_status, a.support_end = "supported", "2099-01-01"
+    counts = lc.derive_windows_support([a], windows, rederive=True)
+    assert (a.support_status, a.support_end) == ("supported", "2099-01-01")
+    assert lc.SUPPORT_STATUS_BASIS_KEY not in a.extra
+    assert (counts["matched"], counts["cleared"]) == (0, 0)
+
+
+def test_rederive_never_touches_a_software_lifecycle_derivation(windows):
+    a = host("example-library", support_status="end-of-support", support_end="2001-01-01",
+             extra={lc.LIFECYCLE_LINE_KEY: "example-line-1",
+                    lc.SUPPORT_STATUS_BASIS_KEY: lc.DERIVED})
+    before = dict(a.extra)
+    counts = lc.derive_windows_support([a], windows, rederive=True)
+    assert (a.support_status, a.support_end, a.extra) == ("end-of-support", "2001-01-01", before)
+    assert counts["cleared"] == 0
+
+
+def test_rederive_derives_a_row_with_no_status_as_before(windows):
+    a = device("10.0.26100.1000", "Enterprise")
+    counts = lc.derive_windows_support([a], windows, rederive=True)
+    assert (a.support_status, a.support_end) == ("supported", "2027-10-12")
+    assert counts["matched"] == 1
+
+
 def test_a_non_windows_row_is_ignored(windows):
     a = host("app-01", extra={lc.OS_VERSION_KEY: "5.15.0"})
     assert lc.derive_windows_support([a], windows)["matched"] == 0
