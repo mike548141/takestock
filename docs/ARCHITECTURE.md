@@ -234,6 +234,18 @@ version the instrument reported. Two kinds:
   (`ungraded:`, `not-measured:`, an unreachable host). Their first
   appearance is never read as the estate getting worse.
 
+`model.is_informational_flag(flag)` is the one test of which kind a flag is.
+A collector registers its informational flags when it is imported (see
+[Registries](#registries-where-a-module-plugs-in)). A program embedding
+takestock that classifies one of them differently, for example counting an
+expiring certificate as a finding, declares it with
+`model.declare_adverse(*prefixes)`. A declared flag, or any flag beginning
+with a declared prefix, is then never informational, whichever module
+registered it and whether that happened before or after the declaration.
+`model.adverse_prefixes()` reads the declarations back, and
+`model.informational_prefixes()` leaves out every entry a declaration
+covers.
+
 Requirements triggers and disposition rules match on flags, so a flag's
 spelling is part of the interface.
 
@@ -270,6 +282,7 @@ a new collector or reader declares itself without editing a central list
 | `collectors.register(name, module, kind, function="collect")`; `collectors.REGISTRY` | A collector: its module, its kind (`passive`, `active`, `ingest`) and its entry point | Twenty-two, listed in `collectors/__init__.py` |
 | `observe.PLANS` | How an observation runs each registered collector: its step, and whether it is `late` or `offline`-safe | One per collector; a collector without one is skipped and recorded as a gap |
 | `model.register_informational_prefixes(*prefixes)` | Flags, or flag prefixes ending in `:`, that are informational | Built-in list in `model.py`, plus many collectors' own |
+| `model.declare_adverse(*prefixes)` | Flags, or flag prefixes, that are adverse whatever is registered as informational. For a program embedding takestock | None |
 | `depth.register_flags(rung, *flags, convention=False)` | Flags that lift a row to an evidence-depth rung (`key-management`, `key`, `posture`), or record an unanswered question (`unanswered`) | Built-in lists in `depth.py` |
 | `plaintext.register_host_listener_source(source, marker)` | A source whose rows are listening ports seen from the host itself | None |
 | `binding.register_binding(binding, protocols=..., data_states=...)` | Protocols or data states bound to `hardware` or `software` | Built-in tables in `binding.py` |

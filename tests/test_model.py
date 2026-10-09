@@ -68,6 +68,79 @@ def test_a_collector_registers_its_own_informational_prefixes(monkeypatch):
         model.register_informational_prefixes("")
 
 
+@pytest.fixture
+def fresh_flag_registries(monkeypatch):
+    monkeypatch.setattr(model, "_registered_prefixes", [])
+    monkeypatch.setattr(model, "_adverse_prefixes", [])
+
+
+def test_an_adverse_declaration_outranks_a_later_registration(fresh_flag_registries):
+    model.declare_adverse("example-lapsed")
+    model.register_informational_prefixes("example-lapsed")
+    assert not model.is_informational_flag("example-lapsed")
+    assert "example-lapsed" not in model.informational_prefixes()
+
+
+def test_an_adverse_declaration_outranks_an_earlier_registration(fresh_flag_registries):
+    model.register_informational_prefixes("example-lapsed", "example-note")
+    assert model.is_informational_flag("example-lapsed")
+    model.declare_adverse("example-lapsed")
+    assert not model.is_informational_flag("example-lapsed")
+    assert model.is_informational_flag("example-note")
+    assert model.informational_prefixes() == model.INFORMATIONAL_FLAG_PREFIXES + ("example-note",)
+
+
+def test_an_adverse_declaration_outranks_a_built_in_prefix(fresh_flag_registries):
+    assert model.is_informational_flag("not-measured:key-size")
+    model.declare_adverse("not-measured:key-size")
+    assert not model.is_informational_flag("not-measured:key-size")
+    # Narrower than the built-in prefix: the prefix stays, the flag does not.
+    assert model.is_informational_flag("not-measured:protocol")
+    assert "not-measured:" in model.informational_prefixes()
+
+
+def test_an_adverse_prefix_covers_every_flag_beginning_with_it(fresh_flag_registries):
+    model.register_informational_prefixes("example-scope:", "example-scope-note")
+    model.declare_adverse("example-scope:")
+    assert not model.is_informational_flag("example-scope:all-hosts")
+    assert model.is_informational_flag("example-scope-note")
+    assert "example-scope:" not in model.informational_prefixes()
+
+
+def test_adverse_declarations_are_read_back_once_each(fresh_flag_registries):
+    assert model.adverse_prefixes() == ()
+    model.declare_adverse("example-b", "example-a")
+    model.declare_adverse("example-b")
+    assert model.adverse_prefixes() == ("example-b", "example-a")
+    with pytest.raises(ValueError):
+        model.declare_adverse("")
+
+
+def test_a_collector_registered_flag_can_be_declared_adverse(monkeypatch):
+    from takestock.collectors import ct_dns  # registers its expiry flags at import
+
+    monkeypatch.setattr(model, "_adverse_prefixes", [])
+    expiry = ("expired", "renewal-overdue", "expiry-soon")
+    assert all(model.is_informational_flag(f) for f in expiry)
+    model.declare_adverse(*expiry)
+    assert not any(model.is_informational_flag(f) for f in expiry)
+    assert model.is_informational_flag(ct_dns.NULL_MX_FLAG + ct_dns.NULL_MX_PUBLISHED)  # others untouched
+
+
+def test_every_shipped_reader_classifies_a_flag_through_is_informational_flag():
+    """An adverse declaration reaches a reader only if it asks the one function."""
+    import pathlib
+
+    import takestock
+    root = pathlib.Path(takestock.__file__).parent
+    for path in root.rglob("*.py"):
+        if path.name == "model.py" and path.parent == root:
+            continue
+        text = path.read_text(encoding="utf-8")
+        for name in ("informational_prefixes()", "INFORMATIONAL_FLAG_PREFIXES", "_registered_prefixes"):
+            assert name not in text, f"{path.relative_to(root)} reads {name} directly"
+
+
 def test_every_built_in_informational_prefix_is_emitted_by_shipped_code():
     import inspect
 

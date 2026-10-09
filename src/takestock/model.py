@@ -220,13 +220,20 @@ INFORMATIONAL_FLAG_PREFIXES: tuple[str, ...] = (
 
 _registered_prefixes: list[str] = []
 
+# Flags (or flag prefixes) a program embedding takestock has declared adverse
+# with declare_adverse(). A flag matching one of these is never
+# informational, whichever module registered it as informational and whether
+# it did so before or after the declaration.
+_adverse_prefixes: list[str] = []
+
 
 def register_informational_prefixes(*prefixes: str) -> None:
     """Declare further flags (or flag prefixes) as informational.
 
     Called by a collector for the facts and measurement limits it records, so
     that their first appearance is never read as the estate getting worse.
-    Registering the same prefix twice has no further effect.
+    Registering the same prefix twice has no further effect. A flag declared
+    adverse with :func:`declare_adverse` stays adverse whatever is registered.
     """
     for p in prefixes:
         if not p:
@@ -235,13 +242,51 @@ def register_informational_prefixes(*prefixes: str) -> None:
             _registered_prefixes.append(p)
 
 
+def declare_adverse(*prefixes: str) -> None:
+    """Declare flags (or flag prefixes ending in ``:``) adverse: findings, never informational.
+
+    For a program embedding takestock that classifies a flag differently from
+    the module that emits it, for example one that counts an expiring
+    certificate as a finding. The declaration outranks every informational
+    registration, built-in or registered, made before it or after it, so the
+    order in which modules are imported never changes the answer. Declaring
+    the same prefix twice has no further effect. There is no way to withdraw
+    a declaration.
+    """
+    for p in prefixes:
+        if not p:
+            raise ValueError("an empty prefix would mark every flag adverse")
+        if p not in _adverse_prefixes:
+            _adverse_prefixes.append(p)
+
+
+def adverse_prefixes() -> tuple[str, ...]:
+    """Every flag or prefix declared adverse with :func:`declare_adverse`, in declaration order."""
+    return tuple(_adverse_prefixes)
+
+
 def informational_prefixes() -> tuple[str, ...]:
-    """Every informational prefix in effect: the built-in ones, then registered ones."""
-    return INFORMATIONAL_FLAG_PREFIXES + tuple(_registered_prefixes)
+    """Every informational prefix in effect: the built-in ones, then registered ones.
+
+    An entry that a declared adverse prefix covers (the entry begins with it)
+    is left out. An adverse prefix narrower than an informational one, such
+    as ``example:bad`` under ``example:``, cannot be shown by leaving an entry
+    out, so test a flag with :func:`is_informational_flag`, never against this
+    tuple alone.
+    """
+    adverse = adverse_prefixes()
+    return tuple(p for p in INFORMATIONAL_FLAG_PREFIXES + tuple(_registered_prefixes)
+                 if not p.startswith(adverse))
 
 
 def is_informational_flag(flag: str) -> bool:
-    """True when ``flag`` records a fact or a measurement limit, not a finding."""
+    """True when ``flag`` records a fact or a measurement limit, not a finding.
+
+    A flag matching a prefix declared with :func:`declare_adverse` is never
+    informational.
+    """
+    if flag.startswith(adverse_prefixes()):
+        return False
     return flag.startswith(informational_prefixes())
 
 
