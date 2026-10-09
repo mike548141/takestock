@@ -260,6 +260,10 @@ def load_target(name_or_path: str, fallback: str = "") -> dict:
     ``name_or_path`` may be a path relative to the workspace, an absolute
     path, or a bare name looked up as ``targets/<name>.yaml``. ``fallback`` is
     a path to use when the first choice does not exist.
+
+    Raises :class:`ValueError` when the profile's ``collectors:`` block names
+    a collector that is not registered, or is malformed
+    (:func:`takestock.collectors.disabled`).
     """
     p = Path(name_or_path)
     relative = bool(name_or_path) and not p.is_absolute()
@@ -274,6 +278,8 @@ def load_target(name_or_path: str, fallback: str = "") -> dict:
         p = targets_dir() / f"{name_or_path}.yaml"
     cfg = load_yaml_strict(p)
     cfg["_path"] = str(p)
+    from . import collectors
+    collectors.disabled(cfg)    # refuses an unknown collector name before anything runs
     return cfg
 
 

@@ -29,6 +29,11 @@ Which collectors run (see :mod:`takestock.collectors` for the kinds):
   date it was measured (see :mod:`takestock.carry`);
 * **ingest** collectors read supplied exports and always run.
 
+Whatever its kind, a collector the target profile turns off
+(``collectors.disabled``, see :func:`takestock.collectors.disabled`) does not
+run. It is recorded as skipped with the profile's reason, so its input is never
+reported as missing.
+
 Plug-in collectors the target profile declares (see :mod:`takestock.plugins`)
 run alongside the ingest collectors: ordinary ones after the built-in early
 steps, late ones after the built-in late steps, and annotations after grading.
@@ -375,8 +380,15 @@ def _active_allowed(run: Run) -> bool:
     return run.options.scan and not inside_scope.scan_authorisation_problems(run.target)
 
 
+def _disabled_reason(reason: str) -> str:
+    return f"{collectors.DISABLED_REASON}: {reason}"
+
+
 def _why_not(run: Run, name: str) -> str:
     """Why collector ``name`` does not run in this observation, or "" when it does."""
+    off = collectors.disabled(run.target)
+    if name in off:
+        return _disabled_reason(off[name])
     kind = collectors.REGISTRY[name].kind
     plan = PLANS.get(name)
     if plan is None:
@@ -398,11 +410,13 @@ def run_step(run: Run, name: str) -> StepOutput:
 
     The rows, real failures and coverage gaps are added to ``run`` and also
     returned, so a caller sees what this one step contributed. A collector
-    that may not run here (offline, an active probe without ``scan`` or
-    without a complete authorisation record) is recorded in ``run.skipped``
-    and contributes nothing. A collector that raises is recorded as a failure,
-    never raised, so one broken collector cannot end the run. Raises
-    :class:`KeyError` for a name that is not registered.
+    that may not run here (turned off by the target profile, offline, an
+    active probe without ``scan`` or without a complete authorisation record)
+    is recorded in ``run.skipped`` and contributes nothing. A collector that
+    raises is recorded as a failure, never raised, so one broken collector
+    cannot end the run. Raises :class:`KeyError` for a name that is not
+    registered, and :class:`ValueError` when the profile's ``collectors:``
+    block is malformed.
     """
     if name not in collectors.REGISTRY:
         raise KeyError(f"no registered collector is called {name!r}")
@@ -468,12 +482,31 @@ def run_info(run: Run) -> plugins.RunInfo:
 
 
 def _skip_gaps(run: Run) -> list[coverage.Gap]:
-    """One gap per reason a group of collectors did not run."""
+    """One gap per reason a group of collectors did not run.
+
+    A collector the target profile turned off gets an optional gap: the
+    profile says its evidence is read another way, so its absence does not
+    leave the observation incomplete, but the gap still says it was not read
+    here and why.
+    """
     by_reason: dict[str, list[str]] = {}
     for name, why in run.skipped.items():
         by_reason.setdefault(why, []).append(name)
     out = []
     for why, names in by_reason.items():
+        if why.startswith(collectors.DISABLED_REASON + ":"):
+            out.append(coverage.gap(
+                coverage.COULD_NOT_TEST,
+                f"{len(names)} collector(s) not run ({', '.join(names)}): {why}",
+                required=False,
+                impact_kind=coverage.NARROWS_CONFIDENCE,
+                impact=("takestock's own collector did not read this evidence. The target "
+                        "profile gives the reason above; this observation does not check "
+                        "that the evidence is read some other way."),
+                harvest=(f"Remove the collector from `{collectors.PROFILE_KEY}."
+                         f"{collectors.DISABLED_KEY}` in the target profile and run again."),
+                nature=coverage.NO_DATA))
+            continue
         out.append(coverage.gap(
             coverage.COULD_NOT_TEST,
             f"{len(names)} collector(s) not run ({', '.join(names)}): {why}",
@@ -555,6 +588,13 @@ def _held(target: dict, ref: str | Path, now: datetime, max_age_days: int,
                           organisation=_organisation(target))
     except carry.CarryRefused as exc:
         raise ObserveRefused(f"--carry-scan: {exc}") from exc
+    off = sorted(set(collectors.disabled(target)) & set(held.carried))
+    if off:
+        raise ObserveRefused(
+            f"--carry-scan would carry the rows of {', '.join(off)}, which the target profile "
+            f"turns off (`{collectors.PROFILE_KEY}.{collectors.DISABLED_KEY}`). A carry brings in "
+            "every probe row the earlier observation holds, so run with --scan instead, or remove "
+            f"{'it' if len(off) == 1 else 'them'} from that list")
     to_check = carry.recheck_rows(held.rows)
     if to_check:
         problems = inside_scope.scan_authorisation_problems(target)
@@ -589,11 +629,13 @@ def observe(target: dict, options: Options | None = None) -> Result:
     Raises :class:`ObserveRefused`, before anything is written or contacted,
     when ``scan`` is asked for and the profile's authorisation stanza is
     missing or incomplete, when both ``scan`` and ``offline`` are asked for,
-    or when the observation directory already exists. With ``carry_scan``,
-    it also raises when the earlier observation may not be carried
-    (:func:`takestock.carry.load`), when ``scan`` or ``offline`` is asked for
-    too, and when a carried row would be re-checked and the authorisation
-    stanza is missing or incomplete.
+    when the profile's ``collectors:`` block is malformed or names a
+    collector that is not registered, or when the observation directory
+    already exists. With ``carry_scan``, it also raises when the earlier
+    observation may not be carried (:func:`takestock.carry.load`), when
+    ``scan`` or ``offline`` is asked for too, when the earlier observation ran
+    an active collector the profile turns off, and when a carried row would be
+    re-checked and the authorisation stanza is missing or incomplete.
     """
     options = options or Options()
     if options.scan and options.offline:
@@ -605,6 +647,10 @@ def observe(target: dict, options: Options | None = None) -> Result:
         raise ObserveRefused("--carry-scan and --offline ask for opposite things: a carry "
                              "runs the passive collectors and may re-check carried cleartext "
                              "rows over the network; choose one")
+    try:
+        off = collectors.disabled(target)
+    except ValueError as exc:
+        raise ObserveRefused(str(exc)) from exc
     if options.scan:
         problems = inside_scope.scan_authorisation_problems(target)
         if problems:
@@ -631,6 +677,9 @@ def observe(target: dict, options: Options | None = None) -> Result:
     host = plugins.Host(target, raw, options.now, announce=run.say)
     names = collectors.names()
     for name in names:
+        if name in off:
+            run.skipped[name] = _disabled_reason(off[name])
+            continue
         if held is not None and collectors.REGISTRY[name].kind == "active":
             if name in held.carried:
                 run.carried.append(name)

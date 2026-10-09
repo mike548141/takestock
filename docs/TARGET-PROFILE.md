@@ -132,6 +132,7 @@ collector reads is ignored.
 | `netdev_inbox` | Where the network device export is, and which device classes to expect | `netdev` |
 | `software_inbox` | Where the software inventory export is | `software_inventory` |
 | `plugins` | The plug-in collectors to run, each with its input and settings ([`PLUGINS.md`](PLUGINS.md#declaring-a-plug-in-in-the-target-profile)) | the named plug-ins |
+| `collectors` | Built-in collectors to turn off, each with the reason | every observation |
 | `dns_zones` | Settings for reading supplied zone files | `dns_zones` |
 | `third_party` | Outside providers and the domains they operate | dispositions, `dns_zones` |
 | `infrastructure` | Infrastructure providers and their domains | `dns_zones` |
@@ -318,6 +319,44 @@ classes shown are expected. The classes an export may use are `switch`,
 `storage` and `other`. The columns each export takes are described in the
 module docstrings of `takestock.collectors.winrm_config`,
 `takestock.collectors.netdev` and `takestock.collectors.software_inventory`.
+
+### `collectors`
+
+Turns built-in collectors off by name. Each entry under `disabled` maps a
+collector's name (as [`COLLECTORS.md`](COLLECTORS.md) lists them) to a sentence
+saying why it is off.
+
+```yaml
+collectors:
+  disabled:
+    software_inventory: a plug-in reads the same evidence from another source
+```
+
+A collector turned off does not run, whatever its kind and whatever the
+command-line flags. The observation records it under `collectors_skipped` in
+`summary.json` with the reason `turned off by the target profile: <reason>`,
+plug-ins see the same in `ctx.run.skipped`, and one coverage gap names it:
+
+```text
+1 collector(s) not run (software_inventory): turned off by the target profile: a plug-in reads the same evidence from another source
+```
+
+Its own "export not supplied" gap is never raised, because the collector never
+looks for its export. The gap is optional, so it does not mark the observation
+incomplete on its own: the profile's reason says the evidence is read some
+other way, and takestock does not check that it is. Whatever reads it instead
+(a plug-in, say) reports its own gaps.
+
+The block is checked when the profile is loaded. A name that is not a
+registered collector stops the command and lists the names that are, so a typo
+cannot leave everything running. So does an entry without a reason, and any
+key under `collectors` other than `disabled`. Write `disabled`, not `off`:
+YAML reads an unquoted `off` as the value false.
+
+`--carry-scan` is refused when the earlier observation ran an active collector
+the profile now turns off, because a carry brings in every probe row that
+observation holds. Run with `--scan` instead, or take the collector off the
+list.
 
 ### `dns_zones`
 

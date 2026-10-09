@@ -252,6 +252,95 @@ def test_a_broken_step_is_returned_as_a_failure(tmp_path, monkeypatch):
     assert run.failed == ["netdev"] and len(run.failures) == 3
 
 
+# ── a collector the target profile turns off ──
+
+OFF_REASON = "a plug-in reads the same evidence from another source"
+OFF_BLOCK = f"\ncollectors:\n  disabled:\n    software_inventory: {OFF_REASON}\n"
+
+
+def _profile_with(workspace: Path, block: str) -> Path:
+    profile = workspace / "targets" / "example-widgets.yaml"
+    profile.write_text(profile.read_text() + block)
+    return profile
+
+
+def _offline_summary(workspace: Path, minute: int = 0) -> dict:
+    opts = _quiet()
+    opts.offline = True
+    opts.now = NOW + timedelta(minutes=minute)      # each run needs its own directory
+    result = observe.observe(config.load_target("example-widgets"), opts)
+    return json.loads((result.observation / "summary.json").read_text())
+
+
+def test_a_collector_turned_off_is_skipped_with_the_reason_and_never_reports_its_input_missing(
+        workspace, tmp_path, monkeypatch):
+    _no_network(monkeypatch)
+    empty = tmp_path / "empty-inbox"
+    empty.mkdir()
+    config.set_inbox(empty)
+    # Without the block, the export the collector reads is reported as missing.
+    before = _offline_summary(workspace)
+    assert "software_inventory" in before["observation"]["collectors_run"]
+    assert any("(software inventory)" in g for g in before["gaps"])
+
+    _profile_with(workspace, OFF_BLOCK)
+    s = _offline_summary(workspace, minute=1)
+    obs = s["observation"]
+    why = f"turned off by the target profile: {OFF_REASON}"
+    assert "software_inventory" not in obs["collectors_run"]
+    assert obs["collectors_skipped"]["software_inventory"] == why
+    assert not any("(software inventory)" in g for g in s["gaps"])
+    (i,) = [n for n, g in enumerate(s["gaps"]) if "software_inventory" in g]
+    assert s["gaps"][i] == f"1 collector(s) not run (software_inventory): {why}"
+    assert s["gap_required"][i] is False
+    assert s["gap_impact_kinds"][i] == "narrows-confidence"
+    # The other offline reasons are unchanged.
+    assert obs["collectors_skipped"]["dnssec"] == "the observation was run offline"
+
+
+def test_a_collector_turned_off_is_skipped_by_the_step_runner_and_seen_by_plugins(workspace,
+                                                                                 tmp_path):
+    _profile_with(workspace, OFF_BLOCK)
+    run = observe.Run(target=config.load_target("example-widgets"), raw=tmp_path,
+                      observations=tmp_path, options=_quiet())
+    assert observe.run_step(run, "software_inventory") == ([], [], [])
+    assert run.ran == []
+    why = f"turned off by the target profile: {OFF_REASON}"
+    assert observe.run_info(run).skipped == {"software_inventory": why}
+
+
+@pytest.mark.parametrize("block, match", [
+    ("\ncollectors:\n  disabled:\n    software_inventroy: a typo\n",
+     "'software_inventroy', which is not a registered collector"),
+    ("\ncollectors:\n  disabled:\n    netdev:\n", r"collectors\.disabled\.netdev:` needs a reason"),
+    ("\ncollectors:\n  disabled:\n    netdev: '  '\n", "needs a reason"),
+    ("\ncollectors:\n  disabled: [netdev]\n", "must map each collector's name to the reason"),
+    ("\ncollectors:\n  off:\n    netdev: read elsewhere\n", "unquoted `off`"),
+    ("\ncollectors:\n  only: [netdev]\n", "unknown key 'only'"),
+    ("\ncollectors: [netdev]\n", "must be a mapping"),
+])
+def test_a_malformed_collectors_block_is_refused_when_the_profile_is_loaded(workspace, block,
+                                                                           match):
+    _profile_with(workspace, block)
+    with pytest.raises(ValueError, match=match):
+        config.load_target("example-widgets")
+
+
+def test_an_unknown_collector_in_a_profile_built_in_code_is_refused_before_anything_is_written(
+        workspace):
+    target = config.load_target("example-widgets")
+    target["collectors"] = {"disabled": {"no_such_collector": "a typo"}}
+    with pytest.raises(observe.ObserveRefused, match="not a registered collector"):
+        observe.observe(target, _quiet())
+    assert not (workspace / "observations").exists()
+
+
+def test_without_a_collectors_block_every_collector_runs_as_before(workspace):
+    target = config.load_target("example-widgets")
+    assert "collectors" not in target and collectors.disabled(target) == {}
+    assert collectors.disabled({"collectors": {"disabled": None}}) == {}
+
+
 def test_resume_ct_finishes_deferred_reads_and_files_the_failure_gap(tmp_path, monkeypatch):
     from takestock.collectors import ct_dns
     run = observe.Run(target={}, raw=tmp_path, observations=tmp_path, options=_quiet())

@@ -46,10 +46,12 @@ plan file + exports ─► ipam.py + ipam_view.py ─► IP address plan   (read
 
 1. **Refuse early.** With `scan`, an incomplete `authorisation:` record
    (`inside_scope.scan_authorisation_problems`) refuses the whole run before
-   anything is written or contacted. So do `scan` with `offline`, and an
+   anything is written or contacted. So do `scan` with `offline`, a
+   `collectors:` block naming a collector that is not registered, and an
    observation directory that already exists.
 2. **Decide what runs.** For each registered collector, `_why_not` gives a
-   reason it does not run: an offline run, for anything but an ingest
+   reason it does not run: the target profile turned it off
+   (`collectors.disabled`, with the profile's reason); an offline run, for anything but an ingest
    collector or an offline-safe step; or an active collector without `scan`. Each reason becomes one coverage gap naming the
    collectors it held back. In a carried run (`carry_scan`, below) the
    active collectors do not run either: those that ran in the earlier

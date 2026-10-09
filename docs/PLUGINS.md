@@ -84,6 +84,11 @@ A bare string (`- example-disk-encryption`) is the same as `{name: ...}`.
 | `required` | `false` makes the plug-in's "not run" gap optional, so it does not mark the observation incomplete |
 | `settings` | Anything the plug-in documents; takestock passes it through unread |
 
+A plug-in that reads the same evidence as a built-in collector, from another
+source, can stand in for it: turn the built-in off under `collectors.disabled`
+([`TARGET-PROFILE.md`](TARGET-PROFILE.md#collectors)), with the reason, so the
+observation does not also report the built-in's export as missing.
+
 ## How takestock finds a plug-in
 
 Two ways, and a profile may mix them:

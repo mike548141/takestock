@@ -317,6 +317,32 @@ def test_carry_from_another_target_is_refused(workspace, stubs):
     _refused(workspace, held, "Another target's probe rows")
 
 
+def test_carry_of_a_collector_the_profile_now_turns_off_is_refused(workspace, stubs):
+    held = _held(workspace)
+    profile = workspace / "targets" / "example-widgets.yaml"
+    profile.write_text(profile.read_text()
+                       + "\ncollectors:\n  disabled:\n    tls_scan: read another way\n")
+    _refused(workspace, held, "would carry the rows of tls_scan, which the target profile "
+             "turns off")
+
+
+def test_a_collector_turned_off_and_not_run_earlier_is_skipped_with_the_profile_reason(
+        workspace, stubs, monkeypatch):
+    held = _held(workspace)
+    summary = json.loads((held / "summary.json").read_text())
+    summary["observation"]["collectors_run"].remove("intel_amt")
+    summary["observation"]["collectors_skipped"]["intel_amt"] = "no hosts were named for it"
+    (held / "summary.json").write_text(json.dumps(summary))
+    profile = workspace / "targets" / "example-widgets.yaml"
+    profile.write_text(profile.read_text()
+                       + "\ncollectors:\n  disabled:\n    intel_amt: not in use\n")
+    monkeypatch.setattr(ps, "run", Transport())
+    result = observe.observe(config.load_target("example-widgets"),
+                             _opts(carry_scan=held.name))
+    assert result.summary["observation"]["collectors_skipped"]["intel_amt"] == (
+        "turned off by the target profile: not in use")
+
+
 def test_carry_from_a_run_whose_probe_failed_is_refused(workspace, stubs):
     held = _held(workspace)
     summary = json.loads((held / "summary.json").read_text())
