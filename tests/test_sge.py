@@ -336,6 +336,46 @@ def test_dkim_key_size_is_a_recommendation():
     assert one("SGE-DKIM-R01", []).reason == sge.INCONCLUSIVE
 
 
+def revoked(selector: str) -> dict:
+    """A selector that answered with the empty key ``v=DKIM1; p=``."""
+    return {"name": f"DKIM {selector}.{D}", "protocol": "dkim", "host": D,
+            "extra": {"selector": selector, "key_bits": None, "public_key": ""}}
+
+
+def test_a_revoked_dkim_key_is_not_graded_for_size():
+    # Beside a key, a revoked selector adds no row and is named in the note.
+    row = one("SGE-DKIM-R01", [dkim("s1", 2048, "KEYA"), revoked("s2")])
+    assert row.status == sge.PASS and row.observed == "2048-bit RSA"
+    assert "s2 answered with the empty key v=DKIM1; p=" in row.subject_note
+    assert "revoked" in row.subject_note
+    # Every selector revoked: one inconclusive row for the domain, never a verdict.
+    rows = rows_for("SGE-DKIM-R01", [revoked("s1"), revoked("s2")])
+    assert len(rows) == 1
+    assert (rows[0].status, rows[0].reason) == (sge.NOT_MEASURED, sge.INCONCLUSIVE)
+    assert rows[0].observed == "every key revoked (selector(s) s1, s2)"
+    assert "RFC 6376 defines as a revoked key" in rows[0].evidence
+    # A key that is present but cannot be sized is still unread, not revoked.
+    unread = one("SGE-DKIM-R01", [dkim("s1", 0, "KEYA")])
+    assert unread.status == sge.NOT_MEASURED and "no key size" in unread.evidence
+    # A row that did not keep the public key cannot be read as revoked.
+    old = {"name": f"DKIM s1.{D}", "protocol": "dkim", "host": D,
+           "extra": {"selector": "s1", "key_bits": None}}
+    assert "no key size" in one("SGE-DKIM-R01", [old]).evidence
+
+
+def test_a_revoked_dkim_key_is_not_counted_as_a_key_under_another_selector():
+    row = one("SGE-DKIM-R02", [dkim("s1", 2048, "KEYA"), revoked("s2"), revoked("s3")])
+    assert row.status == sge.NOT_MEASURED and row.observed == "1 selector(s), no key shared"
+    assert "s2, s3 answered with the empty key" in row.subject_note
+    # Two revoked selectors share no key: the empty key is not a key.
+    every = one("SGE-DKIM-R02", [revoked("s1"), revoked("s2")])
+    assert (every.status, every.reason) == (sge.NOT_MEASURED, sge.INCONCLUSIVE)
+    assert every.observed == "every key revoked (selector(s) s1, s2)"
+    # With nothing revoked the note reads as before.
+    plain = one("SGE-DKIM-R02", [dkim("s1", 2048, "KEYA")])
+    assert plain.subject_note == "selector(s) that answered: s1"
+
+
 def test_a_key_shared_between_selectors_fails_and_distinct_keys_settle_nothing():
     shared = one("SGE-DKIM-R02", [dkim("s1", 2048, "KEYA"), dkim("s2", 2048, "KEYA")])
     assert shared.status == sge.FAIL and "s1, s2" in shared.observed
@@ -816,11 +856,12 @@ def test_a_discovered_name_dkim_key_is_graded_only_under_a_selector_that_answere
     silent = discovered("SGE-DKIM-R01", [mail_subs({"a.example.com": read_sub(sts_read())})])
     assert (silent.status, silent.reason) == (sge.NOT_MEASURED, sge.INCONCLUSIVE)
     assert "none of the 11 selector(s) tried answered" in silent.subject_note
-    # The empty key publishes no key to size.
+    # The empty key is a revoked key: nothing to size.
     blank = {"selector": "s1", "key_bits": None, "public_key": ""}
     empty = discovered("SGE-DKIM-R01", [mail_subs({"a.example.com": read_sub(sts_read(),
                                                                               keys=[blank])})])
     assert empty.status == sge.NOT_MEASURED and "the empty key" in empty.subject_note
+    assert "revoked" in empty.subject_note
 
 
 def test_a_discovered_name_sharing_a_key_with_another_selector_is_a_recommendation_unmet():

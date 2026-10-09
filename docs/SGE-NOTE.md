@@ -236,13 +236,13 @@ settle](#a-missing-record-and-a-lookup-that-did-not-settle).
 | SGE-MTASTS-02 every MX listed, no wildcards | must | the policy's `mx:` lines against the MX records | every MX host matched, no wildcard | an MX host unmatched, or a wildcard used | no record published, or a policy that is not valid (both graded under SGE-MTASTS-01), unreachable policy, no MTA-STS reading, or no MX reading |
 | SGE-TLSRPT-01 TLS reporting | must | the record at `_smtp._tls.<domain>` | published with a `rua=` address | not published, or no `rua=` | no TLS-RPT reading: the lookup did not settle, or was not made (`inconclusive`) |
 | SGE-DMARC-04 a DMARC reporting tool | must | the DMARC record's `rua=` | never: a published address is consistent with a tool, not proof of one | no `rua=` address, or no DMARC record published | an address is published (`no-instrument`), or no DMARC reading |
-| SGE-DKIM-R01 2048-bit DKIM keys | recommended | the key at each selector that answered | 2048 bits or more | shorter | no selector answered, or no size could be read |
+| SGE-DKIM-R01 2048-bit DKIM keys | recommended | the key at each selector that answered | 2048 bits or more | shorter | no selector answered, no size could be read, or every selector that answered publishes the empty key `v=DKIM1; p=` (revoked) |
 | SGE-DMARC-R01 strict DKIM alignment where no bulk mail | recommended | `adkim` | `adkim=s` | never | relaxed alignment: whether the domain sends bulk mail is not established; no DMARC record published (the missing record is graded under SGE-DMARC-01); or no DMARC reading |
 | SGE-DMARC-R02 strict SPF alignment | recommended | `aspf` | `aspf=s` | relaxed, including by omission; or no DMARC record published | no DMARC reading |
 | SGE-DMARC-R03 unwanted DMARC tags absent | recommended | the record's tags | none of `ruf`, `fo`, `pct`, `rf`, `ri` | any of them present | no DMARC record published (graded under SGE-DMARC-01), or no DMARC reading. The swept names' own records are read on a row of their own (below) |
 | SGE-SPF-R01 no `ptr`, no overly broad ranges | recommended | the SPF terms | never: breadth of a range cannot be judged from DNS | `ptr` used | no `ptr` (`inconclusive`); no SPF record published (graded under SGE-SPF-01); or no SPF reading |
 | SGE-SPF-R02 no legacy SPF2.0 records | recommended | every TXT record at the domain | no SPF2.0 record | one or more published | no SPF reading, or the observation kept only the first SPF record |
-| SGE-DKIM-R02 a key per sending platform | recommended | the public keys of the selectors that answered | never | two selectors publish one key | no key shared (other selectors may exist) |
+| SGE-DKIM-R02 a key per sending platform | recommended | the public keys of the selectors that answered | never | two selectors publish one key | no key shared (other selectors may exist), or every selector that answered publishes the empty key (revoked) |
 
 A missing record is graded once, under the requirement that needs it. The
 recommendations that read a record's contents (SGE-DMARC-R01, SGE-DMARC-R03,
@@ -259,6 +259,15 @@ DKIM selectors cannot be listed from DNS, so only the selectors the target
 profile names under `discovery.dkim_selectors`, any the supplied zone files
 publish beneath the domain, and a short list of common defaults are tried. A
 selector that does not answer proves nothing.
+
+A selector that answers with the empty key `v=DKIM1; p=` has revoked its key
+(RFC 6376 defines an empty `p=` value as a revoked key): there is no key to
+size or to compare. It is not graded
+under SGE-DKIM-R01 or SGE-DKIM-R02, and the note beside the domain's other rows
+names it, so a reader can see it was read. When every selector that answered
+publishes the empty key, each requirement gives the domain one *not measured*
+row saying so. A row that does not keep the public key (an observation taken
+before keys were kept) is not read as revoked.
 
 ### Read from the sub-domain sweep
 

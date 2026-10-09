@@ -286,7 +286,8 @@ A name is counted neither way, and listed with the reason, when what a
 requirement needs was not read: a lookup that did not settle (kept per name in
 `extra.names_mail_records_not_read`), a policy file the instrument could not
 fetch, no key under any selector tried (selector names cannot be listed, so
-silence proves nothing), or a DMARC policy walk through a name that was not
+silence proves nothing; a selector giving the empty key `v=DKIM1; p=` has revoked
+its key, RFC 6376 §3.6.1, and is no key either), or a DMARC policy walk through a name that was not
 read. An observation taken before these records were read shows the rows as
 not collected.
 

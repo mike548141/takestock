@@ -468,7 +468,53 @@ def _mta_sts_policy_faults(extra: dict) -> list[str]:
         extra.get("policy_version"), extra.get("policy_max_age"))
 
 
+#: What the empty DKIM key ``v=DKIM1; p=`` means (RFC 6376, the ``p=`` tag).
+_REVOKED_KEY = "the empty key v=DKIM1; p=, which RFC 6376 defines as a revoked key"
+
+
+def _revoked_dkim(asset: Any) -> bool:
+    """True for a DKIM row that read the empty key ``v=DKIM1; p=``: a revoked key.
+
+    Only a row that kept the public key can say so, and a row that also gives a
+    key size read a key; neither is read as revoked.
+    """
+    extra = _get(asset, "extra") or {}
+    return "public_key" in extra and not extra["public_key"] and not extra.get("key_bits")
+
+
+def _selector(asset: Any) -> str:
+    return str((_get(asset, "extra") or {}).get("selector") or "")
+
+
+def _revoked_note(revoked: list[Any]) -> str:
+    """The note beside a domain's DKIM rows naming its selectors that publish a revoked key."""
+    if not revoked:
+        return ""
+    return (f"selector(s) {', '.join(sorted(_selector(a) for a in revoked))} answered with "
+            + _REVOKED_KEY + ", so there is no key there to grade")
+
+
+def _all_revoked(req: dict, domain: str, found: list[Any], what: str) -> Conformance:
+    """The one row for a domain whose every DKIM selector that answered publishes a revoked key."""
+    names = ", ".join(sorted(_selector(a) for a in found))
+    return Conformance(
+        req["id"], req["title"], req["level"], req["scope"], domain, NOT_MEASURED,
+        observed=f"every key revoked (selector(s) {names})", reason=INCONCLUSIVE,
+        evidence=(f"every selector that answered publishes {_REVOKED_KEY}, so there is no "
+                  f"key {what}. Selector names cannot be listed, so a key under a selector "
+                  "not tried is not excluded, and no verdict is claimed in either direction"),
+        source=req["source"],
+        subject_note=f"selector(s) that answered: {names}")
+
+
 def _eval_dkim_keysize(req: dict, assets: list[Any], domains: list[str]) -> list[Conformance]:
+    """SGE-DKIM-R01: each key under a selector that answered is at least ``minimum_bits``.
+
+    A selector publishing the empty key (revoked, RFC 6376) carries no key
+    to size and is not graded: it is named in the note beside the domain's other
+    rows, or, when every selector that answered publishes it, the domain gets one
+    inconclusive row saying so.
+    """
     rows = []
     minimum = int(req.get("minimum_bits", 2048))
     for d in domains:
@@ -479,11 +525,18 @@ def _eval_dkim_keysize(req: dict, assets: list[Any], domains: list[str]) -> list
                 "no DKIM selector answered; the probe tries known selectors, so "
                 "this is silence rather than proof that none is published"))
             continue
-        for a in found:
+        revoked = [a for a in found if _revoked_dkim(a)]
+        if len(revoked) == len(found):
+            rows.append(_all_revoked(req, d, found, "to size"))
+            continue
+        note = _revoked_note(revoked)
+        for a in (a for a in found if not _revoked_dkim(a)):
             bits = (_get(a, "extra") or {}).get("key_bits")
             if not bits:
-                rows.append(_unmeasured(req, d, INCONCLUSIVE,
-                                        "selector answered but no key size could be read"))
+                unread = _unmeasured(req, d, INCONCLUSIVE,
+                                     "selector answered but no key size could be read")
+                unread.subject_note = note
+                rows.append(unread)
                 continue
             status = PASS if int(bits) >= minimum else FAIL
             reason = "" if status == PASS else (
@@ -492,7 +545,8 @@ def _eval_dkim_keysize(req: dict, assets: list[Any], domains: list[str]) -> list
                 "unmet rather than a requirement breached")
             rows.append(Conformance(req["id"], req["title"], req["level"], req["scope"],
                                     d, status, observed=f"{bits}-bit RSA", reason=reason,
-                                    evidence=str(_get(a, "name") or ""), source=req["source"]))
+                                    evidence=str(_get(a, "name") or ""), source=req["source"],
+                                    subject_note=note))
     return rows
 
 
@@ -2005,8 +2059,11 @@ def _eval_dkim_distinct_keys(req: dict, assets: list[Any],
                 "this observation kept only each DKIM key's size, so two selectors "
                 "publishing one key could not be told apart"))
             continue
-        selectors = sorted({str((_get(a, "extra") or {}).get("selector") or "")
-                            for a in found})
+        revoked = [a for a in found if _revoked_dkim(a)]
+        if len(revoked) == len(found):
+            rows.append(_all_revoked(req, d, found, "to compare"))
+            continue
+        selectors = sorted({_selector(a) for a in found if not _revoked_dkim(a)})
         shared = sorted({
             sel for a in found
             for key in [str((_get(a, "extra") or {}).get("public_key") or "")]
@@ -2033,7 +2090,9 @@ def _eval_dkim_distinct_keys(req: dict, assets: list[Any],
                       "selector read in this run. " + _partial(req)
                       + " No verdict is claimed in either direction."),
             source=req["source"],
-            subject_note=f"selector(s) that answered: {', '.join(selectors)}"))
+            subject_note=(f"selector(s) that answered: {', '.join(selectors)}" if not revoked
+                          else f"selector(s) that answered with a key: {', '.join(selectors)}; "
+                          + _revoked_note(revoked))))
     return rows
 
 
@@ -3131,8 +3190,8 @@ def _judge_tls_rpt(req: dict, name: str, records: dict, root_record: str) -> str
 def _dkim_reading(records: dict) -> list[dict] | Unsettled:
     """The DKIM keys that answered at a discovered name, or why there are none to read.
 
-    An answer with the empty key ``v=DKIM1; p=`` publishes no key, and is left
-    out. No key at all is not settled, never a pass or a fail: selector names
+    An answer with the empty key ``v=DKIM1; p=`` is a revoked key (RFC 6376),
+    and is left out. No key at all is not settled, never a pass or a fail: selector names
     cannot be listed, so silence under the selectors tried proves nothing.
     """
     if "dkim" not in records:
@@ -3142,8 +3201,8 @@ def _dkim_reading(records: dict) -> list[dict] | Unsettled:
     if keys:
         return keys
     if answered:
-        return Unsettled("every selector that answered gives the empty key v=DKIM1; p=, "
-                         "which publishes no key")
+        return Unsettled(f"every selector that answered publishes {_REVOKED_KEY}, so there "
+                         "is no key to read")
     tried = records.get("dkim_selectors_tried")
     return Unsettled(f"none of the {tried or 'known'} selector(s) tried answered; selector "
                      "names cannot be listed, so this is silence rather than proof that no "
