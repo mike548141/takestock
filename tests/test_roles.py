@@ -17,6 +17,11 @@ from takestock import roles
     ("apps.example.test", "app"),
     ("orders-db2.example.test", "database"),
     ("www-staging.example.test", "non-prod"),
+    # A non-production marker outranks the application and database kinds.
+    ("demo.portal.example.test", "non-prod"),
+    ("widgets-portal.example.test", "app"),
+    ("portal.qa1.example.test", "non-prod"),
+    ("db.demo.example.test", "non-prod"),
     ("www.example.test", "other"),
     ("example.test", "other"),
 ])

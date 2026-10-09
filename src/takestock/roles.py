@@ -15,15 +15,18 @@ import re
 # Hostname categories, checked in order; the first match wins. Each is a set
 # of whole words looked for in the host's name (the labels before the
 # registered domain). These are common naming conventions, not exhaustive.
+# A non-production marker is checked before the application and database
+# kinds: a test copy of an application is a test system first, so
+# ``demo.portal.example.test`` is non-prod, not an application.
 HOST_CATEGORIES: tuple[tuple[str, frozenset[str]], ...] = (
     ("vpn", frozenset({"vpn", "remote", "ra"})),
     ("sign-in", frozenset({"auth", "sso", "login", "idp", "sts", "signin"})),
     ("devops", frozenset({"git", "scm", "ci", "build", "registry", "artifacts", "repo"})),
     ("container-platform", frozenset({"k8s", "kube", "kubernetes", "containers"})),
-    ("app", frozenset({"app", "apps", "portal"})),
-    ("database", frozenset({"db", "sql", "database"})),
     ("non-prod", frozenset({"sandbox", "preprod", "staging", "stage", "test", "dev", "demo",
                             "uat", "lab", "beta", "nonprod", "qa"})),
+    ("app", frozenset({"app", "apps", "portal"})),
+    ("database", frozenset({"db", "sql", "database"})),
 )
 
 
