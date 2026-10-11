@@ -27,6 +27,11 @@ From a second working tree, point the gate at an existing virtualenv with
 To try a change end to end, run the commands in the README's quick start
 against a copy of `examples/example-widgets/`.
 
+A change a user would notice gets a line under *Unreleased* in
+[`CHANGELOG.md`](CHANGELOG.md). Continuous integration runs the same
+`make check` on every push and pull request. To report a vulnerability, see
+[`SECURITY.md`](SECURITY.md) rather than opening an issue.
+
 ## The rule: no organisation's data
 
 takestock is public. **Nothing in this repository may carry an

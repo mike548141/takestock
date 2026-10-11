@@ -16,8 +16,9 @@ and writes:
 | **Secure Government Email note** | Every requirement of New Zealand's Secure Government Email framework, read as met, not met or not measured | `takestock sge-note` (HTML), `takestock sge` (plain text) |
 | **Requirements** | Requirements derived from the findings, written from public standards, ready to put to a supplier | `takestock requirements` |
 
-> **Status:** version 0.1.0. The commands work end to end on the sample
-> organisation below; the command line and file formats may still change.
+> **Status:** version 0.1.0, alpha. The commands work end to end on the
+> sample organisation below; the command line and file formats may still
+> change before 1.0, and [`CHANGELOG.md`](CHANGELOG.md) records each change.
 
 ## Install
 
@@ -30,7 +31,10 @@ takestock --version       # takestock 0.1.0
 ```
 
 Or into an environment of your own: `pip install -e .` (add `'.[dev]'` for
-the test tools). The only Python dependencies are PyYAML and openpyxl.
+the test tools). Once a release is on PyPI, `pip install takestock` installs
+it without a clone; the quick start below still needs the sample in
+`examples/`, which is in the repository, not the package. The only Python
+dependencies are PyYAML and openpyxl.
 
 The collectors that probe hosts and query DNS drive external programs
 (`dig`, `curl`, `nmap`, `openssl`, `ssh-audit`, `ike-scan`). None is needed
@@ -198,6 +202,7 @@ Every command follows one contract, so a script can act on the result:
 | [`docs/TARGET-PROFILE.md`](docs/TARGET-PROFILE.md) | The workspace, the target profile and its overlays, key by key |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | The pipeline, the data model, the registries, and how to add a collector |
 | [`docs/COLLECTORS.md`](docs/COLLECTORS.md) | What each collector reads or probes, and what it cannot see |
+| [`docs/PLUGINS.md`](docs/PLUGINS.md) | Writing a plug-in collector for an export takestock has no reader for |
 | [`docs/SETUP-SCANNERS.md`](docs/SETUP-SCANNERS.md) | The external tools, and the authorisation record |
 | [`docs/DISPOSITIONS.md`](docs/DISPOSITIONS.md) | What to do about each finding: tracks, rules, decisions and dispensations |
 | [`docs/CMDB.md`](docs/CMDB.md) | The configuration register |
@@ -215,7 +220,8 @@ Every command follows one contract, so a script can act on the result:
 See [`CONTRIBUTING.md`](CONTRIBUTING.md). In short: run `make hooks` once,
 then `make check`. takestock carries **no organisation's data**: every
 example and fixture is synthetic, and `tools/guard.py` enforces the parts of
-that rule a machine can check.
+that rule a machine can check. To report a vulnerability, see
+[`SECURITY.md`](SECURITY.md).
 
 ## Licence
 

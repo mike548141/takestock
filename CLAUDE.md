@@ -89,6 +89,21 @@ make hooks   # once per clone: guard runs on every commit and commit message
 make check   # guard + tests (standard library only for now)
 ```
 
+## Records
+
+takestock keeps its own records, and every one of them is public from its
+first word, under the rule above:
+
+- `CHANGELOG.md`: every change a user would notice, under *Unreleased* until
+  a release takes it.
+- `docs/sessions/`: one file per session that changes the repository, named
+  `YYYY-MM-DD-HHMM-slug.md` with the time in UTC, saying what was done, what
+  was checked and what is left.
+- `docs/ROADMAP.md`: what is planned next. A finished item moves to the
+  changelog.
+
+Read the latest session file and the roadmap at the start of a session.
+
 ## Conventions
 
 - New Zealand English spelling, with correct macrons on te reo Māori.
