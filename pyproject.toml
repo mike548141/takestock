@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -11,6 +11,25 @@ requires-python = ">=3.11"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "Mike Clements" }]
+keywords = ["cbom", "cyclonedx", "cryptography", "tls", "cmdb", "ipam", "email-security", "inventory"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: System Administrators",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Security",
+    "Topic :: Security :: Cryptography",
+    "Topic :: System :: Networking :: Monitoring",
+    "Topic :: System :: Systems Administration",
+    "Typing :: Typed",
+]
 dependencies = [
     "pyyaml>=6",
     "openpyxl>=3.1",
@@ -23,6 +42,12 @@ dev = [
     "pytest",
     "types-PyYAML",
 ]
+
+[project.urls]
+Homepage = "https://github.com/mike548141/takestock"
+Repository = "https://github.com/mike548141/takestock"
+Issues = "https://github.com/mike548141/takestock/issues"
+Changelog = "https://github.com/mike548141/takestock/blob/main/CHANGELOG.md"
 
 [project.scripts]
 takestock = "takestock.cli:main"
