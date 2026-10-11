@@ -250,7 +250,7 @@ def test_unknown_palette_tokens_warn_once_and_the_note_is_still_written(tmp_path
         "discovery": {"email_domains": ["example.com"]},
         "branding": {"palette": {"headline": "#123456", "accent": "#7a1f4d"}},
     }))
-    for run in (lambda: cli.main(["sge-note", str(obs), str(target_path)]),
+    for run in (lambda: cli.main(["comply", "sge", str(obs), str(target_path)]),
                 lambda: sge_note.main([str(obs), str(target_path), str(obs / "sge-note.html")])):
         (obs / "sge-note.html").unlink(missing_ok=True)
         assert run() in (0, 1)

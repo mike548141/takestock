@@ -32,8 +32,11 @@ evidence settles each kind of requirement.
 
 ## Producing the note
 
+The note is one of the standards checks run by `takestock comply`; `sge` is
+the framework's id there (`takestock comply --list` shows every standard):
+
 ```bash
-takestock sge-note <observation_dir> <target> [--out <file.html>] [--workspace <dir>]
+takestock comply sge <observation_dir> <target> [--out <file.html>] [--workspace <dir>]
 ```
 
 `<target>` is the profile the observation was taken for, as a name or a
@@ -41,26 +44,27 @@ path. For the sample organisation, from inside a copy of its workspace (see
 the README's quick start):
 
 ```console
-$ takestock sge-note observations/latest example-widgets
+$ takestock comply sge observations/latest example-widgets
 observations/latest/sge-note.html
 ```
 
-The note is written to `<observation_dir>/sge-note.html` unless `--out`
-names another file. The command exits 1 when any requirement stated as
+The note is the command's default output. It is written to
+`<observation_dir>/sge-note.html` unless `--out` names another file, and the
+command prints the path it wrote. The command exits 1 when any requirement stated as
 *must* is not met, 0 otherwise, and 2 on an error, including a profile that
 names neither `discovery.email_domains` nor a parked domain. (The sample's offline observation reads
 no mail records, so every requirement is *not measured* and it exits 0.)
 
 For the same reading as plain text on the terminal, one line per reading
-and a closing list of unmet *must* requirements, use `takestock sge`:
+and a closing list of unmet *must* requirements, add `--format text`:
 
 ```bash
-takestock sge <observation_dir> <target> [--workspace <dir>]
+takestock comply sge <observation_dir> <target> --format text [--out <file.txt>] [--workspace <dir>]
 ```
 
-It takes the same arguments as `sge-note` (without `--out`), writes no
-file, and exits the same way: 1 when a *must* requirement is not met, 0
-otherwise, 2 on an error.
+It takes the same arguments, prints the report (or, with `--out`, writes it
+to that file and prints the file's path), and exits the same way: 1 when a
+*must* requirement is not met, 0 otherwise, 2 on an error.
 
 The module behind it can also be run directly, reading an observation by
 its directory name under the workspace's `observations/` (default

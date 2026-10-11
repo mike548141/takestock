@@ -497,7 +497,8 @@ def test_the_command_counts_a_breach_on_unmarked_rows(tmp_path: Path,
         spf="v=spf1 ~all", spf_flags=("softfail-all",), dmarc="v=DMARC1; p=none",
         dkim=None, null_mx=None)))
     config.set_workspace(tmp_path)
-    assert cli.main(["sge", str(obs), "example", "--workspace", str(tmp_path)]) == 1
+    assert cli.main(["comply", "sge", str(obs), "example", "--format", "text",
+                     "--workspace", str(tmp_path)]) == 1
     assert "2 unmet MUST" in capsys.readouterr().out
 
 
@@ -516,6 +517,7 @@ def test_the_command_reads_a_profile_with_only_parked_domains(tmp_path: Path,
     (obs / "assets.json").write_text(json.dumps(_rows(spf="v=spf1 ~all",
                                                       spf_flags=("softfail-all",))))
     config.set_workspace(tmp_path)
-    assert cli.main(["sge", str(obs), "example", "--workspace", str(tmp_path)]) == 1
+    assert cli.main(["comply", "sge", str(obs), "example", "--format", "text",
+                     "--workspace", str(tmp_path)]) == 1
     out = capsys.readouterr().out
     assert "SGE-NED-SPF-01" in out and f"{P} (parked)" in out

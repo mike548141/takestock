@@ -541,7 +541,7 @@ def _load_assets(observation_dir: Path) -> list[Any]:
 def main(argv: list[str] | None = None) -> int:
     """Write the conformance note for one observation and one target profile.
 
-    Exits as ``takestock sge-note`` does: 1 when a MUST requirement is unmet,
+    Exits as ``takestock comply sge --format html`` does: 1 when a MUST requirement is unmet,
     0 when none is, and 2 for wrong arguments or an unreadable input.
     """
     return guarded("takestock.sge_note", _main, argv)

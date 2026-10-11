@@ -44,9 +44,14 @@ The first release.
   and a workbook.
 - **`takestock ipam`** builds an IP address plan from a plan file and the
   exports it names, as JSON, CSV and one HTML page.
-- **`takestock sge-note`** and **`takestock sge`** read every requirement of
-  New Zealand's Secure Government Email framework as met, not met or not
-  measured, as an HTML note or plain text.
+- **`takestock comply <standard>`** reads an observation against a published
+  standard and reports every requirement as met, not met or not measured, as
+  a self-contained HTML note or, with `--format text`, as plain text. It
+  exits 1 when a requirement stated as *must* is not met.
+  `takestock comply --list` names the standards. The first is `sge`, New
+  Zealand's Secure Government Email framework. Every standard sits behind
+  this one command, and a new one is added by registering it (see
+  `docs/ARCHITECTURE.md`, *Adding a standard*).
 - **`takestock requirements`** derives requirements from the findings and
   gaps, written from public standards, with tests and an evidence sentence,
   as Markdown, a workbook and JSON.

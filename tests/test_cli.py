@@ -35,27 +35,28 @@ def test_ipam_passes_the_lookup_flag_on(monkeypatch: pytest.MonkeyPatch):
                     ["plan.ipam.yaml", "out", "--exports", "ex"]]
 
 
-def test_sge_prints_the_module_report_with_the_cli_exit_codes(tmp_path: Path,
+def test_comply_sge_prints_the_module_report_with_the_cli_exit_codes(tmp_path: Path,
                                                               capsys: pytest.CaptureFixture):
     obs = _sge_workspace(tmp_path, [D])
     config.set_workspace(tmp_path)
     module_code = sge.main(["example", "--observation", obs.name])
     module_out = capsys.readouterr().out
 
-    code = cli.main(["sge", str(obs), "example", "--workspace", str(tmp_path)])
+    code = cli.main(["comply", "sge", str(obs), "example", "--format", "text",
+                     "--workspace", str(tmp_path)])
     out = capsys.readouterr().out
     assert out == module_out
     assert "SGE-SPF-01" in out and "unmet MUST requirement(s)." in out
     assert code == module_code == 1
 
 
-def test_sge_without_email_domains_is_an_error(tmp_path: Path, capsys: pytest.CaptureFixture):
+def test_comply_sge_without_email_domains_is_an_error(tmp_path: Path, capsys: pytest.CaptureFixture):
     obs = _sge_workspace(tmp_path, [])
-    assert cli.main(["sge", str(obs), "example", "--workspace", str(tmp_path)]) == 2
+    assert cli.main(["comply", "sge", str(obs), "example", "--workspace", str(tmp_path)]) == 2
     assert "email_domains" in capsys.readouterr().err
 
 
-def test_sge_with_a_missing_observation_is_an_error(tmp_path: Path):
+def test_comply_sge_with_a_missing_observation_is_an_error(tmp_path: Path):
     _sge_workspace(tmp_path, [D])
-    assert cli.main(["sge", str(tmp_path / "nowhere"), "example",
+    assert cli.main(["comply", "sge", str(tmp_path / "nowhere"), "example",
                      "--workspace", str(tmp_path)]) == 2

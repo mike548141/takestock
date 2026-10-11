@@ -34,8 +34,8 @@ authorised hosts ┘   (collectors/*)          │
                                                                                  │
                        ┌────────────────────────┬────────────────────────┬──────┘
                        ▼                        ▼                        ▼
-                  cmdb.py                 requirements.py         sge.py + sge_note.py
-              (configuration register)  (requirements register)  (conformance note)
+                  cmdb.py                 requirements.py         comply.py ─► sge.py + sge_note.py
+              (configuration register)  (requirements register)  (standards conformance)
 
 plan file + exports ─► ipam.py + ipam_view.py ─► IP address plan   (reads no observation)
 ```
@@ -185,7 +185,7 @@ Each output reads a finished observation, never the network:
 |---|---|---|
 | `cmdb.py`, `cmdb_export.py` | `assets.json`, `summary.json`, `data/cmdb-schema.yaml` | `cmdb/`: JSON, a CSV per class, a workbook and the key ledger |
 | `requirements.py` | `assets.json`, the gaps in `summary.json`, `data/requirements-catalogue.yaml` | `requirements/`: Markdown, a workbook and JSON |
-| `sge.py`, `sge_note.py` | `assets.json`, `raw/`, `data/secure-government-email.yaml`, the profile | `sge-note.html` |
+| `comply.py`, over `sge.py` and `sge_note.py` | `assets.json`, `raw/`, `data/secure-government-email.yaml`, the profile | `sge-note.html`, or the report as text |
 | `ipam.py`, `ipam_view.py` | an `<stem>.ipam.yaml` plan file and the exports it names | `<stem>.json`, `.csv` and `.html` |
 
 Every HTML page uses one shell, `htmlpage.py`: self-contained, light and dark
@@ -295,6 +295,7 @@ a new collector or reader declares itself without editing a central list
 | `config.register_overlay_suffix(*suffixes)` | File suffixes beside a profile that are overlays, never profiles | `.dispositions.yaml`, `.derived-ports.yaml`, and `.ipam.yaml` (registered by `ipam.py`) |
 | `ipam.register_reader(kind, fn, optional=False, evidence="observed", replace=False)`, or the entry-point group `takestock.ipam_readers` | A reader for one kind of IP plan source | `csv`, `dns-zones`, `asn-lookups` |
 | `plugins.Plugin(...)`, found through the entry-point group `takestock.collectors` or a profile's `module:` or `path:` | A plug-in collector outside the package: its name, kind, input and step. It runs only when the profile's `plugins:` list names it (see [`PLUGINS.md`](PLUGINS.md)) | None |
+| `comply.register(Standard(...))`; `comply.REGISTRY` | A standard `takestock comply` can read an observation against: its id, title, requirement data, and its evaluate, text, HTML and unmet functions (see [Adding a standard](#adding-a-standard)) | `sge`, registered in `comply.py` |
 | `coverage.SCOPE_AREAS` | Whole areas of an assessment, so a gap that names a whole area (undone work, not a gap) is refused | Empty: a caller fills it or passes its own |
 
 ## Data files
@@ -373,3 +374,43 @@ in its own package instead, with no change here; see
 `tests/test_observe.py` checks that every registered collector has a step,
 and `tests/test_probe_registry.py` checks each active probe's kind and
 signature.
+
+## Adding a standard
+
+`takestock comply <standard>` reads one observation against one standard.
+The command has no code of its own for any standard: it looks the id up in
+`comply.REGISTRY`, so a new standard needs no new command. To add one:
+
+1. **Encode the requirements as data**, in `src/takestock/data/<name>.yaml`,
+   each with its level and the sentence that decides it, quoted from the
+   published standard with its source. Add the file to the
+   [data files](#data-files) table.
+2. **Write the grading**, in its own module: a function that takes the
+   observation's rows and the profile's settings and returns a result object
+   with one reading per requirement and subject, each *met*, *not met* or
+   *not measured* with the reason. A requirement nothing in the observation
+   can settle is *not measured*, never met.
+3. **Write the renderers**: one function that returns the result as plain
+   text, and one that returns it as a complete HTML page through
+   `htmlpage.page`, so it shares the shell and the profile's branding.
+4. **Register it**, with `comply.register(comply.Standard(...))`, giving
+   - `id`: what follows `takestock comply`, lower case;
+   - `title`: one line for `takestock comply --list`;
+   - `data`: the requirement data file;
+   - `html_name`: the HTML file written inside the observation directory
+     when `--out` is not given;
+   - `evaluate(observation_dir, target)`, `text(result, observation_dir,
+     target)`, `html(result, observation_dir, target)` and `unmet(result)`.
+     `unmet` returns true when a requirement stated as *must* is not met,
+     which makes the command exit 1. `evaluate` raises
+     `comply.NothingToRead` when the profile names nothing the standard
+     applies to, which exits 2.
+
+   Import the standard's modules inside those functions, not at the top of
+   the registering module, so `takestock comply --list` stays quick.
+   `sge`, at the end of `comply.py`, is the worked example: it wraps
+   `sge.py` (the grading) and `sge_note.py` (the note).
+5. **Test it** as `tests/test_comply.py` tests `sge`: it is listed, each
+   format renders, and an unmet *must* exits 1.
+6. **Document it**: a guide in `docs/`, a row in the README's outputs table,
+   and an entry in `CHANGELOG.md`.

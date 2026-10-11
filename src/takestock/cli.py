@@ -2,22 +2,20 @@
 
 Each subcommand is a thin layer over a module that can also be used from
 Python: ``observe`` over :mod:`takestock.observe`, ``cmdb`` over
-:mod:`takestock.cmdb`, ``requirements`` over :mod:`takestock.requirements`, ``sge`` over
-:mod:`takestock.sge`, ``sge-note`` over :mod:`takestock.sge` and
-:mod:`takestock.sge_note`, and ``ipam`` over :mod:`takestock.ipam` where that
-module is installed.
+:mod:`takestock.cmdb`, ``requirements`` over :mod:`takestock.requirements`,
+``comply`` over the standards registered in :mod:`takestock.comply`, and
+``ipam`` over :mod:`takestock.ipam` where that module is installed.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 import textwrap
 from importlib import import_module
 from pathlib import Path
 
-from . import __version__, carry, config
+from . import __version__, carry, comply, config
 from .exits import EXIT_CLEAN, EXIT_ERROR, EXIT_FINDINGS, guarded
 from .observe import ObserveRefused, Options, observe
 
@@ -25,7 +23,7 @@ EXIT_CODES = f"""\
 exit codes:
   {EXIT_CLEAN}  clean: the command did its work and found nothing adverse
   {EXIT_FINDINGS}  findings present: observe found a weak verdict or work for an
-     out-of-cycle rung; sge or sge-note found an unmet MUST requirement;
+     out-of-cycle rung; comply found an unmet MUST requirement;
      requirements derived at least one requirement
   {EXIT_ERROR}  error: bad arguments, an unreadable input, a refused scan or carry, or an
      observation that could not judge because a collector failed (the
@@ -111,22 +109,32 @@ def build_parser() -> argparse.ArgumentParser:
                    help="first look up the plan's public addresses with the internet "
                         "registries (sends them over the network)")
 
-    p = sub.add_parser("sge", parents=[common],
-                       help="print the Secure Government Email conformance report",
-                       description="Read one observation against the Secure Government "
-                                   "Email framework for the profile's email domains, and "
-                                   "print the conformance report as plain text.")
-    p.add_argument("observation", type=Path, help="an observation directory")
-    p.add_argument("target", help="the target profile the observation was taken for")
-
-    p = sub.add_parser("sge-note", parents=[common],
-                       help="write the Secure Government Email conformance note",
-                       description="Read one observation against the Secure Government "
-                                   "Email framework for the profile's email domains, and "
-                                   "write the conformance note as HTML.")
-    p.add_argument("observation", type=Path, help="an observation directory")
-    p.add_argument("target", help="the target profile the observation was taken for")
-    p.add_argument("--out", type=Path, help="the HTML file (default: <observation>/sge-note.html)")
+    standards = "\n".join("  " + line for line in comply.listing().splitlines())
+    p = sub.add_parser(
+        "comply", parents=[common], formatter_class=_Formatter, epilog=EXIT_CODES,
+        help="read an observation against a standard",
+        usage="takestock comply [-h] [--workspace DIR] [--format {html,text}] [--out FILE]\n"
+              "                        <standard> <observation> <target>\n"
+              "       takestock comply --list",
+        description=textwrap.fill(
+            "Read one observation against one standard and report every requirement as "
+            "met, not met or not measured: as a self-contained HTML note written to a "
+            "file (the default), or with --format text as plain text on the terminal.", 78)
+        + f"\n\nstandards:\n{standards}")
+    p.add_argument("standard", nargs="?", metavar="<standard>",
+                   help="the standard's id (see --list)")
+    p.add_argument("observation", type=Path, nargs="?", metavar="<observation>",
+                   help="an observation directory")
+    p.add_argument("target", nargs="?", metavar="<target>",
+                   help="the target profile the observation was taken for")
+    p.add_argument("--format", choices=("html", "text"), default="html",
+                   help="html writes the note and prints its path; text prints the "
+                        "report (default: html)")
+    p.add_argument("--out", type=Path, metavar="FILE",
+                   help="write to FILE (default: html writes the standard's note file "
+                        "inside the observation directory, e.g. sge-note.html; text "
+                        "prints to the terminal)")
+    p.add_argument("--list", action="store_true", help="list the standards and exit")
 
     p = sub.add_parser("requirements", parents=[common],
                        help="derive requirements from an observation's findings",
@@ -184,54 +192,20 @@ def _ipam(args: argparse.Namespace) -> int:
     return int(ipam.main(argv))
 
 
-def _sge_inputs(args: argparse.Namespace) -> tuple[dict, list[str], list] | None:
-    """(target, email domains, assets) for the sge commands; None when there are no domains."""
-    from . import sge
-    target = config.load_target(args.target)
-    domains = [str(d) for d in (target.get("discovery") or {}).get("email_domains") or []]
-    if not domains and not sge.parked_domains(target):
-        print("takestock: the target profile names no `discovery.email_domains` and no "
-              "parked domain, so there is nothing to read against the framework",
-              file=sys.stderr)
-        return None
-    path = args.observation / "assets.json"
-    assets = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(assets, list):
-        raise ValueError(f"{path}: expected a list of asset rows")
-    return target, domains, assets
-
-
-def _sge(args: argparse.Namespace) -> int:
-    from . import sge
-    inputs = _sge_inputs(args)
-    if inputs is None:
-        return EXIT_ERROR
-    target, domains, assets = inputs
-    report = sge.evaluate(assets, domains, bulk_mail_domains=sge.bulk_mail_domains(target),
-                          parked=sge.parked_domains(target))
-    # The same text ``python -m takestock.sge`` prints.
-    print(sge._format(report, domains))
-    return EXIT_FINDINGS if report.breaches() else EXIT_CLEAN
-
-
-def _sge_note(args: argparse.Namespace) -> int:
-    from . import htmlpage, sge, sge_note
-    inputs = _sge_inputs(args)
-    if inputs is None:
-        return EXIT_ERROR
-    target, domains, assets = inputs
-    obs = args.observation
-    results = sge.evaluate(assets, domains,
-                           bulk_mail_domains=sge.bulk_mail_domains(target),
-                           parked=sge.parked_domains(target))
-    theme = htmlpage.theme_from_target(target)
-    for problem in theme.contrast_failures():
-        print(f"warning: branding contrast: {problem}", file=sys.stderr)
-    out = sge_note.render_note(results, target, args.out or obs / "sge-note.html",
-                               evidence=sge_note.evidence_files(obs),
-                               observation=obs.resolve().name, theme=theme)
-    print(out)
-    return EXIT_FINDINGS if results.breaches() else EXIT_CLEAN
+def _comply(args: argparse.Namespace) -> int:
+    if args.list:
+        print(comply.listing())
+        return EXIT_CLEAN
+    if args.standard is None:
+        raise ValueError("name a standard (takestock comply --list shows them)")
+    comply.get(args.standard)      # an unknown id is refused before any input is read
+    if args.observation is None or args.target is None:
+        raise ValueError("name the observation directory and the target profile: "
+                         f"takestock comply {args.standard} <observation> <target>")
+    rendered, written, unmet = comply.run(args.standard, args.observation, args.target,
+                                          fmt=args.format, out=args.out)
+    print(written if written is not None else rendered)
+    return EXIT_FINDINGS if unmet else EXIT_CLEAN
 
 
 def _requirements(args: argparse.Namespace) -> int:
@@ -250,8 +224,7 @@ _COMMANDS = {
     "observe": _observe,
     "cmdb": _cmdb,
     "ipam": _ipam,
-    "sge": _sge,
-    "sge-note": _sge_note,
+    "comply": _comply,
     "requirements": _requirements,
 }
 

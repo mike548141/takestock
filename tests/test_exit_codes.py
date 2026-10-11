@@ -56,10 +56,11 @@ def _cases(ws: Path) -> dict[str, tuple[str, Callable[[], int]]]:
             ("takestock.dnsevidence", lambda: dnsevidence.main([str(ws / "nowhere.yaml")])),
         "takestock requirements, missing observation":
             ("takestock requirements", lambda: cli.main(["requirements", str(missing)])),
-        "takestock sge, malformed assets":
-            ("takestock sge", lambda: cli.main(["sge", str(bad), profile])),
-        "takestock sge-note, missing profile":
-            ("takestock sge-note", lambda: cli.main(["sge-note", str(bad), str(ws / "x.yaml")])),
+        "takestock comply sge, malformed assets":
+            ("takestock comply", lambda: cli.main(["comply", "sge", str(bad), profile])),
+        "takestock comply sge --format html, missing profile":
+            ("takestock comply", lambda: cli.main(["comply", "sge", str(bad), str(ws / "x.yaml"),
+                                                   "--format", "html"])),
         "takestock cmdb, malformed assets":
             ("takestock cmdb", lambda: cli.main(["cmdb", str(bad)])),
         "takestock observe, malformed profile":

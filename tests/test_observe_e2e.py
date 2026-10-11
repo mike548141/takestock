@@ -264,7 +264,8 @@ def test_the_sample_end_to_end(net: FakeNet, workspace: Path, capsys: pytest.Cap
     assert (obs / "requirements" / "requirements.md").read_text().startswith("#")
     assert openpyxl.load_workbook(obs / "requirements" / "requirements.xlsx").sheetnames
 
-    code = cli.main(["sge-note", str(obs), "example-widgets", "--workspace", ws])
+    code = cli.main(["comply", "sge", str(obs), "example-widgets", "--format", "html",
+                     "--workspace", ws])
     assert code in (0, 1)
     html = (obs / "sge-note.html").read_text()
     assert html.lstrip().lower().startswith("<!doctype html")
