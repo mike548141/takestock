@@ -81,6 +81,7 @@ workspace's `targets/` beside the target profile. Top-level keys:
 | `organisation` | `{name: ...}`, used when no target profile sits beside the file |
 | `title`, `subtitle`, `summary` | The page's heading, lead line and opening paragraphs |
 | `audience` | Who the plan is written for, shown under the heading |
+| `part`, `author` | A short label shown above the page's title (the part of a larger set the page belongs to, say) and a line shown under it (who prepared it) |
 | `sites` | Every site, with its address ranges |
 | `subnets` | Every subnet the organisation knows of, with what it is for |
 | `host_internal_ranges` | Ranges that exist only inside a machine |
@@ -483,7 +484,20 @@ JSON and CSV beside it. Its sections:
 Without scripts the page reads as one long document and prints that way.
 With them, the sections become tabs, the subnet table can be filtered, and
 the address finder answers *which subnet holds this address?* in the
-browser. Every value from the data is escaped before it reaches the page.
+browser, naming the subnet, its site and purpose, and the names the plan
+holds for the address. Given a MAC address (in any of the usual spellings:
+`02:00:00:00:00:10`, `02-00-00-00-00-10`, `0200.0000.0010`) it lists every
+address a source saw that MAC address at, and the subnet holding each.
+
+The view is kept in the page's address, so a copied link opens where it was
+copied: `#subnets` opens a section, `#find=192.0.2.10` runs the address
+finder, and `#filter=printer` filters the subnet table. A document preview
+may show the page inside a sandboxed frame where the address cannot be
+changed; there the page works the same, and only the address stays as it
+was. Every value from the data is escaped before it reaches the page.
+
+`takestock.ipam_view.render(plan, theme, part=..., author=...)` lets a
+caller set the part label and author line in place of the plan's own.
 
 ## Internet-registry lookups
 

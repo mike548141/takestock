@@ -156,3 +156,37 @@ def test_an_unknown_addressing_value_is_shown_as_read_as_static():
     page = ipam_view.render(plan)
     assert "Unknown addressing values" in page
     assert "<code>dyanmic</code></td><td>treated as static" in page
+
+
+def test_the_page_carries_a_part_label_and_an_author_line(sample):
+    plan = tiny_plan(part="Part 3", author="Prepared by the <network> team")
+    page = ipam_view.render(plan)
+    assert '<p class="eyebrow">Part 3</p>' in page
+    assert '<p class="byline">Prepared by the &lt;network&gt; team</p>' in page
+    page = ipam_view.render(plan, part="Appendix B", author="")
+    assert '<p class="eyebrow">Appendix B</p>' in page and 'class="byline"' not in page
+    assert sample["part"] == "" and sample["author"] == ""
+
+
+def test_a_mac_address_finds_every_address_it_was_seen_at(sample):
+    page = ipam_view.render(sample)
+    data = json.loads(page.split('id="ipam-lookup">', 1)[1].split("</script>", 1)[0])
+    seen = data["macs"]["020000000010"]
+    assert [ip for ip, _i in seen] == ["192.0.2.10", "2001:db8:10:1::10"]
+    assert [data["subnets"][i]["cidr"] for _ip, i in seen] == ["192.0.2.0/26", "2001:db8:10:1::/64"]
+    assert ipam_view.mac_key("02-00-00-00-00-10") == ipam_view.mac_key("0200.0000.0010") == "020000000010"
+    assert ipam_view.mac_key("not a mac") == ""
+
+
+def test_the_view_is_kept_in_the_address_without_breaking_a_sandboxed_preview():
+    # A preview may show the page in a sandboxed frame where changing the
+    # address throws, so every change to it must sit inside a try block.
+    script = ipam_view._SCRIPT
+    calls = [m.start() for m in re.finditer(r"history\.\w+State", script)]
+    assert calls
+    for at in calls:
+        line = script[script.rfind("\n", 0, at):script.find("\n", at)]
+        assert "try {" in line and "catch" in line, line
+    # A link carrying a view (#find=..., #filter=...) opens on it only once the
+    # controls listen, so the opening call comes after the last listener.
+    assert script.rindex("go(location.hash)") > script.rindex("addEventListener")

@@ -99,6 +99,12 @@ _SCRIPT = r"""
     p.setAttribute("role", "tabpanel"); p.setAttribute("aria-labelledby", b.id);
     nav.appendChild(b); return b;
   });
+  // The view is kept in the address (#<section>, #find=..., #filter=...) so a
+  // link opens where it was copied. Some previews show the page in a sandboxed
+  // frame where changing the address throws; the page must work there too.
+  function remember(hash) {
+    try { history.replaceState(null, "", hash); } catch (e) { /* the address stays as it is */ }
+  }
   function show(id, focus) {
     panels.forEach(function (p, i) {
       var on = p.id === id;
@@ -111,25 +117,38 @@ _SCRIPT = r"""
     return el;
   }
   function go(hash) {
+    var m = /^#(find|filter)=(.*)$/.exec(hash || "");
+    if (m) {
+      var box = document.getElementById(m[1] === "find" ? "lookup" : "subnet-filter");
+      var value = "";
+      try { value = decodeURIComponent(m[2]); } catch (e) { value = m[2]; }
+      if (box) {
+        show(panelOf(box).id, false); box.value = value;
+        box.dispatchEvent(new Event("input"));
+        return;
+      }
+    }
     var el = hash && document.getElementById(hash.slice(1));
     var p = el && panelOf(el);
     show(p ? p.id : panels[0].id, false);
     if (el && el !== p) { if (el.tagName === "DETAILS") el.open = true; el.scrollIntoView(); }
   }
   nav.addEventListener("click", function (e) {
-    var b = e.target.closest("[role=tab]"); if (b) show(b.getAttribute("aria-controls"), false);
+    var b = e.target.closest("[role=tab]");
+    if (b) { show(b.getAttribute("aria-controls"), false); remember("#" + b.getAttribute("aria-controls")); }
   });
   nav.addEventListener("keydown", function (e) {
     var i = buttons.indexOf(document.activeElement); if (i < 0) return;
     var j = {ArrowRight: (i + 1) % buttons.length, ArrowLeft: (i - 1 + buttons.length) % buttons.length,
              Home: 0, End: buttons.length - 1}[e.key];
-    if (j !== undefined) { e.preventDefault(); show(panels[j].id, true); }
+    if (j !== undefined) { e.preventDefault(); show(panels[j].id, true); remember("#" + panels[j].id); }
   });
   document.addEventListener("click", function (e) {
     var a = e.target.closest && e.target.closest('a[href^="#"]');
-    if (a && a.getAttribute("href").length > 1) { e.preventDefault(); go(a.getAttribute("href")); }
+    if (a && a.getAttribute("href").length > 1) {
+      e.preventDefault(); go(a.getAttribute("href")); remember(a.getAttribute("href"));
+    }
   });
-  go(location.hash);
 
   var filter = document.getElementById("subnet-filter");
   if (filter) filter.addEventListener("input", function () {
@@ -140,6 +159,7 @@ _SCRIPT = r"""
       r.hidden = !on; if (on) shown++;
     });
     document.getElementById("subnet-count").textContent = shown + " of " + rows.length + " shown";
+    remember(q ? "#filter=" + encodeURIComponent(filter.value.trim()) : "#subnets");
   });
 
   var data = JSON.parse(document.getElementById("ipam-lookup").textContent);
@@ -167,26 +187,53 @@ _SCRIPT = r"""
     }
     return groups.length === 8 ? {v: 6, n: v, bits: 128} : null;
   }
-  var input = document.getElementById("lookup"), out = document.getElementById("lookup-result");
-  if (input) input.addEventListener("input", function () {
-    var ip = parse(input.value); out.textContent = "";
-    if (!input.value.trim()) return;
-    if (!ip) { out.textContent = "Not an IPv4 or IPv6 address."; return; }
+  function mac(s) {
+    var hex = s.trim().toLowerCase().replace(/[\s:.-]/g, "");
+    return /^[0-9a-f]{12}$/.test(hex) ? hex : null;
+  }
+  function holder(ip) {
     var best = null;
     data.subnets.forEach(function (s) {
       if (s.v !== ip.v) return;
       var shift = BigInt(ip.bits - s.len);
       if ((ip.n >> shift) === (BigInt(s.base) >> shift) && (!best || s.len > best.len)) best = s;
     });
+    return best;
+  }
+  function where(s) {
+    return s.cidr + " (" + s.site + (s.purpose ? ", " + s.purpose : "") + ")";
+  }
+  function link(s) {
+    var a = document.createElement("a"); a.href = "#" + s.anchor; a.textContent = " Open " + s.cidr;
+    out.appendChild(a);
+  }
+  var input = document.getElementById("lookup"), out = document.getElementById("lookup-result");
+  if (input) input.addEventListener("input", function () {
+    var value = input.value.trim(), ip = parse(value); out.textContent = "";
+    remember(value ? "#find=" + encodeURIComponent(value) : "#overview");
+    if (!value) return;
+    if (!ip) {
+      var m = mac(value), seen = m && data.macs[m];
+      if (!m) { out.textContent = "Not an IPv4 or IPv6 address, or a MAC address."; return; }
+      if (!seen) { out.textContent = "No source reported that MAC address."; return; }
+      out.textContent = "That MAC address was seen at " + seen.map(function (x) {
+        return x[0] + " in " + where(data.subnets[x[1]]);
+      }).join("; ") + ".";
+      seen.forEach(function (x) { link(data.subnets[x[1]]); });
+      return;
+    }
+    var best = holder(ip);
     if (!best) { out.textContent = "Not inside any subnet in the plan."; return; }
-    var text = "Inside " + best.cidr + " (" + best.site + (best.purpose ? ", " + best.purpose : "") + ").";
+    var text = "Inside " + where(best) + ".";
     var known = data.addresses[ip.v + ":" + ip.n.toString()];
     text += known ? " Listed in the plan" + (known.length ? " as " + known.join(", ") : "") + "."
                   : " Not an address any source reported.";
     out.textContent = text;
-    var a = document.createElement("a"); a.href = "#" + best.anchor; a.textContent = " Open the subnet";
-    out.appendChild(a);
+    link(best);
   });
+
+  // Last, once every control listens: open the view the address names.
+  go(location.hash);
 })();
 """
 
@@ -306,7 +353,7 @@ class _View:
             '<section class="card js-only" hidden><h3>Find an address</h3>'
             '<label class="field" for="lookup">Which subnet holds this address?</label>'
             '<input type="search" id="lookup" autocomplete="off" spellcheck="false" '
-            'placeholder="an IPv4 or IPv6 address">'
+            'placeholder="an IPv4, IPv6 or MAC address">'
             '<p id="lookup-result" class="lookup-result" aria-live="polite"></p></section>')
         return ("".join(parts) + f'<dl class="facts">{dl}</dl>' + lookup
                 + "<h3>To look at</h3>"
@@ -566,8 +613,16 @@ class _View:
         return _table(["Source", "Kind", "What it shows", "Date", "Notes"], rows)
 
 
+def mac_key(value: Any) -> str:
+    """A MAC address as twelve lower-case hex digits, or "" when it is not one."""
+    hex_digits = re.sub(r"[\s:.-]", "", str(value or "")).lower()
+    return hex_digits if re.fullmatch(r"[0-9a-f]{12}", hex_digits) else ""
+
+
 def _lookup_data(plan: dict, sites: dict) -> str:
-    subnets, addresses = [], {}
+    subnets: list[dict] = []
+    addresses: dict[str, list[str]] = {}
+    macs: dict[str, list[list[Any]]] = defaultdict(list)
     for s in plan.get("subnets") or []:
         net = ipaddress.ip_network(s["cidr"], strict=False)
         subnets.append({"cidr": s["cidr"], "v": net.version, "base": str(int(net.network_address)),
@@ -577,12 +632,20 @@ def _lookup_data(plan: dict, sites: dict) -> str:
         for a in s["addresses"]:
             ip = ipaddress.ip_address(a["ip"])
             addresses[f"{ip.version}:{int(ip)}"] = a["names"]
-    return json.dumps({"subnets": subnets, "addresses": addresses},
+            for key in sorted({mac_key(sg.get("mac")) for sg in a.get("sightings") or []} - {""}):
+                macs[key].append([a["ip"], len(subnets) - 1])
+    return json.dumps({"subnets": subnets, "addresses": addresses, "macs": macs},
                       ensure_ascii=False, separators=(",", ":")).replace("<", "\\u003c")
 
 
-def render(plan: dict, theme: htmlpage.Theme | None = None) -> str:
-    """The plan as a complete HTML page."""
+def render(plan: dict, theme: htmlpage.Theme | None = None, *, part: str | None = None,
+           author: str | None = None) -> str:
+    """The plan as a complete HTML page.
+
+    ``part`` is a short label shown above the title (the part of a larger set
+    the page belongs to, say) and ``author`` a line shown under it; each
+    defaults to the plan's own ``part`` and ``author``.
+    """
     view = _View(plan)
     panels = []
     for sid, label, count, body in view.sections():
@@ -603,4 +666,6 @@ def render(plan: dict, theme: htmlpage.Theme | None = None) -> str:
               + (f" (SHA-256 <code>{esc(sha[:16])}</code>…)" if sha else "")
               + " and the sources listed under Sources.</p>")
     return htmlpage.page(title, body, theme=theme, lead=str(plan.get("subtitle") or ""),
-                         description=title, footer=footer)
+                         description=title, footer=footer,
+                         eyebrow=str(plan.get("part") or "") if part is None else part,
+                         byline=str(plan.get("author") or "") if author is None else author)

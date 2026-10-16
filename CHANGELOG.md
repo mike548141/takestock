@@ -27,6 +27,14 @@ command line or a file format, and its entry says how.
   a documented value. A superseding source can say with `cannot_see` which
   sightings it would never list, and an address the older source reports
   with one of those values is no longer flagged as only in the older source.
+- **IP address plan page**: the address finder also takes a MAC address and
+  lists every address it was seen at; the view (section, address search or
+  subnet filter) is kept in the page's address so a copied link opens where
+  it was copied, and the page still works in a sandboxed preview frame
+  where the address cannot change; a plan file's `part` and `author` give a
+  label above the title and a line under it.
+- **HTML pages**: `htmlpage.page` takes an optional `eyebrow` (a short label
+  above the title) and `byline` (a line under it).
 
 ## [0.1.0] — 2026-10-17
 

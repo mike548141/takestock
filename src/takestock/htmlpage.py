@@ -239,6 +239,9 @@ h3 { font-size: 1.15rem; margin: 1.75rem 0 .5rem; }
 h4 { font-size: 1rem; margin: 1.25rem 0 .4rem; }
 p, ul, ol, dl { margin: 0 0 .9rem; }
 .lede { font-size: 1.1rem; }
+.eyebrow { margin: 0 0 .25rem; font-size: .85rem; font-weight: 600; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--muted); }
+.byline { margin: 0; color: var(--muted); }
 .muted, small, figcaption, caption { color: var(--muted); }
 a { color: var(--accent); text-underline-offset: 2px; }
 a:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
@@ -299,11 +302,14 @@ def stylesheet(theme: Theme | None = None) -> str:
 
 
 def page(title: str, body: str, *, theme: Theme | None = None, lead: str = "",
-         description: str = "", lang: str = "en-NZ", footer: str = "") -> str:
+         description: str = "", lang: str = "en-NZ", footer: str = "", eyebrow: str = "",
+         byline: str = "") -> str:
     """A complete HTML document.
 
-    ``title`` and ``lead`` are plain text and are escaped here; ``body`` and
-    ``footer`` are HTML the caller has already escaped.
+    ``title``, ``lead``, ``eyebrow`` (a short label above the title) and
+    ``byline`` (a line under it, such as who wrote the page) are plain text
+    and are escaped here; ``body`` and ``footer`` are HTML the caller has
+    already escaped.
     """
     t = theme or Theme()
     logo = (f'<img src="{esc(t.logo_uri)}" alt="{esc(t.logo_alt)}">' if t.logo_uri else "")
@@ -314,8 +320,10 @@ def page(title: str, body: str, *, theme: Theme | None = None, lead: str = "",
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
         f"{meta}<title>{esc(title)}</title>\n<style>\n{stylesheet(t)}\n</style>\n</head>\n"
         '<body>\n<div class="page">\n<header class="masthead">\n'
-        f"{logo}<h1>{esc(title)}</h1>\n"
+        f"{logo}" + (f'<p class="eyebrow">{esc(eyebrow)}</p>\n' if eyebrow else "")
+        + f"<h1>{esc(title)}</h1>\n"
         + (f'<p class="lede">{esc(lead)}</p>\n' if lead else "")
+        + (f'<p class="byline">{esc(byline)}</p>\n' if byline else "")
         + "</header>\n<main>\n" + body + "\n</main>\n"
         + (f"<footer>\n{footer}\n</footer>\n" if footer else "")
         + "</div>\n</body>\n</html>\n")
