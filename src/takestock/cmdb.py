@@ -57,6 +57,10 @@ host                   machine ``extra.hosts`` names (a list, or names
 ``products``           release: an inventory's list of every product it names
 ``extra.dns_names`` on a DNS Name for each name listed, such as a zone
 a name row             file reader's list of every name the zones publish
+``technology_zone``    in ``extra``: the item's GEANZ technology zone, one
+                       of the ``technology_zone`` vocabulary's codes
+``technology_``        in ``extra``: the item's GEANZ technology location,
+``location``           one of the ``technology_location`` vocabulary's codes
 =====================  ===================================================
 
 A row flagged ``version-spread:`` counts the versions of a product in
@@ -176,6 +180,9 @@ class Schema:
                 out.append(f"attribute {name!r} declares no refresh interval")
             if spec.get("expected_strength") not in _STRENGTH_RANK:
                 out.append(f"attribute {name!r} has no valid expected_strength")
+            if spec.get("vocabulary") and spec["vocabulary"] not in self.vocabularies:
+                out.append(f"attribute {name!r} takes its values from vocabulary "
+                           f"{spec['vocabulary']!r}, which is not declared")
         for vocab in ("evidence_strength", "basis", "lifecycle_state", "actor_kind"):
             declared = set(self.vocabularies.get(vocab, {}))
             expected = set({"evidence_strength": EVIDENCE_STRENGTH, "basis": BASES,
@@ -227,6 +234,11 @@ class Schema:
     def class_attributes(self, item_class: str) -> list[str]:
         """The attributes ``item_class`` carries, in the schema's order."""
         return list((self.classes.get(item_class) or {}).get("attributes") or [])
+
+    def allowed_values(self, attribute: str) -> frozenset[str] | None:
+        """The codes ``attribute`` may take, or None when it is not a controlled one."""
+        vocabulary = (self.attributes.get(attribute) or {}).get("vocabulary")
+        return frozenset(self.vocabularies.get(str(vocabulary), {})) if vocabulary else None
 
 
 def load_schema() -> Schema:
@@ -1196,6 +1208,7 @@ class _Builder:
              valid_at: str, actor: Actor) -> None:
         if attribute not in self.schema.attributes:
             raise SchemaError(f"attribute {attribute!r} is not declared in {SCHEMA_FILE}")
+        self._check_code(attribute, value, actor)
         if attribute not in self.schema.class_attributes(self._class.get(key, "")):
             return
         if value == "" or value is None:
@@ -1204,6 +1217,22 @@ class _Builder:
             item=key, attribute=attribute, value=value,
             evidence_strength=capped_strength(self.schema, attribute, strength),
             valid_at=valid_at, recorded_at=self.recorded_at, actor=actor))
+
+    def _check_code(self, attribute: str, value: Any, actor: Actor) -> None:
+        """Refuse a value outside the attribute's vocabulary, if it has one."""
+        allowed = self.schema.allowed_values(attribute)
+        if (allowed is not None and value not in ("", None) and not is_absent(value)
+                and value not in allowed):
+            raise ValueError(f"{actor.name} gives {attribute} {value!r}, which is not one of "
+                             f"its vocabulary's codes: {', '.join(sorted(allowed))}")
+
+    def _check_codes(self, extra: Mapping[str, Any], actor: Actor) -> None:
+        # A row's extra key named for a controlled attribute is checked on every
+        # row, before anything decides whether the row names an item, so a
+        # typing slip is never dropped silently.
+        for attribute in self.schema.attributes:
+            if extra.get(attribute) not in ("", None):
+                self._check_code(attribute, str(extra[attribute]), actor)
 
     def _edge(self, kind: str, from_key: str, to_key: str, strength: str, valid_at: str,
               actor: Actor, count: int = 1, qualifier: str = "", unit: str = "") -> None:
@@ -1221,6 +1250,7 @@ class _Builder:
             seen = self._seen_at(asset)
             actor = self._actor(asset)
             strength = _strength_for(asset)
+            self._check_codes(extra, actor)
             for name in _listed_names(asset):
                 self._say(self._named_key("estate-name", name, asset), "name", name,
                           strength, seen, actor)
@@ -1353,7 +1383,9 @@ class _Builder:
                           ("os_version", "os_version"), ("ip_stack", "ip_stack"),
                           ("issuer", "issuer"), ("not_after", "not_after"),
                           ("serial_number", "serial_number"),
-                          ("sensor_version", "sensor_version")):
+                          ("sensor_version", "sensor_version"),
+                          ("technology_zone", "technology_zone"),
+                          ("technology_location", "technology_location")):
             if extra.get(src):
                 out[dest] = str(extra[src])
         addresses = [str(extra[k]) for k in ("ipv4_addresses", "ipv6_addresses") if extra.get(k)]

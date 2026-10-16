@@ -141,6 +141,51 @@ applicable*, with a note, when the lookup settled with nothing to report: no NS
 record because the name is not the top of its own zone, or no DMARC record or
 no `rua=` in it. A name nothing read for them shows *not collected*.
 
+### Technology zones and locations
+
+The New Zealand Government Enterprise Architecture's *GEANZ Technologies
+model* (August 2025 baseline, published as a dataset in the government's
+open data catalogue under CC BY 4.0) is a shared set of categories for
+technology. It was the source of the technology categories in the GEANZ
+Standards and Guidance Catalogue; since that catalogue's September 2026
+update they come from the model's review-draft successor, which keeps the
+codes below. The model sorts technology two ways, and the register keeps
+them as two attributes:
+
+- `technology_zone`, carried by machines, Software Products and
+  Applications: what kind of technology the item is, one of the model's five
+  technology zones.
+- `technology_location`, carried by machines and Applications: where it
+  runs, one of the model's two technology locations.
+
+They are kept apart because they answer different questions: an
+infrastructure machine is `TI.00` whether it is on-premise or in a cloud,
+and the model's own infrastructure zone holds both server services such as
+infrastructure as a service (`TI.01`) and on-premise server equipment
+(`TI.02`). A product has no location, because one product can run in both.
+
+| Technology zone | | Technology location | |
+|---|---|---|---|
+| `TAP.00` | Application Technology | `TLC.00` | Cloud |
+| `TFA.00` | Technology Facilities | `TLO.00` | On-premise |
+| `TI.00` | Infrastructure Technology | | |
+| `TN.00` | Network Technology | | |
+| `TUD.00` | User Devices Technology | | |
+
+A machine row states them in `extra.technology_zone` and
+`extra.technology_location`. No row gives a Software Product or an
+Application either value: those are for the organisation to fill. Each value
+must be one of its own list's codes, on any row, even one whose item does
+not carry the attribute: the build stops on any other, naming the row's
+source and the codes it accepts. Each is `declared` evidence at most,
+because a person or a document assigns it. takestock never derives either
+from an item's class, so an item nothing places shows *not collected*. A
+review draft of the model's successor, the GEANZ Technologies Taxonomy, adds
+an operational technology zone (`TO.00`), renames `TUD.00` the User Endpoint
+Technology Zone, and renames the two locations as computing environments,
+keeping their codes; the new zone is not accepted until the successor is
+approved.
+
 ### Machines from an IP address plan
 
 Given `--ip-plan`, the build also reads the plan's addresses. Each name a
@@ -395,7 +440,9 @@ refuses a schema in which:
 - a relationship's ends are neither a declared family nor a declared class,
   it has no `test`, it does not say whether it is drawn (`built`), or it is
   not drawn and gives no `note` saying why;
-- an attribute has no `refresh_interval_days` or no valid `expected_strength`;
+- an attribute has no `refresh_interval_days` or no valid `expected_strength`,
+  or names a `vocabulary` that is not declared (an attribute that names one
+  accepts only that vocabulary's codes);
 - the `evidence_strength`, `basis`, `lifecycle_state` or `actor_kind`
   vocabulary differs from the values the code uses;
 - a `cites:` entry names no key under `authorities:`.

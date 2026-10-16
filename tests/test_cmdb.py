@@ -61,6 +61,76 @@ def test_the_vocabularies_match_the_code():
     assert set(cmdb.absence_reasons()) >= {"not-collected", "not-measured", "not-applicable"}
 
 
+def test_zones_and_locations_are_the_geanz_model_groups():
+    schema = cmdb.load_schema()
+    assert set(schema.vocabularies["technology_zone"]) == {
+        "TAP.00", "TFA.00", "TI.00", "TN.00", "TUD.00"}
+    assert set(schema.vocabularies["technology_location"]) == {"TLC.00", "TLO.00"}
+    for attribute in ("technology_zone", "technology_location"):
+        assert schema.allowed_values(attribute) == frozenset(schema.vocabularies[attribute])
+        assert "geanz-technologies-model" in schema.attributes[attribute]["cites"]
+    assert schema.allowed_values("os") is None
+    for item_class in ("Server", "Network Device", "Endpoint Device", "Host", "Application"):
+        assert {"technology_zone", "technology_location"} <= set(
+            schema.class_attributes(item_class))
+    # A product can run anywhere, so it has a zone and no location.
+    assert "technology_zone" in schema.class_attributes("Software Product")
+    assert "technology_location" not in schema.class_attributes("Software Product")
+
+
+def test_an_attribute_naming_an_undeclared_vocabulary_is_refused():
+    raw = copy.deepcopy(cmdb.raw_schema())
+    raw["attributes"]["technology_zone"]["vocabulary"] = "no-such-vocabulary"
+    assert any("no-such-vocabulary" in p for p in cmdb.Schema(raw).problems())
+
+
+def _zoned(tmp_path, zone, location="TLO.00"):
+    rows = [cmdbfake._row(name="switch", host="core-01.example.test", source="example_netdev",
+                          source_name="Example network device export",
+                          extra={"host_type": "switch", "technology_zone": zone,
+                                 "technology_location": location})]
+    return cmdb.build(cmdbfake.write_observation(tmp_path, assets=rows))
+
+
+def test_a_row_can_state_its_technology_zone_and_location(tmp_path):
+    register = _zoned(tmp_path, "TN.00")
+    zone = _value(register, "core-01.example.test", "technology_zone")
+    assert zone.value == "TN.00" and zone.evidence_strength == cmdb.DECLARED
+    location = _value(register, "core-01.example.test", "technology_location")
+    assert location.value == "TLO.00" and location.evidence_strength == cmdb.DECLARED
+
+
+def test_a_zone_or_location_outside_its_vocabulary_is_refused(tmp_path):
+    with pytest.raises(ValueError, match="'Network'.*TN.00"):
+        _zoned(tmp_path, "Network")
+    # Cloud is a location, not a zone, and each list accepts only its own codes.
+    with pytest.raises(ValueError, match="technology_zone 'TLC.00'"):
+        _zoned(tmp_path / "zone", "TLC.00")
+    with pytest.raises(ValueError, match="technology_location 'TI.00'"):
+        _zoned(tmp_path / "location", "TI.00", location="TI.00")
+
+
+def test_a_bad_zone_is_refused_even_where_the_item_does_not_carry_it(tmp_path):
+    # A DNS Name carries no zone, and a slip on its row is still not dropped silently.
+    rows = [cmdbfake._row(name="www", host="www.example.test", data_state="discovery",
+                          protocol="dns", source="example_dns", source_name="Example DNS",
+                          extra={"technology_zone": "Network"})]
+    with pytest.raises(ValueError, match="'Network'"):
+        cmdb.build(cmdbfake.write_observation(tmp_path, assets=rows))
+
+
+@pytest.mark.parametrize("attribute, value", [("technology_zone", "Network"),
+                                              ("technology_location", "Cloud")])
+def test_a_bad_code_is_refused_on_a_row_that_names_no_item(tmp_path, attribute, value):
+    # A software row with no host names no machine; its slip is still refused.
+    rows = [cmdbfake._row(name="Example TLS library 41.7.3", data_state="software",
+                          software="Example TLS library", version="41.7.3",
+                          source="example_inventory", source_name="Example inventory",
+                          extra={attribute: value})]
+    with pytest.raises(ValueError, match=f"{attribute} '{value}'"):
+        cmdb.build(cmdbfake.write_observation(tmp_path, assets=rows))
+
+
 def test_every_class_built_from_nothing_says_so_in_the_census(tmp_path):
     register = cmdb.build(cmdbfake.write_observation(tmp_path))
     census = {row["class"]: row for row in register.census()}

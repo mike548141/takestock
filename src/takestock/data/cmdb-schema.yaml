@@ -65,6 +65,29 @@ authorities:
       per element rather than per record. Six of its codes are adopted in
       absence_reason below, with their published definitions.
 
+  geanz-technologies-model:
+    title: GEANZ Technologies model, baselined August 2025
+    publisher: >-
+      Government Digital Delivery Agency, New Zealand, as the dataset "GEANZ
+      Technologies model" in the government's open data catalogue, licensed
+      Creative Commons Attribution 4.0 International
+    note: >-
+      The New Zealand Government Enterprise Architecture's common language for
+      the technology that supports government organisations. Its catalogue
+      entry names it as the source of the technology categories in the GEANZ
+      Standards and Guidance Catalogue; since that catalogue's September 2026
+      update, they come from the review-draft successor below. It divides
+      technology into five technology zones and, separately, two technology
+      locations (cloud and on-premise), adopted in technology_zone and
+      technology_location below by their published codes and names. It
+      replaced the earlier GEA-NZ application and infrastructure reference
+      taxonomies. Its catalogue entry says a GEANZ Technologies Taxonomy will
+      supersede it; that taxonomy was published as a review draft, which adds
+      an operational technology zone (TO.00), renames TUD.00 the User Endpoint
+      Technology Zone, and renames the two locations as computing
+      environments, keeping their codes. The draft is not adopted here until
+      it is approved.
+
 # ── Vocabularies ───────────────────────────────────────────────────────────
 
 vocabularies:
@@ -207,6 +230,52 @@ vocabularies:
       definition: A network address. Used only when nothing better exists.
       rank: 5
 
+  # Which technology zone of the GEANZ Technologies model an item belongs
+  # to, by the model's own codes and names. Each zone's published code ends
+  # in .00; the areas within a zone (TAP.01 and onwards) are not adopted
+  # here. Cloud and on-premise are not zones: they are technology_location.
+  technology_zone:
+    TAP.00:
+      definition: >-
+        Application Technology zone: types of application and software, or
+        application and software services, that should be available in the
+        open market.
+      source: geanz-technologies-model
+    TFA.00:
+      definition: Technology Facilities zone.
+      source: geanz-technologies-model
+    TI.00:
+      definition: >-
+        Infrastructure Technology zone: technology infrastructure equipment,
+        which may be called on-premise as opposed to cloud-based
+        infrastructure as a service. Network equipment is its own zone.
+      source: geanz-technologies-model
+    TN.00:
+      definition: >-
+        Network Technology zone: network equipment, which may be called
+        on-premise as opposed to network or telecommunications as a service.
+      source: geanz-technologies-model
+    TUD.00:
+      definition: User Devices Technology zone.
+      source: geanz-technologies-model
+
+  # Where an item's technology sits, by the GEANZ Technologies model's
+  # Technology Locations. A separate vocabulary from technology_zone because
+  # the two answer different questions: one machine is, say, infrastructure
+  # (TI.00) whether it sits on-premise or in a cloud. The kinds of cloud
+  # within TLC.00 (TLC.01 and onwards) are not adopted here.
+  technology_location:
+    TLC.00:
+      definition: >-
+        Cloud: when an organisation is using services provided by a cloud
+        service provider.
+      source: geanz-technologies-model
+    TLO.00:
+      definition: >-
+        On-premise: when the organisation is investing in physical technology
+        and equipment, either on its premises or in a facility it controls.
+      source: geanz-technologies-model
+
   # Identifiers that may NEVER be used to match an item.
   refused_alias_kind:
     mac-address:
@@ -323,7 +392,8 @@ classes:
   Application:
     family: Deployment
     attributes: [name, description, business_owner, service_owner, system_sme, criticality,
-                 hosting_model, environment, lifecycle_state, assurance_artefact]
+                 hosting_model, environment, lifecycle_state, assurance_artefact,
+                 technology_zone, technology_location]
     built_from: null
 
   Application Instance:
@@ -335,7 +405,8 @@ classes:
     family: Hardware
     attributes: [hostname, agent_id, host_type, os, os_version, address, mac_address,
                  serial_number, criticality, environment, lifecycle_state, sensor_version,
-                 last_seen, disk_encryption_state, key_custody]
+                 last_seen, disk_encryption_state, key_custody, technology_zone,
+                 technology_location]
     built_from: machine rows whose host type is a server
     answers: What runs on it, is it managed, and what stops if it stops.
 
@@ -343,14 +414,16 @@ classes:
     family: Hardware
     attributes: [hostname, agent_id, host_type, os, os_version, address, mac_address,
                  serial_number, assigned_user, environment, lifecycle_state, sensor_version,
-                 last_seen, disk_encryption_state, key_custody]
+                 last_seen, disk_encryption_state, key_custody, technology_zone,
+                 technology_location]
     built_from: machine rows whose host type is a workstation, desktop or laptop
     answers: Is this person's machine managed and compliant.
 
   Domain Controller:
     family: Hardware
     attributes: [hostname, agent_id, host_type, os, os_version, address, environment,
-                 lifecycle_state, sensor_version, last_seen]
+                 lifecycle_state, sensor_version, last_seen, technology_zone,
+                 technology_location]
     built_from: machine rows whose host type is a domain controller
     answers: Which directory infrastructure is in scope for a change.
     note: >-
@@ -358,20 +431,23 @@ classes:
 
   Network Device:
     family: Hardware
-    attributes: [hostname, address, vendor_name, host_type, lifecycle_state, last_seen]
+    attributes: [hostname, address, vendor_name, host_type, lifecycle_state, last_seen,
+                 technology_zone, technology_location]
     built_from: >-
       machine rows whose host type is a router, switch, firewall or network device,
       or whose network device export category is one of those, wireless or a VPN gateway
 
   Virtual Machine:
     family: Hardware
-    attributes: [hostname, address, os, os_version, environment, lifecycle_state, last_seen]
+    attributes: [hostname, address, os, os_version, environment, lifecycle_state, last_seen,
+                 technology_zone, technology_location]
     built_from: machine rows whose host type is a virtual machine
 
   Host:
     family: Hardware
     attributes: [hostname, agent_id, os, os_version, address, environment, lifecycle_state,
-                 last_seen, disk_encryption_state, key_custody]
+                 last_seen, disk_encryption_state, key_custody, technology_zone,
+                 technology_location]
     built_from: >-
       machine rows that do not say what kind of machine they are, and machines
       an IP address plan names, when the build is given one
@@ -383,7 +459,8 @@ classes:
 
   Software Product:
     family: Software
-    attributes: [name, vendor_name, licence_metric, product_owner, lifecycle_state]
+    attributes: [name, vendor_name, licence_metric, product_owner, lifecycle_state,
+                 technology_zone]
     built_from: rows naming software, installed on a machine or listed in an inventory
     answers: What is licensed, and who the vendor conversation is with.
 
@@ -872,3 +949,31 @@ attributes:
     expected_strength: declared
     cites: [ncsc-nz-mcss-assets]
   lifecycle_state: {refresh_interval_days: 30, expected_strength: inferred}
+  technology_zone:
+    refresh_interval_days: 365
+    expected_strength: declared
+    vocabulary: technology_zone
+    cites: [geanz-technologies-model]
+    note: >-
+      Which technology zone of the GEANZ Technologies model the item belongs
+      to, such as TI.00 for infrastructure equipment or TUD.00 for a user
+      device: a shared set of categories for comparing estates and for
+      finding the standards and guidance that apply. A person or a declared
+      source states it; no instrument reads it, and takestock does not derive
+      it from the class. A machine takes it from a row's
+      extra.technology_zone; no row gives one to a Software Product or an
+      Application, which the organisation fills. A value outside the
+      vocabulary is refused on any row.
+  technology_location:
+    refresh_interval_days: 365
+    expected_strength: declared
+    vocabulary: technology_location
+    cites: [geanz-technologies-model]
+    note: >-
+      Which technology location of the GEANZ Technologies model the item
+      sits in: TLC.00 (cloud) or TLO.00 (on-premise). Kept apart from
+      technology_zone because a zone says what kind of technology an item is
+      and a location says where it runs. Stated, never derived. A machine
+      takes it from a row's extra.technology_location; an Application's is
+      for the organisation to fill. A value outside the vocabulary is refused
+      on any row.

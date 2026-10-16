@@ -9,6 +9,15 @@ command line or a file format, and its entry says how.
 
 ### Added
 
+- **Configuration register**: machines, Software Products and Applications
+  carry `technology_zone`, one of the five technology zones of New Zealand's
+  GEANZ Technologies model (`TAP.00`, `TFA.00`, `TI.00`, `TN.00`, `TUD.00`),
+  and machines and Applications carry `technology_location`, one of its two
+  technology locations (`TLC.00` cloud, `TLO.00` on-premise). A machine row
+  states them in `extra.technology_zone` and `extra.technology_location`;
+  a product's or application's are for the organisation to fill. A schema
+  attribute can name a `vocabulary`, and the build refuses a value outside
+  it on any row.
 - **Configuration register**: `takestock cmdb --ip-plan <plan>.json` (and
   `ip_plan=` in Python) reads an IP address plan's JSON and makes an item for
   each machine it names at an address, carrying the plan's addresses. It is
