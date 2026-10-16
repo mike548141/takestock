@@ -21,11 +21,12 @@ spaces, hyphens and underscores; the first spelling present wins:
 
 **Matching** reads ``data/crypto-software.csv``. A product belongs to the
 first entry whose ``match`` expression matches the start of its name, ignoring
-case. A product no entry matches is counted on the scope row and otherwise
-ignored. Within a product, an entry with a ``branch`` describes one release
-line. It applies to a version that equals the branch, or continues it with
-something other than a digit (branch ``1.0`` takes ``1.0.2`` but not
-``1.01``), once any packaging epoch such as ``1:`` is set aside. The longest
+case. A product no entry matches is counted on the scope row and named in its
+``software_products`` list, and otherwise not graded. Within a product, an
+entry with a ``branch`` describes one release line. It applies to a version
+that equals the branch, or continues it with something other than a digit
+(branch ``1.0`` takes ``1.0.2`` but not ``1.01``), once any packaging epoch
+such as ``1:`` is set aside. The longest
 matching branch wins. Its ``max_tls`` is the highest TLS version that line can
 negotiate, and its ``citation`` says where that is documented.
 
@@ -48,6 +49,11 @@ counted once.
 
 :mod:`takestock.agility` reads those two flags: a ceiling places a row in
 ``replacement``, a spread in ``library``.
+
+The **scope row** names every product the export lists, cryptographic or not,
+in ``extra["software_products"]``: a provider by its register name, any other
+product as the export first spells it. Only the name of a product outside the
+register is kept, not its versions or machines.
 
 **Lifecycle.** Each product and version is passed to
 :func:`takestock.lifecycle.derive_census_support`, as a library and as an
@@ -377,20 +383,23 @@ def _missing_gap(shown: str, fatal: str) -> coverage.Gap:
 def _scope_row(shown: str, source_name: str, mtime: str, rows: int, machines: int,
                matched_rows: int, products: list[str], unmatched_rows: int,
                unmatched_products: int, source: str = SOURCE,
-               scope_name: str = SCOPE_NAME) -> CryptoAsset:
+               scope_name: str = SCOPE_NAME,
+               every_product: list[str] | None = None) -> CryptoAsset:
     return CryptoAsset(
         name=scope_name, data_state=DATA_STATE, role=SCOPE_ROLE, source=source,
         source_class="private", source_name=source_name, collected_at=mtime, verdict=NA_VERDICT,
         notes=(f"{rows} row(s) read from {shown}, naming {machines} machine(s). {matched_rows} "
                f"row(s) name a cryptographic provider in the register: "
                f"{', '.join(products) or 'none'}. The other {unmatched_rows} row(s), "
-               f"{unmatched_products} distinct product name(s), are counted here and not "
-               "reported: the register's list is the limit of what is read. Nothing here says "
+               f"{unmatched_products} distinct product name(s), are named in this row's "
+               "product list and not graded: the register's list is the limit of what is "
+               "graded. Nothing here says "
                "how many machines the organisation runs, so this is a count of what was "
                "exported, not a share of the estate."),
         extra={"rows": rows, "machines": machines, "matched_rows": matched_rows,
                "providers": products, "unmatched_rows": unmatched_rows,
-               "unmatched_products": unmatched_products})
+               "unmatched_products": unmatched_products,
+               "software_products": list(every_product or products)})
 
 
 def collect(target: Mapping, root: Path | None = None) -> tuple[list[CryptoAsset], list]:
@@ -440,7 +449,7 @@ def assess(target: Mapping, records: list[dict], *, shown: str, source_name: str
     groups: dict[tuple[str, str], _Group] = {}
     machines: set[str] = set()
     unusable = matched = 0
-    unmatched: set[str] = set()
+    unmatched: dict[str, str] = {}
     unmatched_rows = 0
     for row in rows:
         raw_host, product = cell(row, "host"), cell(row, "product")
@@ -452,7 +461,7 @@ def assess(target: Mapping, records: list[dict], *, shown: str, source_name: str
         entry = provider_for(register, product)
         if entry is None:
             unmatched_rows += 1
-            unmatched.add(product.casefold())
+            unmatched.setdefault(product.casefold(), product)
             continue
         matched += 1
         version = cell(row, "version")
@@ -506,7 +515,8 @@ def assess(target: Mapping, records: list[dict], *, shown: str, source_name: str
                     "TLS 1.3 or is out of support cannot be said."),
             harvest="A re-export with the version column filled.",
             nature=coverage.LOW_FIDELITY))
+    every_product = sorted({*by_product, *unmatched.values()}, key=str.casefold)
     assets.append(_scope_row(shown, source_name, mtime, len(rows), len(machines), matched,
                              sorted(by_product), unmatched_rows, len(unmatched), source,
-                             scope_name))
+                             scope_name, every_product))
     return assets, gaps

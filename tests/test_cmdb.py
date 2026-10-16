@@ -297,12 +297,30 @@ def test_the_software_inventory_rows_reach_the_register(tmp_path):
     export.write_text("host,product,version\n"
                       "app-02.example.test,OpenSSL,3.0.13\n"
                       "build-02.example.test,OpenSSL,3.0.13\n"
-                      "build-02.example.test,OpenSSL,1.1.1w\n")
+                      "build-02.example.test,OpenSSL,1.1.1w\n"
+                      "app-02.example.test,Example Drawing Tool,3.0.13\n")
     assets, _gaps = software_inventory.collect({"software_inbox": {"export": str(export)}})
     register = cmdb.build(cmdbfake.write_observation(tmp_path, assets=dump_assets(assets)))
     assert _installed_on(register) == {("OpenSSL 3.0.13", "app-02.example.test"),
                                        ("OpenSSL 3.0.13", "build-02.example.test"),
                                        ("OpenSSL 1.1.1w", "build-02.example.test")}
+    products = sorted(i.label for i in register.items.values()
+                      if i.item_class == "Software Product")
+    assert products == ["Example Drawing Tool", "OpenSSL"]
+
+
+def test_a_listed_product_is_a_product_with_no_release(tmp_path):
+    rows = [cmdbfake._row(name="inventory scope", data_state="software",
+                          source="example_inventory", source_name="Example inventory",
+                          verdict="n/a",
+                          extra={"software_products": ["Example Drawing Tool, Desktop",
+                                                       "Example TLS library"]})]
+    register = cmdb.build(cmdbfake.write_observation(tmp_path, assets=rows))
+    classes = {i.label: i.item_class for i in register.items.values()}
+    assert classes == {"Example Drawing Tool, Desktop": "Software Product",
+                       "Example TLS library": "Software Product"}
+    assert _value(register, "Example TLS library", "name").value == "Example TLS library"
+    assert register.edges == []
 
 
 def test_disagreeing_sources_are_both_published(built):

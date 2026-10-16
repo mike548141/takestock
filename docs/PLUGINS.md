@@ -447,7 +447,7 @@ collector ([`COLLECTORS.md`](COLLECTORS.md#software_inventory)): products
 are matched against `data/crypto-software.csv`, one row per cryptographic
 provider and version (data state `software`), a version-spread row, and a
 scope row named `<title> scope`. A product the register does not list is
-counted, not reported.
+counted and named on the scope row, not graded.
 
 ### `endpoint-encryption`
 

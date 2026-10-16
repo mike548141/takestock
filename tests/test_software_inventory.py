@@ -35,7 +35,7 @@ def provider_rows(assets):
 
 # ── matching ──
 
-def test_products_match_the_register_and_others_are_ignored(tmp_path):
+def test_products_match_the_register_and_others_are_listed_not_graded(tmp_path):
     assets, gaps = export(tmp_path,
                           "app-01.example.test,OpenSSL,3.0.0,,",
                           "app-01.example.test,Example Office Suite,1.0.0,,",
@@ -49,6 +49,7 @@ def test_products_match_the_register_and_others_are_ignored(tmp_path):
     assert scope.extra["matched_rows"] == 2
     assert scope.extra["unmatched_rows"] == 1 and scope.extra["unmatched_products"] == 1
     assert "Example Office Suite" not in scope.notes
+    assert scope.extra["software_products"] == ["Example Office Suite", "GnuTLS", "OpenSSL"]
 
 
 def test_header_spellings_are_matched_ignoring_case_and_separators(tmp_path):

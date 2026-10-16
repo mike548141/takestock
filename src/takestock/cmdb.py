@@ -51,6 +51,8 @@ host or agent id       its class from ``extra.host_type``. A port
 ``software`` and no    a Software Product and Release, installed on each
 host                   machine ``extra.hosts`` names (a list, or names
                        separated by commas), or on nothing when it names none
+``extra.software_``    a Software Product for each name listed, with no
+``products``           release: an inventory's list of every product it names
 =====================  ===================================================
 
 A row flagged ``version-spread:`` counts the versions of a product in
@@ -768,9 +770,8 @@ def _installed_software(asset: Mapping[str, Any]) -> tuple[str, str] | None:
     return software, str(asset.get("version") or "").strip()
 
 
-def _listed_hosts(extra: Mapping[str, Any]) -> list[str]:
-    """The machine names in ``extra.hosts``: a list, or names separated by commas."""
-    raw = extra.get("hosts")
+def _names_in(raw: Any) -> list[str]:
+    """The names in a list, or in a string of names separated by commas, each once."""
     if isinstance(raw, str):
         parts = raw.split(",")
     elif isinstance(raw, list):
@@ -783,6 +784,16 @@ def _listed_hosts(extra: Mapping[str, Any]) -> list[str]:
         if name and name.casefold() not in {n.casefold() for n in out}:
             out.append(name)
     return out
+
+
+def _listed_hosts(extra: Mapping[str, Any]) -> list[str]:
+    """The machine names in ``extra.hosts``."""
+    return _names_in(extra.get("hosts"))
+
+
+def _named_products(extra: Mapping[str, Any]) -> list[str]:
+    """The product names a row lists in ``extra.software_products``."""
+    return _names_in(extra.get("software_products"))
 
 
 _RUA = re.compile(r"(?:^|;)\s*rua\s*=\s*([^;]*)", re.IGNORECASE)
@@ -1056,6 +1067,9 @@ class _Builder:
         for name, machine in self._listed_machines(asset):
             self._set(machine, _UNTYPED_CLASS, name)
             self._sources_by_machine.setdefault(machine, set()).add(source)
+        for name in _named_products(extra):
+            self._set(self._named_key("estate-name", f"product:{name}", asset),
+                      "Software Product", name)
         software = self._software_keys(asset)
         if software is not None:
             product, release, name, label = software
@@ -1148,6 +1162,9 @@ class _Builder:
         listed = self._listed_machines(asset)
         for name, machine in listed:
             self._say(machine, "hostname", name, strength, seen, actor)
+        for name in _named_products(asset.get("extra") or {}):
+            self._say(self._named_key("estate-name", f"product:{name}", asset), "name", name,
+                      strength, seen, actor)
         software = self._software_keys(asset)
         if software is None:
             return

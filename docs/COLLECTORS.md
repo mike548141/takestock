@@ -872,8 +872,8 @@ present wins:
 **Matching.** Each product is matched against
 `src/takestock/data/crypto-software.csv`. The first entry whose `match`
 expression matches the start of the product name, ignoring case, names the
-provider; a product no entry matches is counted on the scope row and
-otherwise ignored. An entry with a `branch` describes one release line of
+provider; a product no entry matches is counted on the scope row, named
+in its product list, and not graded. An entry with a `branch` describes one release line of
 its provider. It applies to a version that equals the branch, or continues
 it with something other than a digit, once a packaging epoch such as `1:` is
 set aside:
@@ -923,7 +923,10 @@ collector then writes no rows. Rows naming no machine or no product are a
 gap, and so are provider rows with no version (each kept as
 `<provider> (version not recorded)`, flagged `version-unrecorded`). A
 **scope row** states how many rows and machines the export lists and how
-many rows named a provider, without claiming a share of the estate.
+many rows named a provider, without claiming a share of the estate. It
+names every product the export lists, cryptographic or not, in
+`extra.software_products`: a provider by its register name, any other
+product as the export first spells it.
 
 **Cannot see.** A provider the register does not list; a library compiled
 into another program, since an inventory lists installed packages, not what

@@ -115,7 +115,10 @@ recorded as installed on each of them, and a machine no other row names
 becomes a **Host** with that host name. A row that names no machine at all
 leaves the release installed on nothing. A row flagged `version-spread:`
 counts how many versions of a product are in service; it is not an install
-and creates no release.
+and creates no release. A row that lists product names in
+`extra.software_products`, such as a software inventory's scope row listing
+every product it names, cryptographic or not, creates a Software Product for
+each, with no release.
 
 A **DNS Name** for a domain the target profile names also carries two facts
 read from public DNS by `ct_dns`. `name_servers` lists the hosts its NS
