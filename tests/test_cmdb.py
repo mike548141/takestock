@@ -623,6 +623,40 @@ def test_relationships_drawn(built):
     assert members == {"app-01.example.test", "laptop-01.example.test"}
 
 
+def _declared(name, live):
+    return cmdbfake._row(name=name, data_state="estate", source="estate",
+                         extra={"estate_class": name, "estate_state": "instrumented",
+                                "collectors_live": live})
+
+
+def _seen_by(host, source, source_name):
+    return cmdbfake._row(name=f"disk {host}", host=host, data_state="at-rest",
+                         source=source, source_name=source_name, verdict="strong",
+                         extra={"host_type": "laptop"})
+
+
+def _members(register):
+    return {(register.items[e.from_key].label, register.items[e.to_key].label)
+            for e in register.edges if e.kind == "member-of"}
+
+
+def test_a_declared_class_may_name_its_instrument_by_collector_id(tmp_path):
+    rows = [_declared("Staff laptops", ["example_agent"]),
+            _seen_by("laptop-07.example.test", "example_agent", "Example endpoint agent")]
+    register = cmdb.build(cmdbfake.write_observation(tmp_path, assets=rows))
+    assert _members(register) == {("laptop-07.example.test", "Staff laptops")}
+
+
+def test_an_instrument_named_two_ways_for_two_classes_joins_neither(tmp_path):
+    # Its id is live for one class and its display name for another: one
+    # instrument live for two classes says nothing about which a machine is in.
+    rows = [_declared("Staff laptops", ["example_agent"]),
+            _declared("Kiosks", ["Example endpoint agent"]),
+            _seen_by("laptop-07.example.test", "example_agent", "Example endpoint agent")]
+    register = cmdb.build(cmdbfake.write_observation(tmp_path, assets=rows))
+    assert _members(register) == set()
+
+
 def test_a_listener_carries_its_grading_and_depth(built):
     attrs = _value(built, "printer-01.example.test 9100/tcp", "evidence_depth")
     assert attrs.value == "posture"

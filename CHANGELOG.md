@@ -77,6 +77,13 @@ command line or a file format, and its entry says how.
 
 ### Changed
 
+- **Configuration register**: a declared-estate row's `collectors_live` may
+  name an instrument by its collector id (a row's `source`) as well as by its
+  display name (`source_name`), and a `member-of` edge is drawn either way.
+  Before, a row's display name was matched, and its id only when it had no
+  display name, so a list of collector ids drew no edge for rows that carry
+  both. A machine gets one edge per declared class, where before it got one
+  per instrument.
 - **IP address plan**: a subnet a source declares goes to the site whose
   plan-file range holds it, even when the source reports another site; the
   source's site is used only when no range holds the subnet.

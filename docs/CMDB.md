@@ -331,7 +331,13 @@ right kind. These are drawn from an observation:
   logged certificate was issued for the name, which does not show a server
   presents it.
 - `member-of` is drawn only where the instrument that saw a machine is live
-  for exactly one declared class.
+  for exactly one declared class. A declared-estate row lists its live
+  instruments in `extra.collectors_live`, each by its collector id (a row's
+  `source`, such as `example_agent`) or its display name (a row's
+  `source_name`, such as `Example endpoint agent`). Both name the same
+  instrument, so one listed by its id for one class and by its name for
+  another is live for two classes and joins a machine to neither. A machine
+  that two such instruments place in the same class gets one edge.
 
 Declared and **not** drawn, each with its reason in every register:
 `runs-on`, `hosted-at`, `realised-by`, `instance-of`, `depends-on`,

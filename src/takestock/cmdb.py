@@ -35,7 +35,8 @@ row                    becomes
 =====================  ===================================================
 ``data_state`` estate  a Declared Asset Class (``extra``: ``estate_class``,
                        ``estate_state``, ``declared_crypto``,
-                       ``collectors_live``)
+                       ``collectors_live``, its live instruments by collector
+                       id or display name)
 ``third-party``        a Vendor when ``extra.vendor`` names one, else an
                        Unattributed Dependency keyed on
                        ``extra.registrable_domain``
@@ -1039,7 +1040,8 @@ class _Builder:
         self.populations: list[Population] = []
         self._class: dict[str, str] = {}
         self._label: dict[str, str] = {}
-        self._sources_by_machine: dict[str, set[str]] = {}
+        # Each instrument that saw a machine, as (collector id, display name).
+        self._sources_by_machine: dict[str, set[tuple[str, str]]] = {}
         self._names: dict[str, str] = {}
         self._installs: dict[tuple[str, str], int] = {}
         self._release_of: dict[str, str] = {}
@@ -1176,7 +1178,7 @@ class _Builder:
     def _classify_machine_row(self, asset: Mapping[str, Any], key: str | None) -> None:
         extra = asset.get("extra") or {}
         host = str(asset.get("host") or "")
-        source = str(asset.get("source_name") or asset.get("source") or "")
+        source = (str(asset.get("source") or ""), str(asset.get("source_name") or ""))
         if key is not None:
             self._set(key, _host_class(extra), host or str(extra.get("agent_id") or ""))
             self._sources_by_machine.setdefault(key, set()).add(source)
@@ -1457,22 +1459,26 @@ class _Builder:
     def _member_of(self, actor: Actor) -> None:
         # A machine joins a declared class when the instrument that saw it is
         # live for exactly that one class; anything less is not attributable.
-        owners: dict[str, list[str]] = {}
+        # A declared row may name an instrument by its collector id or by its
+        # display name, so both count as the same instrument.
+        owners: dict[str, set[str]] = {}
         for asset in self.assets:
             if not _is_estate(asset) or not asset.get("name"):
                 continue
             key = self._named_key("estate-name", f"estate:{asset['name']}", asset)
             for instrument in (asset.get("extra") or {}).get("collectors_live") or []:
-                owners.setdefault(str(instrument), []).append(key)
-        single = {i: keys[0] for i, keys in owners.items() if len(set(keys)) == 1}
-        for machine, sources in sorted(self._sources_by_machine.items()):
-            for source in sorted(sources):
-                if source in single:
-                    self._edge("member-of", machine, single[source], INFERRED,
-                               self.recorded_at, actor,
-                               qualifier=("Attributed by which instrument saw the machine, "
-                                          "drawn only where that instrument is live for "
-                                          "exactly one declared class."))
+                owners.setdefault(str(instrument), set()).add(key)
+        for machine, instruments in sorted(self._sources_by_machine.items()):
+            joined: set[str] = set()
+            for collector, display in sorted(instruments):
+                classes = owners.get(collector, set()) | owners.get(display, set())
+                if len(classes) == 1:
+                    joined |= classes
+            for declared in sorted(joined):
+                self._edge("member-of", machine, declared, INFERRED, self.recorded_at, actor,
+                           qualifier=("Attributed by which instrument saw the machine, "
+                                      "drawn only where that instrument is live for "
+                                      "exactly one declared class."))
 
     def count_populations(self) -> None:
         machines = {k for k, c in self._class.items()
