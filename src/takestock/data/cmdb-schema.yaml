@@ -380,14 +380,14 @@ classes:
   Software Product:
     family: Software
     attributes: [name, vendor_name, licence_metric, product_owner, lifecycle_state]
-    built_from: rows naming software installed on a machine
+    built_from: rows naming software, installed on a machine or listed in an inventory
     answers: What is licensed, and who the vendor conversation is with.
 
   Software Release:
     family: Software
     attributes: [name, version, end_of_support, end_of_life, support_status,
                  migration_strategy, lifecycle_state, description]
-    built_from: rows naming software installed on a machine
+    built_from: rows naming software, installed on a machine or listed in an inventory
     answers: Is this version supported, and where is it installed.
     note: >-
       Support and end-of-life dates live on the release and nowhere else: on

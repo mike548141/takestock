@@ -107,6 +107,16 @@ A machine row that names a port (`extra.service` such as `443/tcp`, or
 that names software also creates a **Software Product** and a **Software
 Release**, and records that the release is installed on the machine.
 
+A row that names software and no machine, such as a software inventory's row
+for one product at one version, still creates its Software Product and
+Software Release. If it names the machines carrying that version in
+`extra.hosts` (a list, or names separated by commas), the release is
+recorded as installed on each of them, and a machine no other row names
+becomes a **Host** with that host name. A row that names no machine at all
+leaves the release installed on nothing. A row flagged `version-spread:`
+counts how many versions of a product are in service; it is not an install
+and creates no release.
+
 A **DNS Name** for a domain the target profile names also carries two facts
 read from public DNS by `ct_dns`. `name_servers` lists the hosts its NS
 records say are authoritative for it (RFC 1035 §3.3.11), which is who hosts
@@ -125,7 +135,7 @@ no `rua=` in it. A name nothing read for them shows *not collected*.
 | Service | Business Service, Technical Service | nothing yet: declared for the organisation to fill |
 | Deployment | Application, Application Instance | nothing yet |
 | Hardware | Server, Endpoint Device, Domain Controller, Network Device, Virtual Machine, Host | machine rows, by host type |
-| Software | Software Product, Software Release | rows naming software installed on a machine |
+| Software | Software Product, Software Release | rows naming software, on a machine or in an inventory |
 | Network and Naming | DNS Name | discovery and mail-authentication rows, and DNS-layer readings of a name |
 | Network and Naming | Network Service | rows naming a listening port on a machine |
 | Network and Naming | Certificate | certificate rows |
@@ -255,7 +265,8 @@ third-party row does not say which machine made the lookup.
 
 Machines are counted once per instrument, and those counts are kept side by
 side, never averaged: one instrument's count is what it can see, not what
-exists. A discovery source that reports how many machines exist is counted
+exists. A software inventory counts the machines its rows name in
+`extra.hosts`. A discovery source that reports how many machines exist is counted
 as `reported`. A final row counts every machine any instrument named, once.
 Where the counts differ, every row is marked contested.
 

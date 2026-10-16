@@ -9,6 +9,11 @@ command line or a file format, and its entry says how.
 
 ### Added
 
+- **Configuration register**: a row that names software and no machine, such
+  as a software inventory's row for one product at one version, now makes its
+  Software Product and Software Release. The release is installed on each
+  machine the row names in `extra.hosts`, and a machine only that list names
+  becomes a Host. A `version-spread:` row makes no release.
 - **IP address plan**: a source can set `name_is: history` for an export that
   lists every address a device has held. Its names are kept on each address
   as past holders and never count as a second machine.

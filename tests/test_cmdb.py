@@ -239,6 +239,72 @@ def test_probes_of_one_named_address_make_one_machine_carrying_the_address(tmp_p
     assert {x.value for x in address.assertions} == {"192.0.2.45"}
 
 
+def _installed_on(register):
+    return {(register.items[e.from_key].label, register.items[e.to_key].label)
+            for e in register.edges if e.kind == "installed-on"}
+
+
+def test_software_with_no_host_still_makes_its_product_and_release(tmp_path):
+    rows = [cmdbfake._row(name="Example TLS library 41.7.3", data_state="software",
+                          software="Example TLS library", version="41.7.3",
+                          source="example_inventory", source_name="Example inventory")]
+    register = cmdb.build(cmdbfake.write_observation(tmp_path, assets=rows))
+    classes = {i.label: i.item_class for i in register.items.values()}
+    assert classes == {"Example TLS library": "Software Product",
+                       "Example TLS library 41.7.3": "Software Release"}
+    assert _value(register, "Example TLS library 41.7.3", "version").value == "41.7.3"
+    assert {e.kind for e in register.edges} == {"release-of"}
+
+
+def test_an_inventory_row_naming_its_hosts_installs_the_release_on_each(tmp_path):
+    rows = [
+        cmdbfake._row(name="Example TLS library 41.7.3", data_state="software",
+                      software="Example TLS library", version="41.7.3",
+                      source="example_inventory", source_name="Example inventory",
+                      extra={"hosts": "app-02.example.test, build-02.example.test"}),
+        cmdbfake._row(name="Example TLS library 39.2.8", data_state="software",
+                      software="Example TLS library", version="39.2.8",
+                      source="example_inventory", source_name="Example inventory",
+                      extra={"hosts": ["build-02.example.test"]}),
+        # A count of the versions in service is not an install.
+        cmdbfake._row(name="Example TLS library version spread", data_state="software",
+                      software="Example TLS library", source="example_inventory",
+                      source_name="Example inventory", flags=["version-spread:2"],
+                      extra={"hosts": "app-02.example.test, build-02.example.test"}),
+        cmdbfake._row(name="tls app-02", host="app-02.example.test", port="443",
+                      protocol="tls", source="example_scan", source_name="Example port scan",
+                      extra={"host_type": "server"}),
+    ]
+    register = cmdb.build(cmdbfake.write_observation(tmp_path, assets=rows))
+    assert _installed_on(register) == {
+        ("Example TLS library 41.7.3", "app-02.example.test"),
+        ("Example TLS library 41.7.3", "build-02.example.test"),
+        ("Example TLS library 39.2.8", "build-02.example.test")}
+    classes = {i.label: i.item_class for i in register.items.values()}
+    # The machine a probe typed keeps its class; one only the inventory names is a Host.
+    assert classes["app-02.example.test"] == "Server"
+    assert classes["build-02.example.test"] == "Host"
+    assert "Example TLS library" in classes and "Example TLS library " not in classes
+    assert sum(1 for c in classes.values() if c == "Software Release") == 2
+    counts = {p.instrument: p.count for p in register.populations}
+    assert counts["Example inventory"] == 2 and counts["Example port scan"] == 1
+
+
+def test_the_software_inventory_rows_reach_the_register(tmp_path):
+    from takestock.collectors import software_inventory
+    from takestock.model import dump_assets
+    export = tmp_path / "software.csv"
+    export.write_text("host,product,version\n"
+                      "app-02.example.test,OpenSSL,3.0.13\n"
+                      "build-02.example.test,OpenSSL,3.0.13\n"
+                      "build-02.example.test,OpenSSL,1.1.1w\n")
+    assets, _gaps = software_inventory.collect({"software_inbox": {"export": str(export)}})
+    register = cmdb.build(cmdbfake.write_observation(tmp_path, assets=dump_assets(assets)))
+    assert _installed_on(register) == {("OpenSSL 3.0.13", "app-02.example.test"),
+                                       ("OpenSSL 3.0.13", "build-02.example.test"),
+                                       ("OpenSSL 1.1.1w", "build-02.example.test")}
+
+
 def test_disagreeing_sources_are_both_published(built):
     os = _value(built, "app-01.example.test", "os")
     assert os.contested and os.tie

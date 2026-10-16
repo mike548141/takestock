@@ -48,7 +48,13 @@ host or agent id       its class from ``extra.host_type``. A port
                        (``extra.service`` as ``443/tcp``, or ``port``) adds a
                        Network Service; ``software`` adds a Software Product
                        and Release installed on it
+``software`` and no    a Software Product and Release, installed on each
+host                   machine ``extra.hosts`` names (a list, or names
+                       separated by commas), or on nothing when it names none
 =====================  ===================================================
+
+A row flagged ``version-spread:`` counts the versions of a product in
+service; it is not an install and makes no release.
 """
 
 from __future__ import annotations
@@ -66,6 +72,7 @@ from pathlib import Path
 from typing import Any
 
 from . import depth, obsarchive
+from .agility import SPREAD_FLAG
 from .config import data_file, load_yaml_strict
 from .exits import EXIT_CLEAN, guarded
 
@@ -744,6 +751,40 @@ def _is_name_row(asset: Mapping[str, Any]) -> bool:
             or asset.get("protocol") in _NAME_PROTOCOLS)
 
 
+_NOT_MACHINE_STATES = ("third-party", "certificate", "key-material")
+
+
+def _is_machine_row(asset: Mapping[str, Any]) -> bool:
+    """True for a row the register reads as about a machine, named or not."""
+    return not (_is_estate(asset) or asset.get("data_state") in _NOT_MACHINE_STATES
+                or _is_name_row(asset))
+
+
+def _installed_software(asset: Mapping[str, Any]) -> tuple[str, str] | None:
+    """(product, version) for a row naming installed software; None for a count of versions."""
+    software = str(asset.get("software") or "").strip()
+    if not software or any(str(f).startswith(SPREAD_FLAG) for f in asset.get("flags") or []):
+        return None
+    return software, str(asset.get("version") or "").strip()
+
+
+def _listed_hosts(extra: Mapping[str, Any]) -> list[str]:
+    """The machine names in ``extra.hosts``: a list, or names separated by commas."""
+    raw = extra.get("hosts")
+    if isinstance(raw, str):
+        parts = raw.split(",")
+    elif isinstance(raw, list):
+        parts = [str(p) for p in raw]
+    else:
+        return []
+    out: list[str] = []
+    for part in parts:
+        name = part.strip()
+        if name and name.casefold() not in {n.casefold() for n in out}:
+            out.append(name)
+    return out
+
+
 _RUA = re.compile(r"(?:^|;)\s*rua\s*=\s*([^;]*)", re.IGNORECASE)
 
 
@@ -943,6 +984,26 @@ class _Builder:
             return self._named_key("estate-name", host, asset) if host else None
         return self._machine_key(asset)
 
+    def _listed_machines(self, asset: Mapping[str, Any]) -> list[tuple[str, str]]:
+        """(name, key) for each machine an inventory row says carries its software."""
+        if _installed_software(asset) is None:
+            return []
+        return [(name, self.ledger.key_for(
+                    [("hostname", name)], source=str(asset.get("source") or ""),
+                    seen_at=self._seen_at(asset), merged_at=self.recorded_at,
+                    reason=f"one row named both identifiers ({self.artefact})"))
+                for name in _listed_hosts(asset.get("extra") or {})]
+
+    def _software_keys(self, asset: Mapping[str, Any]) -> tuple[str, str, str, str] | None:
+        """(product key, release key, product, release label) for installed software."""
+        found = _installed_software(asset)
+        if found is None:
+            return None
+        software, version = found
+        label = f"{software} {version}".strip()
+        return (self._named_key("estate-name", f"product:{software}", asset),
+                self._named_key("estate-name", f"release:{label}", asset), software, label)
+
     def _listener_key(self, asset: Mapping[str, Any], service: str) -> str:
         return self._named_key("estate-name", f"{asset.get('host') or ''}:{service}", asset)
 
@@ -958,6 +1019,9 @@ class _Builder:
     def classify(self) -> None:
         for asset in self.assets:
             key = self._key_of(asset)
+            if _is_machine_row(asset):
+                self._classify_machine_row(asset, key)
+                continue
             if key is None:
                 continue
             extra = asset.get("extra") or {}
@@ -977,22 +1041,26 @@ class _Builder:
             elif _is_name_row(asset):
                 self._set(key, "DNS Name", host)
                 self._names[host] = key
-            else:
-                self._set(key, _host_class(extra), host or str(extra.get("agent_id") or ""))
-                self._sources_by_machine.setdefault(key, set()).add(
-                    str(asset.get("source_name") or asset.get("source") or ""))
-                service = _service(asset)
-                if service and host:
-                    self._set(self._listener_key(asset, service), "Network Service",
-                              f"{host} {service}")
-                software = str(asset.get("software") or "").strip()
-                if software:
-                    version = str(asset.get("version") or "").strip()
-                    self._set(self._named_key("estate-name", f"product:{software}", asset),
-                              "Software Product", software)
-                    label = f"{software} {version}".strip()
-                    self._set(self._named_key("estate-name", f"release:{label}", asset),
-                              "Software Release", label)
+
+    def _classify_machine_row(self, asset: Mapping[str, Any], key: str | None) -> None:
+        extra = asset.get("extra") or {}
+        host = str(asset.get("host") or "")
+        source = str(asset.get("source_name") or asset.get("source") or "")
+        if key is not None:
+            self._set(key, _host_class(extra), host or str(extra.get("agent_id") or ""))
+            self._sources_by_machine.setdefault(key, set()).add(source)
+            service = _service(asset)
+            if service and host:
+                self._set(self._listener_key(asset, service), "Network Service",
+                          f"{host} {service}")
+        for name, machine in self._listed_machines(asset):
+            self._set(machine, _UNTYPED_CLASS, name)
+            self._sources_by_machine.setdefault(machine, set()).add(source)
+        software = self._software_keys(asset)
+        if software is not None:
+            product, release, name, label = software
+            self._set(product, "Software Product", name)
+            self._set(release, "Software Release", label)
 
     # Pass 2: what is known about each
 
@@ -1027,12 +1095,14 @@ class _Builder:
     def assert_facts(self) -> None:
         for asset in self.assets:
             key = self._key_of(asset)
-            if key is None:
-                continue
             extra = asset.get("extra") or {}
             seen = self._seen_at(asset)
             actor = self._actor(asset)
             strength = _strength_for(asset)
+            if key is None:
+                if _is_machine_row(asset):
+                    self._software_facts(None, asset, strength, seen, actor)
+                continue
             for attribute, value in self._attributes(asset, extra).items():
                 self._say(key, attribute, value, strength, seen, actor)
             self._say_environment(key, extra)
@@ -1045,8 +1115,10 @@ class _Builder:
                     self._edge("presents", name_key, key, strength, seen, actor,
                                qualifier=_TRANSPARENCY_QUALIFIER
                                if asset.get("source") == "ct_dns" else "")
-            if self.schema.classes.get(self._class.get(key, ""), {}).get("family") == "Hardware":
+            if self._is_hardware(key):
                 self._machine_facts(key, asset, extra, strength, seen, actor)
+            if _is_machine_row(asset):
+                self._software_facts(key, asset, strength, seen, actor)
 
     def _machine_facts(self, key: str, asset: Mapping[str, Any], extra: Mapping[str, Any],
                        strength: str, seen: str, actor: Actor) -> None:
@@ -1070,23 +1142,34 @@ class _Builder:
                       INFERRED, seen, actor)
             self._edge("contains", key, listener, strength, seen, actor)
 
-        software = str(asset.get("software") or "").strip()
-        if software:
-            version = str(asset.get("version") or "").strip()
-            label = f"{software} {version}".strip()
-            product = self._named_key("estate-name", f"product:{software}", asset)
-            release = self._named_key("estate-name", f"release:{label}", asset)
-            self._say(product, "name", software, strength, seen, actor)
-            self._say(release, "name", label, strength, seen, actor)
-            self._say(release, "version", version or Absence("not-measured"),
-                      strength, seen, actor)
-            for src, attribute in (("support_status", "support_status"),
-                                   ("support_end", "end_of_support"),
-                                   ("migration_strategy", "migration_strategy")):
-                if asset.get(src):
-                    self._say(release, attribute, str(asset[src]), DECLARED, seen, actor)
-            self._release_of[release] = product
-            self._installs[(release, key)] = self._installs.get((release, key), 0) + 1
+    def _software_facts(self, key: str | None, asset: Mapping[str, Any], strength: str,
+                        seen: str, actor: Actor) -> None:
+        """A machine row's software: its product and release, and every machine carrying it."""
+        listed = self._listed_machines(asset)
+        for name, machine in listed:
+            self._say(machine, "hostname", name, strength, seen, actor)
+        software = self._software_keys(asset)
+        if software is None:
+            return
+        product, release, name, label = software
+        version = str(asset.get("version") or "").strip()
+        self._say(product, "name", name, strength, seen, actor)
+        self._say(release, "name", label, strength, seen, actor)
+        self._say(release, "version", version or Absence("not-measured"),
+                  strength, seen, actor)
+        for src, attribute in (("support_status", "support_status"),
+                               ("support_end", "end_of_support"),
+                               ("migration_strategy", "migration_strategy")):
+            if asset.get(src):
+                self._say(release, attribute, str(asset[src]), DECLARED, seen, actor)
+        self._release_of[release] = product
+        machines = [key] if key is not None and self._is_hardware(key) else []
+        machines += [m for _, m in listed if m not in machines]
+        for machine in machines:
+            self._installs[(release, machine)] = self._installs.get((release, machine), 0) + 1
+
+    def _is_hardware(self, key: str) -> bool:
+        return self.schema.classes.get(self._class.get(key, ""), {}).get("family") == "Hardware"
 
     def _say_environment(self, key: str, extra: Mapping[str, Any]) -> None:
         env = extra.get("environment")
@@ -1226,9 +1309,12 @@ class _Builder:
         rows: list[Population] = []
         for asset in self.assets:
             key = self._key_of(asset)
-            if key in machines:
+            named = {key} if key in machines else set()
+            if _is_machine_row(asset):
+                named |= {m for _, m in self._listed_machines(asset) if m in machines}
+            if named:
                 source = str(asset.get("source_name") or asset.get("source") or "")
-                per_source.setdefault(source, set()).add(key)
+                per_source.setdefault(source, set()).update(named)
                 dates[source] = max(dates.get(source, ""), self._seen_at(asset))
             discovered = (asset.get("extra") or {}).get("discovered")
             if isinstance(discovered, int) and not isinstance(discovered, bool):
