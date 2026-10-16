@@ -31,8 +31,8 @@ takestock --version       # takestock 0.1.0
 ```
 
 Or into an environment of your own: `pip install -e .` (add `'.[dev]'` for
-the test tools). Once a release is on PyPI, `pip install takestock` installs
-it without a clone; the quick start below still needs the sample in
+the test tools). `pip install takestock` installs the released package from
+PyPI without a clone; the quick start below still needs the sample in
 `examples/`, which is in the repository, not the package. The only Python
 dependencies are PyYAML and openpyxl.
 

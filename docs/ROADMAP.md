@@ -6,17 +6,15 @@ issue.
 
 ## Now
 
-- **Release 0.1.0.** Publish the first release to PyPI through the release
-  workflow (`.github/workflows/release.yml`), so that `pip install takestock`
-  works.
+- **Install from PyPI in the README's quick start.** 0.1.0 is on PyPI; the
+  quick start still installs from a clone because it needs the sample in
+  `examples/`.
 
 ## Next
 
 - **Settle the command line and file formats.** The README says both may
   still change. Before 1.0, decide which output fields are stable, and record
   every change to them in the changelog until then.
-- **Install from PyPI in the README's quick start**, once the first release is
-  published.
 
 ## Later
 
