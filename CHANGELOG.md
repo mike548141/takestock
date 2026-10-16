@@ -96,6 +96,16 @@ command line or a file format, and its entry says how.
 
 ### Changed
 
+- **Daemon dictionary** (`data/daemon-dictionary.csv`) more than doubles in
+  size. The new rows cover the standard services of Linux
+  distributions, Windows and Windows Server components, Microsoft server
+  products, databases and connection poolers, proxies, application
+  servers, virtualisation and container runtimes, Kubernetes networking, cloud
+  guest agents, monitoring and logging agents, backup software, configuration
+  management agents, VNC and other remote-access servers, and host and network
+  security sensors. Each row cites the vendor, project or distribution
+  document that gives the name. The header now describes how rows are chosen
+  and sourced.
 - **Configuration register**: a declared-estate row's `collectors_live` may
   name an instrument by its collector id (a row's `source`) as well as by its
   display name (`source_name`), and a `member-of` edge is drawn either way.

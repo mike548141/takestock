@@ -4,11 +4,20 @@
 # product. This table turns that name into something a reader recognises. It is a lookup on
 # the exact executable name as the operating system reports it, case included.
 #
-# Where the entries come from: each row is a widely used server daemon, platform service or
-# agent, or an operating-system component or desktop application that holds network sockets of
-# its own, chosen for how common it is, not for any one organisation. The name is the one the
-# vendor's own documentation or manual page gives for the running process or service binary.
-# The notes column says which document. No row records where a binary was seen.
+# How rows are chosen. Each row is a server daemon, platform service or agent, or an
+# operating-system component or desktop application that holds network sockets of its own.
+# Rows reach the table in two ways. Most are widely used software across mainstream platforms
+# (the standard services of Linux distributions, Windows and Windows Server, databases, web,
+# mail and DNS servers, directory and authentication, virtualisation and containers, and the
+# common monitoring, backup, management and security agents), chosen for market presence.
+# Others were added when a contributor needed a binary named, together with related processes
+# that the same vendor document names.
+#
+# How rows are sourced. Either way, a row is admitted only when the vendor's documentation, the
+# project's own documentation or a distribution's manual page gives the name for the running
+# process or service binary, and the notes column names that document. The table is neither
+# complete nor ranked: a binary missing from it is a limit of the table, and a row says nothing
+# about where the binary runs or how often it is seen.
 #
 # Columns:
 #   binary      exact process or executable name
@@ -25,8 +34,9 @@
 #                           so it says nothing on its own about which service is running
 #   notes       the public document the name comes from, and any caveat
 #
-# To extend it: add one row per binary, keep the binary column unique, cite the vendor's own
-# documentation in notes, and mark the name ambiguous if more than one product ships it.
+# To extend it: add one row per binary, keep the binary column unique, cite in notes the
+# public document that gives the name, and mark the name ambiguous if more than one product
+# ships it.
 # Lines starting with # are comments and are skipped by the reader.
 binary,product,vendor,category,confidence,notes
 sshd,OpenSSH server,OpenBSD project,remote-access,certain,OpenSSH sshd(8) manual page
@@ -36,20 +46,61 @@ xrdp,xrdp remote desktop server,xrdp project,remote-access,certain,xrdp project 
 TeamViewer_Service.exe,TeamViewer,TeamViewer,remote-access,certain,TeamViewer documentation (Windows service)
 AnyDesk.exe,AnyDesk,AnyDesk Software,remote-access,certain,AnyDesk documentation
 ScreenConnect.ClientService.exe,ConnectWise ScreenConnect client,ConnectWise,remote-access,certain,ConnectWise ScreenConnect documentation
+cockpit-ws,Cockpit web service,Cockpit project,remote-access,certain,"cockpit-ws(8) manual page (Debian); web admin console, usually TCP 9090"
+CmRcService.exe,Microsoft Configuration Manager remote control service (client),Microsoft,remote-access,certain,"Microsoft Learn, Configuration Manager recommended antivirus exclusions"
+guacd,Apache Guacamole proxy daemon,Apache Software Foundation,remote-access,certain,"Apache Guacamole manual, implementation and architecture"
+Xvnc,TigerVNC X VNC server,TigerVNC project,remote-access,likely,"Xvnc(1) manual page (Arch Linux, tigervnc); other VNC products also ship an Xvnc"
+x0vncserver,TigerVNC server for X displays,TigerVNC project,remote-access,certain,"x0vncserver(1) manual page (Arch Linux, tigervnc)"
+x11vnc,x11vnc VNC server,x11vnc project,remote-access,certain,x11vnc(1) manual page (Debian)
+vncserver-x11-serviced,RealVNC Server (Service Mode daemon),RealVNC,remote-access,certain,"RealVNC Help Center, vncserver-x11-serviced man page"
+tvnserver.exe,TightVNC Server for Windows,GlavSoft,remote-access,certain,TightVNC 2.7 for Windows server command-line options (PDF)
+winvnc.exe,UltraVNC Server,UltraVNC project,remote-access,likely,"UltraVNC documentation, UltraVNC first run; older VNC Windows servers used the same name"
+hbbs,RustDesk server (ID/signal server),RustDesk,remote-access,certain,"RustDesk documentation, self-host OSS server installation"
+hbbr,RustDesk server (relay server),RustDesk,remote-access,certain,"RustDesk documentation, self-host OSS server installation"
+in.telnetd,Telnet server (netkit telnetd),netkit-telnet project,remote-access,likely,"in.telnetd(8) manual page (Ubuntu, telnetd-ssl); several netkit-based packages ship this name"
+telnetd,Telnet server (GNU inetutils telnetd),GNU inetutils project,remote-access,likely,"telnetd(8) manual page (Debian, inetutils-telnetd); name shared by other telnet servers"
 nginx,nginx,F5,web-server,certain,nginx documentation (master and worker processes)
 httpd,Apache HTTP Server,Apache Software Foundation,web-server,likely,Apache httpd(8) manual page; other small web servers also use the name
 apache2,Apache HTTP Server,Apache Software Foundation,web-server,certain,Debian and Ubuntu packaging of Apache httpd
 lighttpd,lighttpd,lighttpd project,web-server,certain,lighttpd documentation
 caddy,Caddy,Caddy project,web-server,certain,Caddy documentation
 w3wp.exe,IIS worker process,Microsoft,web-server,certain,Microsoft IIS documentation (application pool worker)
+inetinfo.exe,Internet Information Services (IIS) Admin Service,Microsoft,web-server,certain,"Microsoft Learn, Exchange Server antivirus exclusions (process exclusions); IIS process listed for Exchange Mailbox servers"
+httpd.exe,Apache HTTP Server (Windows),Apache Software Foundation,web-server,likely,"Apache HTTP Server 2.4 documentation, using Apache on Microsoft Windows; Apache-based distributions ship the same binary name"
+nginx.exe,nginx web server (Windows),F5,web-server,certain,nginx for Windows documentation
+iisexpress.exe,IIS Express developer web server,Microsoft,web-server,certain,"Microsoft Learn, IIS 7.5 Express readme; developer tool, not a production service"
 haproxy,HAProxy,HAProxy Technologies,proxy,certain,HAProxy management guide
 envoy,Envoy proxy,Cloud Native Computing Foundation,proxy,certain,Envoy documentation
 traefik,Traefik Proxy,Traefik Labs,proxy,certain,Traefik documentation
 squid,Squid caching proxy,Squid project,proxy,certain,Squid squid(8) manual page
 varnishd,Varnish Cache,Varnish Software,proxy,certain,Varnish varnishd(1) manual page
+keepalived,Keepalived load-balancing and high-availability service,Keepalived project,proxy,certain,keepalived(8) manual page (Debian); VRRP failover and LVS load balancing
+pgbouncer,PgBouncer PostgreSQL connection pooler,PgBouncer project,proxy,certain,PgBouncer usage documentation; database connection pooler
+pgbouncer.exe,PgBouncer PostgreSQL connection pooler (Windows),PgBouncer project,proxy,certain,PgBouncer usage documentation; Windows build
+pgpool,Pgpool-II PostgreSQL middleware,PgPool Global Development Group,proxy,certain,"Pgpool-II documentation, pgpool reference page; pooling, load balancing and failover for PostgreSQL"
+proxysql,ProxySQL MySQL-protocol proxy,ProxySQL LLC,proxy,certain,"ProxySQL documentation, getting started"
+maxscale,MariaDB MaxScale database proxy,MariaDB plc,proxy,certain,MariaDB MaxScale configuration guide (project documentation)
+traffic_server,Apache Traffic Server caching proxy,Apache Software Foundation,proxy,certain,"Apache Traffic Server administrator's guide, introduction"
+nghttpx,nghttpx HTTP/2 and HTTP/3 reverse proxy,nghttp2 project,proxy,certain,nghttpx(1) manual page
+tinyproxy,Tinyproxy HTTP proxy daemon,Tinyproxy project,proxy,certain,tinyproxy(8) manual page
+privoxy,Privoxy filtering web proxy,Privoxy project,proxy,certain,privoxy(8) manual page
+pound,Pound reverse proxy and load balancer,Pound project,proxy,certain,pound(8) manual page
+stunnel,stunnel TLS proxy,stunnel project,proxy,certain,stunnel(8) manual page; Debian packages it as stunnel4
+linkerd2-proxy,Linkerd service mesh data-plane proxy,Cloud Native Computing Foundation,proxy,certain,linkerd2-proxy project README; runs in the linkerd-proxy sidecar container
 php-fpm,PHP FastCGI Process Manager,PHP Group,app-server,certain,PHP manual (FPM)
 uwsgi,uWSGI application server,uWSGI project,app-server,certain,uWSGI documentation
 gunicorn,Gunicorn WSGI server,Gunicorn project,app-server,likely,Gunicorn documentation; often appears as a Python process
+ReportingServicesService.exe,SQL Server Reporting Services / Power BI Report Server,Microsoft,app-server,certain,"Microsoft Learn, configure Windows service accounts and permissions (SQL Server)"
+RSHostingService.exe,SQL Server Reporting Services 2017+ / Power BI Report Server hosting service,Microsoft,app-server,certain,"Microsoft Learn, configure antivirus software on SQL Server computers (SSRS processes)"
+RSPortal.exe,SQL Server Reporting Services 2017+ / Power BI Report Server web portal,Microsoft,app-server,certain,"Microsoft Learn, configure antivirus software on SQL Server computers (SSRS processes)"
+OWSTIMER.EXE,SharePoint Server Timer service,Microsoft,app-server,certain,"Microsoft SharePoint support blog (archived on Microsoft Learn), CRL verification failure in SharePoint (ULS log lines)"
+Tomcat9.exe,Apache Tomcat 9 Windows service,Apache Software Foundation,app-server,certain,Apache Tomcat 9 Windows service how-to
+Tomcat10.exe,Apache Tomcat 10 Windows service,Apache Software Foundation,app-server,certain,Apache Tomcat 10.1 Windows service how-to
+Tomcat11.exe,Apache Tomcat 11 Windows service,Apache Software Foundation,app-server,certain,Apache Tomcat 11 Windows service how-to
+puma,Puma Ruby web server,Puma project,app-server,likely,"Puma documentation, quick start; a Ruby program, so some inventories report the process as ruby"
+unicorn,Unicorn Rack HTTP server,Unicorn project,app-server,likely,"unicorn(1) manual page (project site); a Ruby program, so some inventories report the process as ruby"
+uvicorn,Uvicorn ASGI web server,Uvicorn project,app-server,likely,"Uvicorn documentation, deployment; a Python program, so some inventories report the process as python"
+hypercorn,Hypercorn ASGI web server,Hypercorn project,app-server,likely,"Hypercorn documentation, configuring; a Python program, so some inventories report the process as python"
 postgres,PostgreSQL server,PostgreSQL Global Development Group,database,certain,PostgreSQL documentation (postgres server process)
 postmaster,PostgreSQL server (older process name),PostgreSQL Global Development Group,database,certain,PostgreSQL documentation (legacy name for the server process)
 mysqld,MySQL Server,Oracle,database,likely,MySQL reference manual; MariaDB also installs a binary of this name
@@ -74,12 +125,24 @@ db2sysc,IBM Db2 database engine,IBM,database,certain,IBM Db2 documentation
 redis-server,Redis,Redis,cache,certain,Redis documentation
 valkey-server,Valkey,Linux Foundation,cache,certain,Valkey documentation
 memcached,Memcached,Memcached project,cache,certain,Memcached documentation
+keydb-server,KeyDB in-memory data store,Snap Inc.,cache,certain,"KeyDB documentation, first test"
+redis-sentinel,Redis Sentinel high-availability monitor,Redis,cache,certain,"Redis documentation, high availability with Redis Sentinel"
 beam.smp,Erlang virtual machine,Erlang/OTP project,runtime,ambiguous,Erlang/OTP documentation; hosts RabbitMQ and CouchDB among others
 nats-server,NATS server,Cloud Native Computing Foundation,message-broker,certain,NATS documentation
 mosquitto,Eclipse Mosquitto MQTT broker,Eclipse Foundation,message-broker,certain,Mosquitto mosquitto(8) manual page
+amqzxma0,IBM MQ queue manager execution controller,IBM,message-broker,certain,"IBM MQ 9.0 documentation, stopping an HA cluster queue manager on UNIX and Linux; role from IBM MQ 9.3 Windows process table"
+amqzlaa0,IBM MQ queue manager agent,IBM,message-broker,certain,"IBM MQ 9.0 documentation, stopping an HA cluster queue manager on UNIX and Linux; role from IBM MQ 9.3 Windows process table (LQM agents)"
+runmqlsr,IBM MQ channel listener,IBM,message-broker,certain,"IBM MQ 9.0 documentation, stopping an HA cluster queue manager on UNIX and Linux; role from IBM MQ 9.3 Windows process table"
+runmqchi,IBM MQ channel initiator,IBM,message-broker,certain,"IBM MQ 9.0 documentation, stopping an HA cluster queue manager on UNIX and Linux; role from IBM MQ 9.3 Windows process table"
+nsqd,NSQ message queue daemon,NSQ project,message-broker,certain,"NSQ documentation, nsqd component"
 slapd,OpenLDAP server,OpenLDAP Foundation,directory,certain,OpenLDAP slapd(8) manual page
 ns-slapd,389 Directory Server,389 Directory Server project,directory,certain,389 Directory Server documentation
 Microsoft.ActiveDirectory.WebServices.exe,Active Directory Web Services,Microsoft,directory,certain,"Microsoft Learn, Active Directory Web Services (runs on domain controllers)"
+nslcd,nss-pam-ldapd local LDAP name service daemon,nss-pam-ldapd project,directory,certain,nslcd(8) manual page (Debian)
+miiserver.exe,Microsoft Entra Connect Sync engine (ADSync),Microsoft,directory,likely,"Microsoft Learn, troubleshoot Microsoft Entra Connect objects and attributes; page names the engine's .config file; MIM/FIM Synchronization Service uses the same name"
+ISMServ.exe,Windows Intersite Messaging service (Active Directory),Microsoft,directory,certain,"Microsoft Learn, ISMServ.exe does not start when a domain controller starts"
+samba,Samba Active Directory domain controller,Samba project,directory,certain,"samba(8) manual page; the AD DC server, distinct from smbd and nmbd"
+Dsamain.exe,Active Directory database mounting tool (Dsamain),Microsoft,directory,certain,"Microsoft Learn, Dsamain command reference; exposes an AD DS or AD LDS snapshot as an LDAP server"
 lsass.exe,Local Security Authority Subsystem Service,Microsoft,authentication,certain,Microsoft Windows documentation; also hosts Active Directory Domain Services on a domain controller
 krb5kdc,MIT Kerberos key distribution centre,MIT Kerberos Consortium,authentication,certain,MIT Kerberos krb5kdc(8) manual page
 kadmind,MIT Kerberos administration server,MIT Kerberos Consortium,authentication,certain,MIT Kerberos kadmind(8) manual page
@@ -94,11 +157,18 @@ dnsmasq,dnsmasq,dnsmasq project,dns,certain,dnsmasq dnsmasq(8) manual page; also
 coredns,CoreDNS,Cloud Native Computing Foundation,dns,certain,CoreDNS documentation
 dns.exe,Windows DNS Server,Microsoft,dns,certain,Windows Server DNS documentation
 mDNSResponder.exe,Bonjour service discovery,Apple,dns,certain,Apple Bonjour for Windows documentation (multicast DNS)
+systemd-resolved,systemd-resolved network name resolution manager,systemd project,dns,certain,systemd-resolved.service(8) manual page; local stub resolver on 127.0.0.53
+avahi-daemon,Avahi mDNS/DNS-SD daemon,Avahi project,dns,certain,avahi-daemon(8) manual page (Debian); multicast DNS service discovery
+knotd,Knot DNS authoritative server,CZ.NIC,dns,certain,knotd(8) manual page (Debian)
+kresd,Knot Resolver,CZ.NIC,dns,certain,kresd(8) manual page (Debian); caching DNSSEC-validating resolver
+dnsdist,dnsdist DNS load balancer,PowerDNS,dns,certain,dnsdist(1) manual page (Debian)
 kea-dhcp4,Kea DHCPv4 server,Internet Systems Consortium,dhcp,certain,Kea administrator reference manual
 kea-dhcp6,Kea DHCPv6 server,Internet Systems Consortium,dhcp,certain,Kea administrator reference manual
 dhcpd,ISC DHCP server,Internet Systems Consortium,dhcp,likely,ISC DHCP dhcpd(8) manual page; the ISC DHCP server is no longer maintained
 chronyd,chrony,chrony project,time,certain,chrony chronyd(8) manual page
 ntpd,NTP daemon,Network Time Foundation,time,likely,NTP reference implementation documentation; OpenNTPD uses the same name
+systemd-timesyncd,systemd-timesyncd network time synchronisation,systemd project,time,certain,systemd-timesyncd.service(8) manual page; SNTP client
+ptp4l,linuxptp Precision Time Protocol daemon,linuxptp project,time,certain,ptp4l(8) manual page (Debian); IEEE 1588 PTP
 rsyslogd,rsyslog,Adiscon,logging,certain,rsyslog documentation
 syslog-ng,syslog-ng,One Identity,logging,certain,syslog-ng documentation
 systemd-journald,systemd journal,systemd project,logging,certain,systemd-journald.service(8) manual page
@@ -107,6 +177,16 @@ splunkd,Splunk Enterprise or Universal Forwarder,Splunk,logging,certain,Splunk d
 filebeat,Filebeat,Elastic,logging,certain,Elastic Beats documentation
 auditbeat,Auditbeat,Elastic,logging,certain,Elastic Beats documentation
 fluent-bit,Fluent Bit,Cloud Native Computing Foundation,logging,certain,Fluent Bit documentation
+loki,Grafana Loki log aggregation server,Grafana Labs,logging,likely,"Grafana Loki documentation, configuration; release archives name it loki-linux-amd64"
+vector,Vector observability data pipeline,Datadog,logging,likely,"Vector documentation, CLI reference"
+fluentd,Fluentd log collector (td-agent / fluent-package),Cloud Native Computing Foundation,logging,likely,"Fluentd documentation, install td-agent v4 by RPM; a Ruby script, so worker processes can show as ruby"
+nxlog,NXLog log collection agent,NXLog,logging,certain,"NXLog user guide, deploying on Debian/Ubuntu"
+nxlog.exe,NXLog log collection agent (Windows),NXLog,logging,certain,"NXLog user guide, deploying on Microsoft Windows"
+splunk-admon.exe,Splunk Active Directory monitoring input,Splunk,logging,certain,"Splunk Enterprise docs, architecture and processes; spawned by splunkd on Windows"
+splunk-perfmon.exe,Splunk Windows performance monitoring input,Splunk,logging,certain,"Splunk Enterprise docs, architecture and processes; spawned by splunkd on Windows"
+splunk-regmon.exe,Splunk Windows Registry monitoring input,Splunk,logging,certain,"Splunk Enterprise docs, architecture and processes; spawned by splunkd on Windows"
+filebeat.exe,Elastic Filebeat log shipper (Windows),Elastic,logging,certain,"Elastic Filebeat reference, quick start installation and configuration"
+winlogbeat.exe,Elastic Winlogbeat Windows event log shipper,Elastic,logging,certain,"Elastic Winlogbeat reference, quick start installation and configuration"
 metricbeat,Metricbeat,Elastic,monitoring,certain,Elastic Beats documentation
 elastic-agent,Elastic Agent,Elastic,monitoring,certain,Elastic Agent documentation
 elastic-otel-collector,Elastic Distribution of OpenTelemetry Collector,Elastic,monitoring,certain,"Elastic documentation, Elastic Agent as an OpenTelemetry Collector"
@@ -118,6 +198,19 @@ grafana,Grafana,Grafana Labs,monitoring,certain,Grafana documentation (grafana s
 grafana-server,Grafana (older binary name),Grafana Labs,monitoring,certain,Grafana documentation
 telegraf,Telegraf,InfluxData,monitoring,certain,Telegraf documentation
 influxd,InfluxDB,InfluxData,database,certain,InfluxDB documentation
+MsDtsSrvr.exe,SQL Server Integration Services service,Microsoft,database,certain,"Microsoft Learn, configure Windows service accounts and permissions (SQL Server)"
+ISServerExec.exe,SQL Server Integration Services package execution process,Microsoft,database,certain,"Microsoft Learn, configure antivirus software on SQL Server computers (SSIS processes)"
+mpdwsvc.exe,SQL Server PolyBase Engine and Data Movement services,Microsoft,database,certain,"Microsoft Learn, configure antivirus software on SQL Server computers (PolyBase processes)"
+fdhost.exe,SQL Server full-text filter daemon host,Microsoft,database,certain,"Microsoft Learn, SQL Server full-text search"
+Launchpad.exe,SQL Server Launchpad (Machine Learning Services),Microsoft,database,certain,"Microsoft Learn, troubleshoot Launchpad and external script execution in SQL Server"
+cockroach,CockroachDB distributed SQL database,Cockroach Labs,database,certain,"CockroachDB documentation, cockroach start"
+tidb-server,TiDB distributed SQL database (SQL layer),PingCAP,database,certain,"TiDB documentation, command-line flags for TiDB configuration"
+firebird,Firebird RDBMS server (3.0 and later),Firebird Project,database,likely,firebird(8) manual page (Ubuntu firebird3.0-server)
+fbserver,Firebird SuperServer (2.5 and earlier),Firebird Project,database,certain,"Firebird 2.5 Quick Start Guide, server architectures; legacy versions"
+oninit,IBM Informix database server,IBM,database,certain,"IBM Informix 14.1 Administrator's Reference, the oninit utility"
+hdbindexserver,SAP HANA index server,SAP,database,certain,susChkSrv.py(7) manual page (openSUSE SAPHanaSR-angi)
+hdbdaemon,SAP HANA daemon,SAP,database,certain,susChkSrv.py(7) manual page (openSUSE SAPHanaSR-angi)
+dataserver,SAP Adaptive Server Enterprise (ASE) database server,SAP,database,likely,"SAP ASE 16.0 Utility Guide, utility commands reference; UNIX only"
 zabbix_agentd,Zabbix agent,Zabbix,monitoring,certain,Zabbix manual
 zabbix_agent2,Zabbix agent 2,Zabbix,monitoring,certain,Zabbix manual
 zabbix_server,Zabbix server,Zabbix,monitoring,certain,Zabbix manual
@@ -128,10 +221,45 @@ collectd,collectd,collectd project,monitoring,certain,collectd collectd(1) manua
 newrelic-infra,New Relic infrastructure agent,New Relic,monitoring,certain,New Relic infrastructure agent documentation
 oneagentwatchdog,Dynatrace OneAgent,Dynatrace,monitoring,likely,Dynatrace OneAgent documentation
 HealthService.exe,Microsoft Monitoring Agent or Operations Manager agent,Microsoft,monitoring,certain,System Center Operations Manager documentation
+smartd,smartmontools SMART disk monitoring daemon,smartmontools project,monitoring,certain,smartd(8) manual page (Debian)
+suricata,Suricata network IDS/IPS,Open Information Security Foundation (OISF),monitoring,certain,Suricata manual (man page); network security monitoring
+snort,Snort network intrusion detection system,Cisco,monitoring,certain,snort(8) manual page (Debian bullseye)
+zeek,Zeek network security monitor,Zeek project,monitoring,certain,"Zeek documentation, quick start guide"
+MonAgentCore.exe,Azure Monitor Agent core process,Microsoft,monitoring,certain,"Microsoft Learn, troubleshoot the Azure Monitor agent on Windows VMs"
+MetricsExtension.Native.exe,Azure Monitor Agent metrics extension,Microsoft,monitoring,certain,"Microsoft Learn, troubleshoot the Azure Monitor agent on Windows VMs"
+google_cloud_ops_agent_engine,Google Cloud Ops Agent engine (logging and metrics agent),Google,monitoring,certain,"Google Cloud documentation, troubleshoot Ops Agent installation and start-up; Linux comm shows it truncated as google_cloud_op"
+otelopscol,Google Cloud Ops Agent metrics collector (OpenTelemetry),Google,monitoring,certain,"Google Cloud documentation, troubleshoot Ops Agent installation and start-up"
+google-cloud-metrics-agent_windows_amd64.exe,Google Cloud Ops Agent metrics collector (Windows),Google,monitoring,certain,"Google Cloud documentation, troubleshoot Ops Agent installation and start-up"
+alertmanager,Prometheus Alertmanager,Cloud Native Computing Foundation,monitoring,certain,Prometheus Alertmanager project README
+blackbox_exporter,Prometheus Blackbox exporter (endpoint probing),Cloud Native Computing Foundation,monitoring,certain,Prometheus blackbox_exporter project README
+windows_exporter.exe,Prometheus Windows exporter,Prometheus community,monitoring,certain,windows_exporter project README
+alloy,Grafana Alloy (OpenTelemetry collector distribution),Grafana Labs,monitoring,likely,"Grafana Alloy documentation, CLI reference (run); successor to Grafana Agent and Promtail"
+packetbeat,Elastic Packetbeat network traffic shipper,Elastic,monitoring,certain,"Elastic Packetbeat reference, quick start installation and configuration; packetbeat.exe on Windows"
+apm-server,Elastic APM Server,Elastic,monitoring,certain,"Elastic Observability docs, APM Server binary installation"
+netdata,Netdata monitoring agent,Netdata,monitoring,certain,"Netdata documentation, start, stop or restart the Netdata Agent"
+icinga2,Icinga 2 monitoring daemon,Icinga,monitoring,certain,"Icinga 2 documentation, CLI commands (icinga2 daemon)"
+nagios,Nagios Core monitoring engine,Nagios Enterprises,monitoring,certain,"Nagios Core 4 documentation, verifying your configuration"
+check_mk_agent,Checkmk agent (Linux),Checkmk GmbH,monitoring,certain,"Checkmk user guide, monitoring Linux; a shell script run per poll"
+cmk-agent-ctl,Checkmk Agent Controller (Linux),Checkmk GmbH,monitoring,certain,"Checkmk user guide, monitoring Linux; listens on TCP 6556"
+check_mk_agent.exe,Checkmk agent (Windows),Checkmk GmbH,monitoring,certain,"Checkmk user guide, monitoring Windows"
+cmk-agent-ctl.exe,Checkmk Agent Controller (Windows),Checkmk GmbH,monitoring,certain,"Checkmk user guide, monitoring Windows"
+munin-node,Munin node (statistics agent),Munin project,monitoring,certain,"Munin guide, munin-node reference"
+sensu-agent,Sensu Go agent,Sumo Logic,monitoring,certain,"Sensu Go documentation, agent reference"
+sensu-backend,Sensu Go backend,Sumo Logic,monitoring,certain,"Sensu Go documentation, backend reference"
+monit,Monit process and service monitor,Tildeslash,monitoring,certain,Monit documentation (manual)
+trace-agent,Datadog APM trace agent,Datadog,monitoring,likely,Datadog Agent source repository AGENTS.md (cmd/ binaries); generic name
+process-agent,Datadog process agent,Datadog,monitoring,likely,Datadog Agent source repository AGENTS.md (cmd/ binaries); generic name
+system-probe,Datadog system probe (eBPF),Datadog,monitoring,likely,Datadog Agent source repository AGENTS.md (cmd/ binaries); runs privileged
 dockerd,Docker Engine,Docker,container,certain,Docker Engine dockerd reference
 containerd,containerd,Cloud Native Computing Foundation,container,certain,containerd documentation
 crio,CRI-O,Cloud Native Computing Foundation,container,certain,CRI-O documentation
 podman,Podman,Podman project,container,certain,Podman documentation
+buildkitd,BuildKit build daemon,Docker,container,certain,BuildKit project README
+containerd-shim-runc-v2,containerd runc shim (runtime v2),Cloud Native Computing Foundation,container,certain,"containerd documentation, runtime v2 (shims); one per pod or container group"
+cri-dockerd,cri-dockerd (Docker Engine CRI adapter for Kubernetes),Mirantis,container,certain,cri-dockerd project README
+conmon,"conmon OCI container monitor (Podman, CRI-O)",Containers project,container,certain,conmon project README; one per running container
+runc,runc OCI container runtime,Open Container Initiative,container,certain,"runc project README; short-lived, invoked by containerd, CRI-O or Podman"
+crun,crun OCI container runtime,Containers project,container,certain,"crun project README; short-lived, invoked by Podman or CRI-O"
 kubelet,Kubernetes node agent,Cloud Native Computing Foundation,orchestration,certain,Kubernetes component reference
 kube-apiserver,Kubernetes API server,Cloud Native Computing Foundation,orchestration,certain,Kubernetes component reference
 kube-proxy,Kubernetes network proxy,Cloud Native Computing Foundation,orchestration,certain,Kubernetes component reference
@@ -140,7 +268,17 @@ kube-controller-manager,Kubernetes controller manager,Cloud Native Computing Fou
 etcd,etcd,Cloud Native Computing Foundation,orchestration,certain,etcd documentation
 consul,Consul,HashiCorp,orchestration,certain,Consul documentation
 nomad,Nomad,HashiCorp,orchestration,certain,Nomad documentation
+corosync,Corosync Cluster Engine,Corosync project,orchestration,certain,corosync(8) manual page (Debian); cluster membership and messaging under Pacemaker
+pacemakerd,Pacemaker cluster resource manager,ClusterLabs,orchestration,certain,pacemakerd(8) manual page (Debian)
+k3s,K3s lightweight Kubernetes distribution,Cloud Native Computing Foundation,orchestration,certain,"K3s documentation, CLI tools (k3s server); one binary runs as server or agent"
+rke2,RKE2 Kubernetes distribution,SUSE,orchestration,certain,"RKE2 documentation, quick start"
+cilium-agent,"Cilium agent (eBPF networking, Kubernetes CNI)",Cloud Native Computing Foundation,orchestration,certain,"Cilium documentation, command reference cilium-agent"
+calico-node,"Calico node agent (Felix, BIRD, confd) for Kubernetes networking",Tigera,orchestration,certain,"Calico documentation, install calico/node (the hard way); runs Felix, BIRD and confd as child processes"
+flanneld,Flannel overlay network agent,Flannel project,orchestration,certain,Flannel project README (how it works)
+pilot-discovery,Istio control plane (istiod),Cloud Native Computing Foundation,orchestration,certain,"Istio documentation, command reference pilot-discovery; the process inside the istiod container"
+pilot-agent,Istio sidecar and gateway agent,Cloud Native Computing Foundation,orchestration,certain,"Istio documentation, command reference pilot-agent; runs beside envoy in istio-proxy containers"
 vault,Vault,HashiCorp,secrets,certain,Vault documentation
+certmonger,certmonger certificate tracking daemon,certmonger project,secrets,certain,certmonger(8) manual page; FreeIPA clients use it to renew certificates
 vmtoolsd,VMware Tools,Broadcom,virtualisation,certain,VMware Tools documentation
 hostd,VMware ESXi host agent,Broadcom,virtualisation,likely,VMware ESXi documentation
 vpxa,VMware vCenter agent on ESXi,Broadcom,virtualisation,certain,VMware ESXi documentation
@@ -152,10 +290,31 @@ ovs-vswitchd,Open vSwitch daemon,Open vSwitch project,virtualisation,certain,ovs
 ovsdb-server,Open vSwitch database server,Open vSwitch project,virtualisation,certain,ovsdb-server(1) manual page
 ovn-controller,OVN (Open Virtual Network) controller,Open vSwitch project,virtualisation,certain,ovn-controller(8) manual page
 ovn-northd,OVN (Open Virtual Network) central control daemon,Open vSwitch project,virtualisation,certain,ovn-northd(8) manual page
+vmms.exe,Hyper-V Virtual Machine Management service,Microsoft,virtualisation,certain,"Microsoft Learn, antivirus exclusions for Hyper-V hosts"
+vmwp.exe,Hyper-V virtual machine worker process,Microsoft,virtualisation,certain,"Microsoft Learn, antivirus exclusions for Hyper-V hosts; one process per running VM"
+vmcompute.exe,Hyper-V Host Compute Service,Microsoft,virtualisation,certain,"Microsoft Learn, antivirus exclusions for Hyper-V hosts; also present on Windows container hosts"
+Vmsp.exe,Hyper-V virtual machine security process,Microsoft,virtualisation,certain,"Microsoft Learn, antivirus exclusions for Hyper-V hosts"
+VBoxSVC,Oracle VirtualBox COM service (VBoxSVC),Oracle,virtualisation,certain,"Oracle VirtualBox user manual, advanced topics (VBoxSVC in Windows session 0); VBoxSVC.exe on Windows hosts"
+VBoxHeadless,Oracle VirtualBox headless VM front end,Oracle,virtualisation,certain,"Oracle VirtualBox user manual, remote virtual machines (VBoxHeadless); one process per running headless VM"
+pveproxy,Proxmox VE API proxy daemon,Proxmox Server Solutions,virtualisation,certain,pveproxy(8) manual page; serves the web UI and API on TCP 8006
+pvedaemon,Proxmox VE API daemon,Proxmox Server Solutions,virtualisation,certain,pvedaemon(8) manual page
+pvestatd,Proxmox VE status daemon,Proxmox Server Solutions,virtualisation,certain,pvestatd(8) manual page
+xenstored,Xen hypervisor Xenstore daemon,Xen Project,virtualisation,certain,"Xen Project documentation, xenstore.txt (Xenstore protocol); runs in dom0 or a stub domain"
+xenconsoled,Xen hypervisor guest console daemon,Xen Project,virtualisation,certain,"Xen Project documentation, console.txt (Xen PV console)"
 amazon-ssm-agent,AWS Systems Manager Agent,Amazon Web Services,cloud-agent,certain,AWS Systems Manager documentation
 amazon-cloudwatch-agent,Amazon CloudWatch agent,Amazon Web Services,cloud-agent,certain,Amazon CloudWatch documentation
 google_guest_agent,Google guest agent,Google Cloud,cloud-agent,certain,Google Cloud guest environment documentation
 himds,Azure Connected Machine agent,Microsoft,cloud-agent,certain,Azure Arc-enabled servers documentation
+WindowsAzureGuestAgent.exe,Azure Windows VM Agent,Microsoft,cloud-agent,certain,"Microsoft Learn, Azure Windows VM Agent overview"
+WaAppAgent.exe,Azure Windows VM Agent (extension handler),Microsoft,cloud-agent,certain,"Microsoft Learn, troubleshoot Azure Windows VM Agent"
+himds.exe,Azure Connected Machine agent (Azure Arc) Hybrid Instance Metadata Service,Microsoft,cloud-agent,certain,"Microsoft Learn, Azure Connected Machine agent overview"
+gc_arc_service.exe,Azure Connected Machine agent (Azure Arc) machine configuration service,Microsoft,cloud-agent,certain,"Microsoft Learn, Azure Connected Machine agent overview"
+gc_extension_service.exe,Azure Connected Machine agent (Azure Arc) extension service,Microsoft,cloud-agent,certain,"Microsoft Learn, Azure Connected Machine agent overview"
+gc_service.exe,"Azure Connected Machine agent (Azure Arc) machine configuration / extension service, before version 1.36",Microsoft,cloud-agent,certain,"Microsoft Learn, Azure Connected Machine agent overview; name used before agent version 1.36"
+waagent,Azure Linux VM Agent,Microsoft,cloud-agent,certain,"Microsoft Learn, Azure Linux VM Agent overview"
+google_osconfig_agent,Google Cloud OS Config agent (VM Manager),Google,cloud-agent,certain,"Google Cloud documentation, VM Manager (manage OS); Linux comm truncates to 15 characters"
+ssm-session-worker,AWS Systems Manager Session Manager worker,Amazon Web Services,cloud-agent,certain,"AWS Systems Manager user guide, troubleshooting Session Manager; child of amazon-ssm-agent, one per session"
+eic_run_authorized_keys,AWS EC2 Instance Connect key lookup script,Amazon Web Services,cloud-agent,certain,"Amazon EC2 user guide, set up EC2 Instance Connect; short-lived, run by sshd as AuthorizedKeysCommand at each login"
 MsMpEng.exe,Microsoft Defender Antivirus,Microsoft,endpoint-security,certain,Microsoft Defender Antivirus documentation
 MsSense.exe,Microsoft Defender for Endpoint sensor,Microsoft,endpoint-security,certain,Microsoft Defender for Endpoint documentation
 wdavdaemon,Microsoft Defender for Endpoint on Linux and macOS,Microsoft,endpoint-security,certain,Microsoft Defender for Endpoint on Linux documentation
@@ -175,15 +334,41 @@ EPSecurityService.exe,Bitdefender GravityZone endpoint security,Bitdefender,endp
 elastic-endpoint,Elastic Defend,Elastic,endpoint-security,certain,Elastic Security documentation
 wazuh-agentd,Wazuh agent,Wazuh,endpoint-security,certain,Wazuh documentation
 osqueryd,osquery daemon,osquery project,endpoint-security,certain,osquery documentation
+clamd,ClamAV anti-virus daemon,Cisco,endpoint-security,certain,clamd(8) manual page (Debian)
+freshclam,ClamAV virus database updater,Cisco,endpoint-security,certain,freshclam(1) manual page (Debian); runs as a daemon with -d
+fail2ban-server,Fail2Ban server,Fail2Ban project,endpoint-security,certain,fail2ban-server(1) manual page (Debian)
+security-agent,Datadog security agent,Datadog,endpoint-security,likely,Datadog Agent source repository AGENTS.md (cmd/ binaries); generic name
+wazuh-analysisd,Wazuh manager analysis daemon,Wazuh,endpoint-security,certain,"Wazuh documentation, daemons reference wazuh-analysisd"
+wazuh-remoted,Wazuh manager remote daemon (agent communication),Wazuh,endpoint-security,certain,"Wazuh documentation, daemons reference wazuh-remoted"
+ossec-agentd,OSSEC HIDS agent,OSSEC project,endpoint-security,likely,"OSSEC documentation, ossec-agentd program; Wazuh before 4.0 used the same name"
+falco,Falco runtime security,Cloud Native Computing Foundation,endpoint-security,certain,"Falco documentation, Linux quickstart (service status output)"
+tetragon,Tetragon eBPF security observability,Cloud Native Computing Foundation,endpoint-security,certain,"Tetragon documentation, package installation (service status output)"
+MBAMService.exe,ThreatDown / Malwarebytes endpoint protection service,Malwarebytes,endpoint-security,certain,"ThreatDown support, Endpoint Agent system components (Windows services)"
+MBCloudEA.exe,ThreatDown / Malwarebytes Endpoint Agent,Malwarebytes,endpoint-security,certain,"ThreatDown support, Endpoint Agent system components (Windows services)"
 QualysAgent.exe,Qualys Cloud Agent,Qualys,vulnerability-scanner,certain,Qualys Cloud Agent documentation
 qualys-cloud-agent,Qualys Cloud Agent for Linux,Qualys,vulnerability-scanner,certain,Qualys Cloud Agent documentation
 nessusd,Tenable Nessus scanner or Nessus Agent,Tenable,vulnerability-scanner,certain,Tenable Nessus documentation
 ir_agent,Rapid7 Insight Agent,Rapid7,vulnerability-scanner,certain,Rapid7 Insight Agent documentation
 ir_agent.exe,Rapid7 Insight Agent,Rapid7,vulnerability-scanner,certain,Rapid7 Insight Agent documentation
+nessus-service.exe,Tenable Nessus Agent service (Windows),Tenable,vulnerability-scanner,certain,"Tenable Nessus Agent documentation, file and process allow list"
 TaniumClient.exe,Tanium Client,Tanium,endpoint-management,certain,Tanium Client documentation
 CcmExec.exe,Configuration Manager client,Microsoft,endpoint-management,certain,Microsoft Configuration Manager documentation
 Microsoft.Management.Services.IntuneWindowsAgent.exe,Intune Management Extension,Microsoft,endpoint-management,certain,Microsoft Intune documentation
 LMS.exe,Intel Local Manageability Service,Intel,endpoint-management,certain,Intel AMT documentation; the host-side service of Intel AMT
+Smsexec.exe,Microsoft Configuration Manager SMS Executive (site server),Microsoft,endpoint-management,certain,"Microsoft Learn, Configuration Manager recommended antivirus exclusions"
+Sitecomp.exe,Microsoft Configuration Manager Site Component Manager,Microsoft,endpoint-management,certain,"Microsoft Learn, Configuration Manager recommended antivirus exclusions"
+Smswriter.exe,"Microsoft Configuration Manager SMS Writer (VSS writer, site server)",Microsoft,endpoint-management,certain,"Microsoft Learn, Configuration Manager recommended antivirus exclusions"
+sme.exe,Windows Admin Center gateway service (classic gateway),Microsoft,endpoint-management,likely,"Microsoft Learn, Windows Admin Center known issues; the modernised gateway may use a different process name"
+salt-minion,Salt minion,Broadcom,endpoint-management,certain,"Salt documentation, command line reference salt-minion"
+salt-master,Salt master,Broadcom,endpoint-management,certain,"Salt documentation, command line reference salt-master"
+pxp-agent,Puppet PXP agent (orchestrator agent),Perforce,endpoint-management,certain,pxp-agent project README; pxp-agent.exe on Windows
+puppet,Puppet agent,Perforce,endpoint-management,likely,"puppet-agent(8) manual page (Debian); runs as 'puppet agent', a Ruby script"
+chef-client,Chef Infra Client,Progress Chef,endpoint-management,certain,"Chef Infra Client 18 documentation, chef-client executable"
+landscape-client,Canonical Landscape client,Canonical,endpoint-management,certain,landscape-client(1) manual page (Ubuntu)
+jamf,Jamf Pro management binary,Jamf,endpoint-management,certain,"Jamf Pro documentation, components installed on managed computers"
+NinjaRMMAgent.exe,NinjaOne agent (Windows),NinjaOne,endpoint-management,certain,"NinjaOne documentation, configure agent proxy server; Linux agent is ninjarmm-linagent"
+AgentMon.exe,Kaseya VSA agent,Kaseya,endpoint-management,likely,"Kaseya help desk, Windows agents falsely reporting offline in the VSA"
+dcagentservice.exe,ManageEngine Endpoint Central agent service,ManageEngine,endpoint-management,certain,"ManageEngine Endpoint Central MSP, using Endpoint Central with Symantec Endpoint Protection"
 cvd,Commvault Communications Service,Commvault,backup,certain,Commvault documentation
 cvfwd,Commvault Network Daemon,Commvault,backup,certain,"Commvault documentation, descriptions of services"
 bpcd,NetBackup client service,Cohesity,backup,certain,NetBackup documentation
@@ -192,6 +377,18 @@ nsrexecd,NetWorker client execution service,Dell Technologies,backup,certain,Del
 dsmcad,IBM Storage Protect client acceptor,IBM,backup,certain,IBM Storage Protect documentation
 bacula-fd,Bacula file daemon,Bacula project,backup,certain,Bacula documentation
 bareos-fd,Bareos file daemon,Bareos,backup,certain,Bareos documentation
+backupserver,SAP ASE Backup Server,SAP,backup,likely,"SAP ASE 16.0 Utility Guide, utility commands reference"
+bacula-dir,Bacula Director,Bacula project,backup,certain,bacula-dir(8) manual page (Debian)
+bacula-sd,Bacula Storage Daemon,Bacula project,backup,certain,bacula-sd(8) manual page (Debian)
+bareos-dir,Bareos Director,Bareos project,backup,certain,"Bareos manual, Bareos programs appendix"
+bareos-sd,Bareos Storage Daemon,Bareos project,backup,certain,"Bareos manual, Bareos programs appendix"
+urbackupsrv,UrBackup server,UrBackup project,backup,certain,UrBackup administration manual
+bpinetd.exe,NetBackup Legacy Client Service,Cohesity,backup,certain,"NetBackup Administrator's Guide, About the Daemons tab"
+bprd,NetBackup Request Daemon,Cohesity,backup,certain,"NetBackup Administrator's Guide, About the Daemons tab; bprd.exe on Windows"
+bpdbm,NetBackup Database Manager,Cohesity,backup,certain,"NetBackup Administrator's Guide, About the Daemons tab; bpdbm.exe on Windows"
+beremote.exe,Backup Exec Remote Agent for Windows,Arctera,backup,certain,Backup Exec support article (Remote Agent service fails to start)
+beremote,Backup Exec Agent for Linux and Unix,Arctera,backup,certain,"Backup Exec 22.2 Administrator's Guide, troubleshooting the Agent for Linux and Unix"
+mms.exe,Acronis Managed Machine Service,Acronis,backup,likely,"Acronis knowledge base, Acronis Cyber Protect Windows services and processes; short name, check the path"
 vpnagent.exe,Cisco Secure Client (AnyConnect) VPN agent,Cisco,vpn-client,certain,Cisco Secure Client documentation
 vpnagentd,Cisco Secure Client (AnyConnect) VPN agent,Cisco,vpn-client,certain,Cisco Secure Client documentation (Linux and macOS)
 PanGPS.exe,GlobalProtect service,Palo Alto Networks,vpn-client,certain,GlobalProtect app documentation
@@ -202,6 +399,8 @@ openvpn,OpenVPN,OpenVPN,vpn-client,certain,OpenVPN openvpn(8) manual page; the s
 wireguard.exe,WireGuard for Windows,WireGuard project,vpn-client,certain,WireGuard documentation
 charon,strongSwan IKE daemon,strongSwan project,vpn-client,certain,strongSwan documentation; serves site-to-site tunnels as well as clients
 pluto,Libreswan IKE daemon,Libreswan project,vpn-client,certain,Libreswan ipsec.conf(5) and pluto(8) manual pages
+xl2tpd,xl2tpd L2TP daemon,xl2tpd project,vpn-client,certain,xl2tpd(8) manual page (Debian); usually paired with an IPsec daemon
+ocserv,OpenConnect VPN server,OpenConnect project,vpn-client,certain,ocserv(8) manual page (Debian); AnyConnect-compatible SSL VPN server
 ZSATunnel.exe,Zscaler Client Connector tunnel,Zscaler,ztna-client,certain,Zscaler Client Connector documentation
 ZSAService.exe,Zscaler Client Connector service,Zscaler,ztna-client,certain,Zscaler Client Connector documentation
 warp-svc,Cloudflare WARP client,Cloudflare,ztna-client,certain,Cloudflare WARP client documentation
@@ -210,6 +409,10 @@ cloudflared,Cloudflare Tunnel connector,Cloudflare,ztna-client,certain,Cloudflar
 acumbrellaagent.exe,Cisco Umbrella roaming module,Cisco,ztna-client,certain,Cisco Secure Client documentation
 tailscaled,Tailscale,Tailscale,ztna-client,certain,Tailscale documentation
 teleport,Teleport,Teleport,ztna-client,certain,Teleport documentation; runs as agent or as proxy
+MicrosoftEntraPrivateNetworkConnectorService.exe,Microsoft Entra private network connector (application proxy connector),Microsoft,ztna-client,certain,"Microsoft Learn, Microsoft Entra private network connector version history (rename table)"
+MicrosoftEntraPrivateNetworkConnectorUpdaterService.exe,Microsoft Entra private network connector updater,Microsoft,ztna-client,certain,"Microsoft Learn, Microsoft Entra private network connector version history (rename table)"
+ApplicationProxyConnectorService.exe,Microsoft Entra application proxy connector (pre-rename name),Microsoft,ztna-client,certain,"Microsoft Learn, Microsoft Entra private network connector version history (rename table); old name, replaced by MicrosoftEntraPrivateNetworkConnectorService.exe"
+ApplicationProxyConnectorUpdaterService.exe,Microsoft Entra application proxy connector updater (pre-rename name),Microsoft,ztna-client,certain,"Microsoft Learn, Microsoft Entra private network connector version history (rename table); old name"
 smbd,Samba file server,Samba project,file-sharing,certain,Samba smbd(8) manual page
 nmbd,Samba NetBIOS name server,Samba project,file-sharing,certain,Samba nmbd(8) manual page
 nfsd,Linux kernel NFS server,Linux kernel,file-sharing,certain,nfsd(8) manual page
@@ -219,6 +422,17 @@ rpc.statd,NFS status monitor,Linux nfs-utils project,file-sharing,certain,rpc.st
 vsftpd,vsftpd,vsftpd project,file-sharing,certain,vsftpd(8) manual page
 proftpd,ProFTPD,ProFTPD project,file-sharing,certain,ProFTPD documentation
 dfsrs.exe,DFS Replication,Microsoft,file-sharing,certain,Windows Server DFS Replication documentation
+rsync,rsync daemon,rsync project,file-sharing,likely,"rsyncd.conf(5) manual page; the same binary is the rsync client, a listener on the default port 873 marks daemon mode"
+ganesha.nfsd,NFS-Ganesha user-space NFS server,NFS-Ganesha project,file-sharing,certain,NFS-Ganesha ganesha-config(8) manual source (project repository)
+glusterd,GlusterFS volume management daemon,Gluster project,file-sharing,certain,glusterd(8) manual page (Debian)
+glusterfsd,GlusterFS brick server daemon,Gluster project,file-sharing,certain,glusterfsd(8) manual page (Debian trixie)
+ceph-mon,Ceph monitor daemon,Ceph Foundation,file-sharing,certain,ceph-mon(8) manual page (Ceph documentation); distributed storage
+ceph-osd,Ceph object storage daemon,Ceph Foundation,file-sharing,certain,ceph-osd(8) manual page (Ceph documentation); distributed storage
+radosgw,Ceph Object Gateway (RADOS REST gateway),Ceph Foundation,file-sharing,certain,radosgw(8) manual page (Ceph documentation); S3- and Swift-compatible HTTP API
+in.tftpd,tftp-hpa TFTP server,tftp-hpa project,file-sharing,likely,"in.tftpd(8) manual page (Debian, tftpd-hpa); a generic inetd-style name other TFTP servers can share"
+Dfssvc.exe,Windows DFS Namespace service,Microsoft,file-sharing,certain,"Microsoft Support, DFS Namespace service hotfix (file information table); file shipped in the DFS Namespace service update"
+minio,MinIO object storage server,MinIO Inc.,file-sharing,certain,"MinIO documentation, minio server command reference; S3-compatible object storage"
+weed,SeaweedFS distributed storage,SeaweedFS project,file-sharing,certain,"SeaweedFS wiki, getting started (project documentation); one binary runs master, volume, filer and S3 roles"
 exim,Exim,Exim project,mail,certain,Exim specification
 exim4,Exim (Debian packaging),Exim project,mail,certain,Debian exim4 packaging
 sendmail,Sendmail,Proofpoint,mail,likely,Sendmail documentation; other mail servers install a compatible sendmail binary
@@ -229,9 +443,34 @@ submission-login,Dovecot submission login process,Open-Xchange,mail,certain,"Dov
 managesieve-login,Dovecot ManageSieve login process,Open-Xchange,mail,certain,"Dovecot Pigeonhole documentation, ManageSieve service"
 smtpd,SMTP server (Postfix or OpenSMTPD),Postfix project,mail,likely,Postfix smtpd(8) manual page; OpenSMTPD's daemon has the same name
 EdgeTransport.exe,Exchange Server transport worker,Microsoft,mail,certain,Exchange Server documentation
+master,Postfix master process,Postfix project,mail,likely,"Postfix master(8) manual page; a generic name, confirm with its Postfix children (qmgr, pickup)"
+qmgr,Postfix queue manager,Postfix project,mail,likely,"Postfix qmgr(8) manual page; a generic name, confirm with the Postfix master process"
+MSExchangeFrontendTransport.exe,Microsoft Exchange Server Frontend Transport service,Microsoft,mail,certain,"Microsoft Learn, Exchange Server antivirus exclusions (process exclusions)"
+MSExchangeTransport.exe,Microsoft Exchange Server Transport service,Microsoft,mail,certain,"Microsoft Learn, Exchange Server antivirus exclusions (process exclusions)"
+MSExchangeDelivery.exe,Microsoft Exchange Server Mailbox Transport Delivery service,Microsoft,mail,certain,"Microsoft Learn, Exchange Server antivirus exclusions (process exclusions)"
+MSExchangeSubmission.exe,Microsoft Exchange Server Mailbox Transport Submission service,Microsoft,mail,certain,"Microsoft Learn, Exchange Server antivirus exclusions (process exclusions)"
+Microsoft.Exchange.Store.Service.exe,Microsoft Exchange Server Information Store service,Microsoft,mail,certain,"Microsoft Learn, Exchange Server antivirus exclusions (process exclusions)"
+Microsoft.Exchange.Store.Worker.exe,Microsoft Exchange Server Information Store worker process,Microsoft,mail,certain,"Microsoft Learn, Exchange Server antivirus exclusions (process exclusions); one worker per mounted database"
+MSExchangeHMHost.exe,Microsoft Exchange Server Health Manager service,Microsoft,mail,certain,"Microsoft Learn, Exchange Server antivirus exclusions (process exclusions)"
+MSExchangeHMWorker.exe,Microsoft Exchange Server Health Manager worker process,Microsoft,mail,certain,"Microsoft Learn, Exchange Server antivirus exclusions (process exclusions)"
+MSExchangeRepl.exe,Microsoft Exchange Server Replication service,Microsoft,mail,certain,"Microsoft Learn, Exchange Server antivirus exclusions (process exclusions)"
+Microsoft.Exchange.Directory.TopologyService.exe,Microsoft Exchange Server Active Directory Topology service,Microsoft,mail,certain,"Microsoft Learn, Exchange Server antivirus exclusions (process exclusions)"
+MSExchangeMailboxAssistants.exe,Microsoft Exchange Server Mailbox Assistants service,Microsoft,mail,certain,"Microsoft Learn, Exchange Server antivirus exclusions (process exclusions)"
+Microsoft.Exchange.RPCClientAccess.Service.exe,Microsoft Exchange Server RPC Client Access service,Microsoft,mail,certain,"Microsoft Learn, Exchange Server antivirus exclusions (process exclusions)"
+Microsoft.Exchange.Imap4.exe,Microsoft Exchange Server IMAP4 service,Microsoft,mail,certain,"Microsoft Learn, Exchange Server antivirus exclusions (process exclusions)"
+Microsoft.Exchange.Pop3.exe,Microsoft Exchange Server POP3 service,Microsoft,mail,certain,"Microsoft Learn, Exchange Server antivirus exclusions (process exclusions)"
+Noderunner.exe,"Microsoft search engine node process (Exchange Search, SharePoint Search)",Microsoft,mail,likely,"Microsoft Learn, Exchange Server antivirus exclusions (process exclusions); SharePoint Server search uses the same name for its indexing process"
 cupsd,CUPS print server,OpenPrinting,print,certain,cupsd(8) manual page
 spoolsv.exe,Windows Print Spooler,Microsoft,print,certain,Windows documentation (Print Spooler service)
+cups-browsed,cups-browsed remote printer discovery daemon,OpenPrinting,print,certain,cups-browsed(8) manual page (Debian)
+lpd,BSD line printer spooler daemon,BSD lpr project,print,likely,lpd(8) manual page (Debian); LPRng's daemon has the same name
 certsrv.exe,Active Directory Certificate Services,Microsoft,authentication,certain,Windows Server AD CS documentation
+gssproxy,GSS-Proxy daemon,GSS-Proxy project,authentication,certain,gssproxy(8) manual page (Debian); brokers GSSAPI credentials
+radiusd,FreeRADIUS server,FreeRADIUS project,authentication,likely,"radiusd(8) manual page (Debian trixie, freeradius package); a generic name other RADIUS servers can share"
+AzureADConnectAuthenticationAgentService.exe,Microsoft Entra pass-through authentication agent,Microsoft,authentication,certain,"Microsoft Learn, troubleshoot Microsoft Entra pass-through authentication"
+Microsoft.IdentityServer.ServiceHost.exe,Active Directory Federation Services (AD FS) service host,Microsoft,authentication,certain,"Microsoft Learn, troubleshoot AD FS with events and logging; page names the service host's .config file, printed as ServiceHost.Exe.Config"
+freeradius,FreeRADIUS server (Debian and Ubuntu packaging),FreeRADIUS project,authentication,certain,"freeradius(8) manual page, Debian freeradius-common; the man page itself names the upstream radiusd"
+kdc,Heimdal Kerberos 5 KDC,Heimdal project,authentication,likely,kdc(8) manual page (Debian heimdal-kdc); generic name
 svchost.exe,Windows service host,Microsoft,runtime,ambiguous,Windows documentation; hosts many unrelated services
 System,Windows kernel (System process),Microsoft,runtime,ambiguous,Microsoft Learn; kernel-mode listeners such as SMB and HTTP.sys run as the System process
 backgroundTaskHost.exe,Windows background task host,Microsoft,runtime,ambiguous,"Microsoft Learn, background tasks; hosts tasks for many apps"
@@ -239,9 +478,40 @@ msedgewebview2.exe,Microsoft Edge WebView2 Runtime,Microsoft,runtime,ambiguous,"
 services.exe,Windows Service Control Manager,Microsoft,os-component,certain,"Microsoft Learn, Service Control Manager"
 WUDFHost.exe,Windows User-Mode Driver Framework host,Microsoft,os-component,certain,"Microsoft Learn, User-Mode Driver Framework"
 dasHost.exe,Windows Device Association Framework host,Microsoft,os-component,certain,"Microsoft Learn, Device Association Framework"
+systemd,systemd system and service manager,systemd project,os-component,certain,"systemd(1) manual page; PID 1, and also runs as per-user manager instances"
+systemd-networkd,systemd-networkd network manager,systemd project,os-component,certain,systemd-networkd.service(8) manual page
+systemd-logind,systemd-logind login manager,systemd project,os-component,certain,systemd-logind.service(8) manual page
+systemd-udevd,systemd-udevd device manager,systemd project,os-component,certain,systemd-udevd.service(8) manual page
+NetworkManager,NetworkManager network management daemon,NetworkManager project,os-component,certain,NetworkManager(8) manual page (Debian)
+crond,cronie scheduled-command daemon,cronie project,os-component,likely,cron(8) manual page (cronie); a generic name other cron implementations can share
+cron,Vixie cron scheduled-command daemon,Vixie cron project,os-component,likely,cron(8) manual page (Debian); Debian and Ubuntu name; other cron implementations share it
+atd,at deferred-job daemon,at project,os-component,certain,atd(8) manual page (Debian)
+dbus-daemon,D-Bus message bus daemon,D-Bus project,os-component,certain,dbus-daemon(1) manual page (Debian); system and session buses
+polkitd,polkit authorisation daemon,polkit project,os-component,certain,polkitd(8) manual page (Debian)
+firewalld,firewalld dynamic firewall manager,firewalld project,os-component,certain,firewalld(1) manual page (project site); host firewall manager
+wpa_supplicant,wpa_supplicant Wi-Fi and IEEE 802.1X supplicant,hostap project,os-component,certain,wpa_supplicant(8) manual page (Debian); client side of 802.1X
+xinetd,xinetd extended internet services daemon,xinetd project,os-component,certain,"xinetd(8) manual page (Debian); super-server, so the service it spawns is the real product"
+iscsid,Open-iSCSI initiator daemon,Open-iSCSI project,os-component,certain,iscsid(8) manual page (Debian)
+multipathd,multipath-tools multipath daemon,multipath-tools project,os-component,certain,multipathd(8) manual page (Debian); device-mapper multipath
+nscd,name service cache daemon,GNU C Library (glibc),os-component,likely,nscd(8) Linux man-pages; a generic name a compatible replacement can share
+ModemManager,ModemManager mobile broadband modem daemon,ModemManager project,os-component,certain,ModemManager(8) manual page (Debian)
+rngd,rng-tools hardware entropy daemon,rng-tools project,os-component,certain,rngd(8) manual page (Debian)
+bird,BIRD Internet Routing Daemon,CZ.NIC,os-component,certain,"bird(8) manual page (Debian); BGP, OSPF and RIP routing daemon"
+zebra,FRRouting zebra IP routing manager,FRRouting project,os-component,likely,FRRouting user guide (Zebra); a name other routing suites can share
+bgpd,FRRouting BGP daemon,FRRouting project,os-component,likely,FRRouting user guide (BGP); a generic name other BGP daemons can share
+smss.exe,Windows Session Manager subsystem,Microsoft,os-component,certain,"Microsoft Learn, Restart Manager critical system services"
+csrss.exe,Windows Client/Server Runtime subsystem,Microsoft,os-component,certain,"Microsoft Learn, Restart Manager critical system services"
+wininit.exe,Windows start-up application (session 0 initialisation),Microsoft,os-component,certain,"Microsoft Learn, Restart Manager critical system services"
+logonui.exe,Windows logon user interface host,Microsoft,os-component,certain,"Microsoft Learn, Restart Manager critical system services"
+winlogon.exe,Windows Logon application,Microsoft,os-component,certain,"Microsoft Learn, Restart Manager critical system services"
+LsaIso.exe,Windows Credential Guard isolated LSA process,Microsoft,os-component,certain,"Microsoft Learn, configure Credential Guard; runs only when Credential Guard (VBS) is on"
+WmiPrvSE.exe,Windows Management Instrumentation (WMI) provider host,Microsoft,os-component,certain,"Microsoft Learn, troubleshoot WMI high CPU usage; several instances can run at once"
+msdtc.exe,Microsoft Distributed Transaction Coordinator (MSDTC),Microsoft,os-component,certain,"Microsoft distributed services support blog (archived on Microsoft Learn), MSDTC RPC port configuration"
 chrome.exe,Google Chrome,Google,desktop-app,certain,Google Chrome Enterprise documentation
 msedge.exe,Microsoft Edge,Microsoft,desktop-app,certain,"Microsoft Learn, Microsoft Edge"
 ms-teams.exe,Microsoft Teams,Microsoft,desktop-app,certain,"Microsoft Learn, the new Teams client"
+OneDrive.exe,Microsoft OneDrive sync app,Microsoft,desktop-app,certain,"Microsoft Learn, deploy the OneDrive sync app with Configuration Manager"
+olk.exe,Microsoft Outlook (new) for Windows,Microsoft,desktop-app,certain,"Microsoft Support, command-line switches for Microsoft Office products"
 java,Java runtime,Various,runtime,ambiguous,Hosts any Java application server or service
 node,Node.js runtime,OpenJS Foundation,runtime,ambiguous,Hosts any Node.js service
 python,Python interpreter,Python Software Foundation,runtime,ambiguous,Hosts any Python service
@@ -253,3 +523,4 @@ dotnet,.NET host,Microsoft,runtime,ambiguous,Hosts any .NET application
 powershell.exe,Windows PowerShell,Microsoft,runtime,ambiguous,"Microsoft Learn, Windows PowerShell; the script decides what it serves"
 pwsh.exe,PowerShell 7,Microsoft,runtime,ambiguous,"Microsoft Learn, PowerShell; the script decides what it serves"
 pwsh,PowerShell 7 on Linux and macOS,Microsoft,runtime,ambiguous,"Microsoft Learn, PowerShell; the script decides what it serves"
+epmd,Erlang Port Mapper Daemon,Erlang/OTP project,runtime,certain,"Erlang/OTP erts documentation, epmd; shows an Erlang node is present but not which application"
