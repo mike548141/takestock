@@ -93,6 +93,15 @@ command line or a file format, and its entry says how.
   display name, so a list of collector ids drew no edge for rows that carry
   both. A machine gets one edge per declared class, where before it got one
   per instrument.
+- **Configuration register**: a row whose protocol is `dns` or `dnssec` and
+  that names a port is read as a probe of the machine answering DNS there,
+  so it makes a Network Service on that machine. Before, it made a DNS Name
+  with the machine's name and no service. A DNS or DNSSEC reading with no
+  port is still a DNS Name.
+- **Configuration register**: `contains` is drawn once per machine and
+  Network Service, keeping the strongest evidence among the rows that name
+  the service, then the most recent. Before, every row naming the service
+  drew its own edge, so a listener two instruments read had two.
 - **IP address plan**: a subnet a source declares goes to the site whose
   plan-file range holds it, even when the source reports another site; the
   source's site is used only when no range holds the subnet.

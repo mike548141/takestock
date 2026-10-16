@@ -42,15 +42,17 @@ row                    becomes
                        ``extra.registrable_domain``
 ``certificate``        a Certificate keyed on its host
 ``key-material``       a Credential keyed on its name
-``discovery``,         a DNS Name keyed on its host
+``discovery``,         a DNS Name keyed on its host, never a machine
 ``email-auth``, or a
 DNS-layer protocol
+with no port
 anything else with a   a machine, keyed on host name and ``extra.agent_id``;
 host or agent id       its class from ``extra.host_type``, else from
                        ``extra.netdev_device_class``. A port
                        (``extra.service`` as ``443/tcp``, or ``port``) adds a
-                       Network Service; ``software`` adds a Software Product
-                       and Release installed on it
+                       Network Service, contained once however many rows name
+                       it; ``software`` adds a Software Product and Release
+                       installed on it
 ``software`` and no    a Software Product and Release, installed on each
 host                   machine ``extra.hosts`` names (a list, or names
                        separated by commas), or on nothing when it names none
@@ -780,8 +782,16 @@ def _is_estate(asset: Mapping[str, Any]) -> bool:
 
 
 def _is_name_row(asset: Mapping[str, Any]) -> bool:
-    return (asset.get("data_state") in _NAME_STATES
-            or asset.get("protocol") in _NAME_PROTOCOLS)
+    """True for a row about a DNS name rather than a machine.
+
+    A discovery or mail-authentication row is about a name by its state. A
+    DNS or DNSSEC reading is about a name too, unless it names a port: then
+    it is a probe of a machine that answers DNS there, so the row is about
+    that machine and its listener.
+    """
+    if asset.get("data_state") in _NAME_STATES:
+        return True
+    return asset.get("protocol") in _NAME_PROTOCOLS and not _service(asset)
 
 
 _NOT_MACHINE_STATES = ("third-party", "certificate", "key-material")
@@ -1083,6 +1093,8 @@ class _Builder:
         self._sources_by_machine: dict[str, set[tuple[str, str]]] = {}
         self._names: dict[str, str] = {}
         self._installs: dict[tuple[str, str], int] = {}
+        # (machine, listener) -> (strength, valid_at, actor) of the contains edge.
+        self._contains: dict[tuple[str, str], tuple[str, str, Actor]] = {}
         self._release_of: dict[str, str] = {}
         self._environment_said: set[tuple[str, str]] = set()
         self._cert_history: dict[str, str] | None = None
@@ -1365,7 +1377,12 @@ class _Builder:
             self._say(listener, "evidence_depth",
                       str(asset.get("evidence_depth") or depth.classify(asset)),
                       INFERRED, seen, actor)
-            self._edge("contains", key, listener, strength, seen, actor)
+            # One edge per machine and listener, however many rows name it:
+            # the strongest evidence, then the most recent, is the one kept.
+            held = self._contains.get((key, listener))
+            if held is None or ((_STRENGTH_RANK[strength], _invert_date(seen))
+                                < (_STRENGTH_RANK[held[0]], _invert_date(held[1]))):
+                self._contains[(key, listener)] = (strength, seen, actor)
 
     def _software_facts(self, key: str | None, asset: Mapping[str, Any], strength: str,
                         seen: str, actor: Actor) -> None:
@@ -1547,6 +1564,8 @@ class _Builder:
     def fold(self) -> None:
         actor = Actor(kind=COLLECTOR, name="configuration register build",
                       artefact=self.artefact, artefact_digest=self.digest, source="cmdb")
+        for (machine, listener), (strength, seen, seen_by) in sorted(self._contains.items()):
+            self._edge("contains", machine, listener, strength, seen, seen_by)
         for (release, machine), copies in sorted(self._installs.items()):
             self._edge("installed-on", release, machine, MEASURED, self.recorded_at, actor,
                        count=copies, unit=_INSTALLED_ON_UNIT,

@@ -309,6 +309,85 @@ def test_probes_of_one_named_address_make_one_machine_carrying_the_address(tmp_p
     assert {x.value for x in address.assertions} == {"192.0.2.45"}
 
 
+def _classes_by_label(register):
+    found: dict[str, set[str]] = {}
+    for item in register.items.values():
+        found.setdefault(item.label, set()).add(item.item_class)
+    return found
+
+
+def _contains(register):
+    return [(register.items[e.from_key].label, register.items[e.to_key].label)
+            for e in register.edges if e.kind == "contains"]
+
+
+def test_a_dns_reading_is_a_name_and_a_dns_listener_is_a_machines_service(tmp_path):
+    rows = [
+        # A zone file's service record and a DNSSEC reading of a zone's apex
+        # are about names, whatever their data state.
+        cmdbfake._row(name="DNS SRV _http._tcp.example.test", data_state="discovery",
+                      protocol="dns", host="_http._tcp.example.test", source="example_zones",
+                      source_name="Example zone files", verdict="n/a"),
+        cmdbfake._row(name="DNSSEC example.test", protocol="dnssec", host="example.test",
+                      source="example_dnssec", source_name="Example DNSSEC reader"),
+        # A probe of a port that answers DNS is about the machine listening.
+        cmdbfake._row(name="dns ns-01", protocol="dns", host="ns-01.example.test", port="53",
+                      source="example_scan", source_name="Example port scan",
+                      extra={"transport": "udp", "host_type": "server"}),
+    ]
+    register = cmdb.build(cmdbfake.write_observation(tmp_path, assets=rows))
+    assert _classes_by_label(register) == {
+        "_http._tcp.example.test": {"DNS Name"},
+        "example.test": {"DNS Name"},
+        "ns-01.example.test": {"Server"},
+        "ns-01.example.test 53/udp": {"Network Service"}}
+    assert _contains(register) == [("ns-01.example.test", "ns-01.example.test 53/udp")]
+
+
+@pytest.mark.parametrize("name_first", [True, False])
+def test_a_name_and_a_machine_spelled_alike_are_two_items_in_either_order(tmp_path, name_first):
+    name = cmdbfake._row(name="endpoint web-02.example.test", data_state="discovery",
+                         protocol="tls", host="web-02.example.test", source="ct_dns",
+                         source_name="Certificate transparency", verdict="n/a")
+    probe = cmdbfake._row(name="tls web-02", protocol="tls", host="web-02.example.test",
+                          port="443", source="example_scan", source_name="Example port scan")
+    rows = [name, probe] if name_first else [probe, name]
+    register = cmdb.build(cmdbfake.write_observation(tmp_path, assets=rows))
+    assert _classes_by_label(register) == {
+        "web-02.example.test": {"DNS Name", "Host"},
+        "web-02.example.test 443/tcp": {"Network Service"}}
+    assert _contains(register) == [("web-02.example.test", "web-02.example.test 443/tcp")]
+
+
+def test_a_probe_of_an_address_makes_a_service_on_a_host_at_that_address(tmp_path):
+    rows = [cmdbfake._row(name="http 192.0.2.80", protocol="http", host="192.0.2.80",
+                          port="80", source="example_scan", source_name="Example port scan",
+                          flags=["plaintext:http"])]
+    register = cmdb.build(cmdbfake.write_observation(tmp_path, assets=rows))
+    assert _classes_by_label(register) == {"192.0.2.80": {"Host"},
+                                           "192.0.2.80 80/tcp": {"Network Service"}}
+    assert _contains(register) == [("192.0.2.80", "192.0.2.80 80/tcp")]
+
+
+def test_rows_naming_one_listener_draw_one_contains_edge_with_the_strongest_evidence(tmp_path):
+    rows = [
+        cmdbfake._row(name="hsts web-03", protocol="hsts", host="web-03.example.test",
+                      port="443", source="example_inventory", source_name="Example inventory",
+                      collected_at="2030-01-14", extra={"evidence_strength": "reported"}),
+        cmdbfake._row(name="tls web-03", protocol="tls", host="web-03.example.test",
+                      port="443", source="example_scan", source_name="Example port scan",
+                      collected_at="2030-01-12"),
+        cmdbfake._row(name="tls web-03 again", protocol="tls", host="web-03.example.test",
+                      source="example_scan", source_name="Example port scan",
+                      collected_at="2030-01-13", extra={"service": "443/tcp"}),
+    ]
+    register = cmdb.build(cmdbfake.write_observation(tmp_path, assets=rows))
+    edges = [e for e in register.edges if e.kind == "contains"]
+    assert len(edges) == 1
+    assert (edges[0].evidence_strength, edges[0].valid_at) == (cmdb.MEASURED, "2030-01-13")
+    assert edges[0].actor.name == "Example port scan"
+
+
 def _installed_on(register):
     return {(register.items[e.from_key].label, register.items[e.to_key].label)
             for e in register.edges if e.kind == "installed-on"}

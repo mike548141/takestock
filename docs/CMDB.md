@@ -89,9 +89,23 @@ exist and of which class, then to record what the row says about them.
 | a third-party row naming only a domain (`extra.registrable_domain`) | an **Unattributed Dependency**, keyed on that domain |
 | a certificate | a **Certificate**, keyed on its host |
 | key material | a **Credential**, keyed on its name |
-| a discovered name, a mail-authentication record, or a DNS or DNSSEC reading | a **DNS Name** |
+| a discovered name, a mail-authentication record, or a DNS or DNSSEC reading that names no port | a **DNS Name** |
 | one of those that lists names in `extra.dns_names`, such as the zone-file reader's list of every published name | a **DNS Name** for each listed name |
 | anything else with a host name or a management agent's id | a **machine** |
+
+A name row is about a name, not a machine. A zone's top (`example.test`)
+read for DNSSEC, a service-record name (`_http._tcp.example.test`) and a mail
+domain's published records each describe what a name publishes; no machine
+is called `_http._tcp`. So a row that reads the DNS makes a DNS Name and never
+a Host, whatever its data state. A row whose protocol is `dns` and that
+names a port is different: it is a probe of a machine that answers DNS on
+that port, so it is a machine row and makes a Network Service like any other
+probe.
+
+A name and a machine spelled alike are two items. Names are keyed as names
+and machines as host names, so the DNS Name `web-02.example.test` and the
+Host a probe reached through that name stay apart, whichever row comes
+first. The register does not join them, because `resolves-to` is not drawn.
 
 A machine's class comes from the row's `extra.host_type`:
 
@@ -115,7 +129,24 @@ is" is a finding someone can act on. A later row that does type the machine
 moves it to the matching class.
 
 A machine row that names a port (`extra.service` such as `443/tcp`, or
-`port`) also creates a **Network Service** contained by the machine. A row
+`port` with `extra.transport`, `tcp` when none is given) also creates a
+**Network Service** contained by the machine:
+
+- **A port alone is enough.** A probe that got an answer on a port has
+  measured a listener, whether it wrote the port as `extra.service` or as
+  `port`. A TLS scan, a plain-text scan, an HSTS reading and a mail server's
+  STARTTLS probe all make the listener's service.
+- **A probe of an address makes a service too.** A row whose host is an
+  address, such as `192.0.2.80` on `80/tcp`, makes a **Host** labelled with
+  the address, containing `192.0.2.80 80/tcp`: something answered there,
+  and nothing named or typed the machine behind it.
+- **Several rows naming one listener make one service**, keyed on the host
+  as spelled and the port, and one `contains` edge. A TLS scan and an HSTS
+  reading of `web-03.example.test` on `443/tcp` are one listener. The edge
+  keeps the strongest evidence among the rows, then the most recent, and
+  every row's facts about the service are kept as its assertions.
+
+A row
 that names software also creates a **Software Product** and a **Software
 Release**, and records that the release is installed on the machine.
 
@@ -364,6 +395,8 @@ right kind. These are drawn from an observation:
 | `presents` | DNS Name → Certificate | Does a client connecting here receive that certificate? |
 | `member-of` | machine → Declared Asset Class | Is this item one of that group, without depending on it to exist? |
 
+- `contains` is drawn once per machine and service, however many rows name
+  the service.
 - `installed-on` carries a **count** and its unit, never one item per copy.
 - `presents` drawn from certificate-transparency logs carries a qualifier: a
   logged certificate was issued for the name, which does not show a server
