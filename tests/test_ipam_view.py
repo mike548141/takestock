@@ -131,3 +131,20 @@ def test_an_address_shows_how_it_was_given_out_and_its_vlans():
     page = ipam_view.render(plan)
     assert "Assigned: static (Bench inventory: allocation static)" in page
     assert "VLAN: 20" in page
+
+
+def test_the_page_shows_the_audience_segment_meanings_and_exposure_chains():
+    plan = tiny_plan(audience="network engineers",
+                     segments=[{"site": "lab", "name": "lab-users-20", "vlan": 20, "subnet": None,
+                                "switch": "sw-01", "source": "inv", "meaning": ["Staff devices"]}],
+                     exposure_chains=[{"name": "Public web service", "source": "inv",
+                                       "as_of": "2030-01-01",
+                                       "hops": [{"label": "public address", "address": "203.0.113.5"},
+                                                {"label": "web server", "address": "192.0.2.1",
+                                                 "name": "bench-01"}]}])
+    page = ipam_view.render(plan)
+    assert "Written for network engineers." in page
+    assert "lab-users-20 (Staff devices)" in page
+    assert ("public" in [i for i, _l, _n in sections(page).panels]
+            and "as Bench inventory describes it, 2030-01-01" in page
+            and "<code>192.0.2.1</code> (bench-01)" in page)

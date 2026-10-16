@@ -701,12 +701,94 @@ def _mirror(m: dict, subnets: dict[str, dict], sites: dict) -> dict:
             "right_only": sum(1 for r in rows if r["right"] and not r["left"])}
 
 
+def _segment_codes(cfg: dict) -> dict[str, dict[str, str]]:
+    """The plan file's ``segment_codes``, each as ``{"meaning", "environment"}``."""
+    raw = cfg.get("segment_codes") or {}
+    if not isinstance(raw, dict):
+        raise IpamError("segment_codes must map each code to its meaning")
+    out: dict[str, dict[str, str]] = {}
+    for code, value in raw.items():
+        if isinstance(value, dict):
+            unknown = sorted(set(value) - {"meaning", "environment"})
+            if unknown:
+                raise IpamError(f"segment code {code!r}: unknown keys {', '.join(unknown)}")
+            meaning, env = value.get("meaning"), value.get("environment")
+        else:
+            meaning, env = value, None
+        out[str(code)] = {"meaning": str(meaning or ""), "environment": str(env or "")}
+    return out
+
+
+_SEGMENT_TOKEN = re.compile(r"[-_.\s]+")
+
+
+def segment_meaning(name: str, codes: dict[str, dict[str, str]]) -> tuple[list[str], str, bool]:
+    """What a segment's name says, read with the plan's ``segment_codes``.
+
+    The name is split into parts at hyphens, underscores, dots and spaces, and
+    parts that are only digits (a VLAN number, an address written into the
+    name) are dropped. Each part, or run of up to three parts joined by
+    hyphens, that matches a code (ignoring case, longest first) is replaced by
+    the code's meaning; a code with no meaning is dropped, and a part no code
+    matches is kept as it is. Returns the meanings in name order and the first
+    environment a matched code gives, and whether any code matched.
+    """
+    lookup = {k.lower(): v for k, v in codes.items()}
+    parts = [x for x in _SEGMENT_TOKEN.split(str(name or "")) if x and not x.isdigit()]
+    found: list[str] = []
+    env = ""
+    matched = False
+    i = 0
+    while i < len(parts):
+        for k in (3, 2, 1):
+            key = "-".join(parts[i:i + k]).lower()
+            if len(parts[i:i + k]) == k and key in lookup:
+                if lookup[key]["meaning"]:
+                    found.append(lookup[key]["meaning"])
+                env = env or lookup[key]["environment"]
+                matched = True
+                i += k
+                break
+        else:
+            found.append(parts[i])
+            i += 1
+    return found, env, matched
+
+
+def _exposure_chains(cfg: dict, sources: dict) -> list[dict]:
+    """The plan file's ``exposure_chains``, checked: each names a declared source."""
+    out = []
+    for c in cfg.get("exposure_chains") or []:
+        name = str(c.get("name") or "")
+        sid = str(c.get("source") or "")
+        if not name:
+            raise IpamError("every exposure chain needs a `name:`")
+        if sid not in sources:
+            raise IpamError(f"exposure chain {name!r}: source {sid!r} is not a declared source")
+        hops = []
+        for hop in c.get("hops") or []:
+            addr = str(hop.get("address") or "")
+            try:
+                addr = str(ipaddress.ip_address(addr))
+            except ValueError as exc:
+                raise IpamError(f"exposure chain {name!r}: {addr!r} is not an address") from exc
+            hops.append({"label": str(hop.get("label") or ""), "address": addr,
+                         **({"name": str(hop["name"])} if hop.get("name") else {})})
+        if len(hops) < 2:
+            raise IpamError(f"exposure chain {name!r}: needs at least two hops")
+        out.append({"name": name, "source": sid, "as_of": str(sources[sid].get("as_of") or ""),
+                    "hops": hops})
+    return out
+
+
 def build(cfg: dict, h: Harvest, *, plan_sha256: str = "", built_on: str = "",
           stem: str = "", organisation: str = "") -> dict:
     """The whole plan: sites, subnets with their addresses, segments, mirrors and checks."""
     sources = _sources(cfg)
     sites = _sites(cfg)
     subnets = _curated_subnets(cfg, sites, sources)
+    codes = _segment_codes(cfg)
+    chains = _exposure_chains(cfg, sources)
 
     def site_for(net: ipaddress.IPv4Network | ipaddress.IPv6Network) -> str:
         best, best_len = NO_SITE, -1
@@ -744,6 +826,11 @@ def build(cfg: dict, h: Harvest, *, plan_sha256: str = "", built_on: str = "",
         subnet = str(_net(seg.subnet)) if seg.subnet else None
         row: dict[str, Any] = {"site": seg.site, "name": seg.name, "vlan": seg.vlan,
                                "subnet": subnet, "switch": seg.switch, "source": seg.source}
+        meanings, env, matched = segment_meaning(seg.name, codes) if codes else ([], "", False)
+        if codes:
+            row["meaning"] = meanings
+        if env:
+            row["environment"] = env
         older = sorted({g.source for g in group[1:]} - {seg.source})
         if older:
             row["also_in"] = older
@@ -752,9 +839,14 @@ def build(cfg: dict, h: Harvest, *, plan_sha256: str = "", built_on: str = "",
             continue
         by_subnet_seg[subnet].append(row)
         if subnet not in subnets:
+            said = ", ".join(meanings) if matched else ""
             subnets[subnet] = {"cidr": subnet, "site": seg.site or site_for(_net(subnet)),
-                               "purpose": f"Network segment {seg.name}", "confidence": "declared",
+                               "purpose": f"Network segment {seg.name}"
+                                          + (f": {said}" if said else ""),
+                               "confidence": "declared",
                                "origin": "declared by a source", "evidence": []}
+            if env:
+                subnets[subnet]["environment"] = env
         if seg.source not in subnets[subnet]["evidence"]:
             subnets[subnet]["evidence"].append(seg.source)
 
@@ -851,6 +943,7 @@ def build(cfg: dict, h: Harvest, *, plan_sha256: str = "", built_on: str = "",
         "organisation": organisation,
         "title": str(cfg.get("title") or "IP address plan"),
         "subtitle": str(cfg.get("subtitle") or ""),
+        "audience": str(cfg.get("audience") or ""),
         "summary": [str(p) for p in cfg.get("summary") or []],
         "built_on": built_on or date.today().isoformat(),
         "plan_sha256": plan_sha256,
@@ -859,6 +952,8 @@ def build(cfg: dict, h: Harvest, *, plan_sha256: str = "", built_on: str = "",
         "subnets": [subnets[c] for c in ordered],
         "segments": sorted(segments, key=lambda e: (e["site"], e["vlan"] or 0, e["name"])),
         "mirrors": mirrors,
+        "exposure_chains": chains,
+        "segment_codes": codes,
         "actions": list(cfg.get("actions") or []),
         "checks": _checks(subnets, segments, sources),
         "counts": _counts(subnets, segments, sites, classes),

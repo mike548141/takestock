@@ -80,12 +80,15 @@ workspace's `targets/` beside the target profile. Top-level keys:
 |---|---|
 | `organisation` | `{name: ...}`, used when no target profile sits beside the file |
 | `title`, `subtitle`, `summary` | The page's heading, lead line and opening paragraphs |
+| `audience` | Who the plan is written for, shown under the heading |
 | `sites` | Every site, with its address ranges |
 | `subnets` | Every subnet the organisation knows of, with what it is for |
 | `host_internal_ranges` | Ranges that exist only inside a machine |
 | `sources` | Every export and document to read |
 | `documented_addresses` | Addresses known only from a dated document |
 | `mirrors` | Pairs of sites laid out alike, to compare |
+| `segment_codes` | What the parts of segment names mean |
+| `exposure_chains` | The path a request takes from the internet to a service |
 | `actions` | Follow-up items tied to subnets |
 | `asn_lookup` | Settings for internet-registry lookups |
 
@@ -227,6 +230,48 @@ Two prefixes of the same size are compared position by position: each subnet
 at an offset inside one is paired with the subnet at the same offset in the
 other. A one-sided row is either a real difference or a network no source
 saw at one of the sites.
+
+### Segment codes
+
+```yaml
+segment_codes:
+  lab: {}
+  app-db: {meaning: Application databases}
+  prd: {meaning: production, environment: production}
+  users: Staff devices
+```
+
+Segments a reader reports (see [Plugging in a reader](#plugging-in-a-reader))
+are often named by a convention whose parts mean something. Each code maps
+to a meaning and, optionally, the environment it marks; a plain string is a
+meaning on its own. A segment's name is split at hyphens, underscores, dots
+and spaces, and parts that are only digits (a VLAN number, or an address
+written into the name) are dropped. Each part, or run of up to three parts
+joined by hyphens, that matches a code (ignoring case, longest first) is
+replaced by its meaning. A code with no meaning is dropped, for a part that
+says where a segment is defined rather than what it carries. A part no code
+matches is kept as it is.
+
+With the codes above, a segment named `lab-app-db-prd-110` reads as
+*Application databases, production*, in the `production` environment. When
+any code is declared, every segment carries `meaning`, and a subnet a segment
+declares takes that reading as its purpose and the environment as its own.
+
+### Exposure chains
+
+```yaml
+exposure_chains:
+  - name: Public web service
+    source: service-design
+    hops:
+      - {label: public address, address: 203.0.113.5}
+      - {label: load balancer, address: 192.0.2.10, name: lb-01}
+```
+
+An exposure chain is the path a request takes from the internet to a
+service, hop by hop, as a declared source describes it. Like a documented
+address, it rests on that source and carries its date. Each hop needs a
+`label` and an `address`, and a chain needs at least two hops.
 
 ### Actions
 

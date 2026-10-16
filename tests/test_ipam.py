@@ -465,3 +465,58 @@ def test_the_command_line_builds_the_sample_and_reports_errors(tmp_path, capsys)
     assert (tmp_path / "out" / "example-widgets.html").is_file()
     assert ipam.main([str(SAMPLE), str(tmp_path / "out"), "--exports", str(tmp_path)]) == 2
     assert "missing" in capsys.readouterr().err
+
+
+def test_segment_codes_say_what_a_segment_name_means(tmp_path, clean_registry):
+    def read_switches(src: dict, paths: list[Path], h: Harvest) -> None:
+        h.segments.append(Segment(src["id"], "lab", "lab-app-db-prd-110", 110,
+                                  "192.0.2.128/26", "sw-01"))
+        h.segments.append(Segment(src["id"], "lab", "plain-users", 120, None, "sw-01"))
+
+    ipam.register_reader("switch-export", read_switches)
+    doc = minimal(segment_codes={"lab": {}, "app-db": {"meaning": "Application databases"},
+                                 "PRD": {"meaning": "production", "environment": "production"},
+                                 "users": "Staff devices"},
+                  sources=[{"id": "sw", "kind": "switch-export", "label": "Switch export",
+                            "path": "sw.txt", "as_of": "2030-01-03"}])
+    plan = ipam.build_plan(write_plan(tmp_path, doc, {"sw.txt": ""}), tmp_path / "exports")
+    by_name = {s["name"]: s for s in plan["segments"]}
+    assert by_name["lab-app-db-prd-110"]["meaning"] == ["Application databases", "production"]
+    assert by_name["lab-app-db-prd-110"]["environment"] == "production"
+    assert by_name["plain-users"]["meaning"] == ["plain", "Staff devices"]
+    assert "environment" not in by_name["plain-users"]
+    declared = subnet(plan, "192.0.2.128/26")
+    assert declared["purpose"] == "Network segment lab-app-db-prd-110: Application databases, production"
+    assert declared["environment"] == "production"
+    assert plan["segment_codes"]["users"] == {"meaning": "Staff devices", "environment": ""}
+
+
+def test_without_segment_codes_a_segment_carries_no_meaning(tmp_path, clean_registry):
+    def read_switches(src: dict, paths: list[Path], h: Harvest) -> None:
+        h.segments.append(Segment(src["id"], "lab", "users", 10, "192.0.2.128/26", "sw-01"))
+
+    ipam.register_reader("switch-export", read_switches)
+    doc = minimal(sources=[{"id": "sw", "kind": "switch-export", "path": "sw.txt"}])
+    plan = ipam.build_plan(write_plan(tmp_path, doc, {"sw.txt": ""}), tmp_path / "exports")
+    assert "meaning" not in plan["segments"][0]
+    assert subnet(plan, "192.0.2.128/26")["purpose"] == "Network segment users"
+
+
+def test_an_exposure_chain_names_a_declared_source_and_real_addresses(tmp_path):
+    chain = {"name": "Public web service", "source": "design",
+             "hops": [{"label": "public address", "address": "203.0.113.5"},
+                      {"label": "load balancer", "address": "192.0.2.10", "name": "lb-01"}]}
+    doc = minimal(audience="Network engineers", exposure_chains=[chain])
+    doc["sources"].append({"id": "design", "kind": "document", "label": "Service design",
+                           "as_of": "2030-01-04"})
+    plan = ipam.build_plan(write_plan(tmp_path, doc, {"inv.csv": "ip,host\n"}), tmp_path / "exports")
+    assert plan["audience"] == "Network engineers"
+    (got,) = plan["exposure_chains"]
+    assert got["as_of"] == "2030-01-04" and got["hops"][1] == {
+        "label": "load balancer", "address": "192.0.2.10", "name": "lb-01"}
+    for bad, why in (({**chain, "source": "nowhere"}, "not a declared source"),
+                     ({**chain, "hops": chain["hops"][:1]}, "at least two hops"),
+                     ({**chain, "hops": [{"address": "lb"}, chain["hops"][0]]}, "not an address")):
+        doc["exposure_chains"] = [bad]
+        with pytest.raises(IpamError, match=why):
+            ipam.build_plan(write_plan(tmp_path, doc, {"inv.csv": "ip,host\n"}), tmp_path / "exports")

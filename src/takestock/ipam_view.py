@@ -256,7 +256,7 @@ class _View:
         if self.plan.get("mirrors"):
             out.append(("mirrors", "Mirrored sites", len(self.plan["mirrors"]), self.mirrors_section()))
         public = [s for s in self.subnets if s.get("scope") == "public"]
-        if public:
+        if public or self.plan.get("exposure_chains"):
             out.append(("public", "Public ranges", len(public), self.public_section(public)))
         out.append(("checks", "To look at", self.check_total(), self.checks_section()))
         aside = sum(sum(v.values()) for v in (self.plan.get("set_aside") or {}).values())
@@ -269,6 +269,8 @@ class _View:
     def overview(self) -> str:
         c = self.counts
         parts = [f"<p>{esc(p)}</p>" for p in self.plan.get("summary") or []]
+        if self.plan.get("audience"):
+            parts.insert(0, f'<p class="audience">Written for {esc(self.plan["audience"])}.</p>')
         kinds = c.get("sites_by_kind") or {}
         site_text = _plural(int(c.get("sites", 0)), "site")
         if kinds:
@@ -410,7 +412,10 @@ class _View:
     def vlan_rows(self) -> list[tuple]:
         rows: list[tuple] = []
         for seg in self.plan.get("segments") or []:
-            rows.append((seg["site"], seg.get("vlan"), seg.get("subnet") or "", seg["name"],
+            name = seg["name"]
+            if seg.get("meaning"):
+                name += " (" + ", ".join(seg["meaning"]) + ")"
+            rows.append((seg["site"], seg.get("vlan"), seg.get("subnet") or "", name,
                          seg.get("switch") or "", self.label(seg["source"])))
         for s in self.subnets:
             if s.get("vlan") is not None:
@@ -469,8 +474,22 @@ class _View:
                         + _td(reg.get("looked_up")) + "</tr>")
         note = ("" if any(s.get("internet_registry") for s in public) else
                 '<p class="muted">No internet-registry lookups are saved for these ranges.</p>')
-        return note + _table(["Range", "Site", "Purpose", "Addresses", "Announced by", "AS name",
-                              "Registered to", "Looked up"], rows, num=frozenset({3}))
+        return (note + _table(["Range", "Site", "Purpose", "Addresses", "Announced by", "AS name",
+                               "Registered to", "Looked up"], rows, num=frozenset({3}))
+                + self.chains_section())
+
+    def chains_section(self) -> str:
+        out = []
+        for c in self.plan.get("exposure_chains") or []:
+            hops = "".join(
+                "<li>" + esc(h.get("label") or "") + f": <code>{esc(h['address'])}</code>"
+                + (f" ({esc(h['name'])})" if h.get("name") else "") + "</li>"
+                for h in c.get("hops") or [])
+            when = f", {c['as_of']}" if c.get("as_of") else ""
+            out.append(f"<h3>{esc(c['name'])}</h3><p>The path a request takes from the internet, "
+                       f"as {esc(self.label(c['source']))} describes it{esc(when)}.</p>"
+                       f"<ol>{hops}</ol>")
+        return "".join(out)
 
     def checks_section(self) -> str:
         out = []

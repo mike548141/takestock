@@ -16,6 +16,11 @@ command line or a file format, and its entry says how.
   `dynamic`, or `disputed` when sources disagree) and on what basis, from an
   allocation or DHCP setting a reader reports, and which VLANs it was seen
   on. The `csv` reader takes optional `assignment` and `vlan` columns.
+- **IP address plan**: a plan file can declare `segment_codes`, the meanings
+  of the parts of segment names, so each segment says what it carries and a
+  subnet a segment declares takes that as its purpose; `exposure_chains`, the
+  hops from the internet to a service as a declared source describes them;
+  and `audience`, who the plan is written for.
 
 ## [0.1.0] — 2026-10-17
 
