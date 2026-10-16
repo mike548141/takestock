@@ -359,6 +359,10 @@ class _View:
             flags.append(f"Not in the newer {a['only_in_superseded']}")
         if a.get("site_stated"):
             flags.append("Source says site: " + ", ".join(a["site_stated"]))
+        if a.get("assignment"):
+            flags.append(f"Assigned: {a['assignment']} ({'; '.join(a.get('assignment_basis') or [])})")
+        if a.get("vlans"):
+            flags.append("VLAN: " + ", ".join(str(v) for v in a["vlans"]))
         for sg in a.get("sightings") or []:
             for key, word in (("note", ""), ("device_kind", "Kind: "), ("record", "DNS record: ")):
                 if sg.get(key):

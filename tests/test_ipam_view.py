@@ -122,3 +122,12 @@ def test_the_page_uses_the_shared_shell_and_no_colour_of_its_own(sample):
     page = ipam_view.render(sample)
     assert page.startswith("<!doctype html>")
     assert not re.search(r"#[0-9a-fA-F]{3,6}\b", ipam_view._EXTRA_CSS)
+
+
+def test_an_address_shows_how_it_was_given_out_and_its_vlans():
+    plan = tiny_plan()
+    plan["subnets"][0]["addresses"][0].update(
+        assignment="static", assignment_basis=["Bench inventory: allocation static"], vlans=[20])
+    page = ipam_view.render(plan)
+    assert "Assigned: static (Bench inventory: allocation static)" in page
+    assert "VLAN: 20" in page

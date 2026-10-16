@@ -245,11 +245,53 @@ def _plural(n: int, one: str, many: str = "") -> str:
     return f"{n} {one if n == 1 else (many or one + 's')}"
 
 
+def _vlan(value: Any) -> int | None:
+    """A VLAN number from a sighting's detail (a number or its text), or None."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    text = str(value or "").strip()
+    return int(text) if text.isdigit() else None
+
+
+_TRUE, _FALSE = {"true", "yes", "on", "1"}, {"false", "no", "off", "0"}
+
+
+def _assignment(sgs: list[Sighting], sources: dict) -> dict[str, Any]:
+    """How an address was given out, as its sources state it.
+
+    A reader states it in a sighting's detail, in either of two ways:
+    ``allocation`` (``static`` or ``dynamic``, as a cloud platform's interface
+    list says) or ``dhcp`` (true or false, as a host's interface settings
+    say: DHCP off means a fixed address). Sources that agree give that value;
+    sources that disagree give ``disputed``. Each statement is kept as the
+    basis, naming its source.
+    """
+    stated: set[str] = set()
+    basis: set[str] = set()
+    for sg in sgs:
+        label = str(sources.get(sg.source, {}).get("label") or sg.source)
+        alloc = str(sg.detail.get("allocation") or "").strip().lower()
+        dhcp = str(sg.detail.get("dhcp", "")).strip().lower()
+        if alloc in ("static", "dynamic"):
+            stated.add(alloc)
+            basis.add(f"{label}: allocation {alloc}")
+        elif dhcp in _FALSE or dhcp in _TRUE:
+            value = "static" if dhcp in _FALSE else "dynamic"
+            stated.add(value)
+            basis.add(f"{label}: DHCP {'off' if value == 'static' else 'on'}")
+    if not stated:
+        return {}
+    return {"assignment": stated.pop() if len(stated) == 1 else "disputed",
+            "assignment_basis": sorted(basis)}
+
+
 # --- readers -----------------------------------------------------------------
 
-CSV_COLUMN_KEYS = ("ip", "name", "date", "mac", "site", "kind")
+CSV_COLUMN_KEYS = ("ip", "name", "date", "mac", "site", "kind", "assignment", "vlan")
 # A mapped column's key in a sighting's detail, where it differs from the key.
-_CSV_DETAIL_KEY = {"site": "site_stated", "kind": "device_kind"}
+_CSV_DETAIL_KEY = {"site": "site_stated", "kind": "device_kind", "assignment": "allocation"}
 
 
 def read_csv(src: dict, paths: list[Path], h: Harvest) -> None:
@@ -257,7 +299,9 @@ def read_csv(src: dict, paths: list[Path], h: Harvest) -> None:
 
     ``columns`` maps the plan's field names to the file's header names; ``ip``
     is required and ``name``, ``date``, ``mac``, ``site`` and ``kind`` are
-    optional. An address cell may hold several addresses separated by spaces,
+    optional, as are ``assignment`` (how the address was given: ``static`` or
+    ``dynamic``) and ``vlan`` (the VLAN the address was seen on). An address
+    cell may hold several addresses separated by spaces,
     commas, semicolons or bars. ``delimiter`` sets the field separator
     (default ``,``) and ``name_is`` says what the name column identifies
     (default ``machine``).
@@ -285,8 +329,9 @@ def read_csv(src: dict, paths: list[Path], h: Harvest) -> None:
                 rows += 1
                 def cell(key: str, r: dict = row) -> str:
                     return str(r.get(str(cols[key])) or "").strip() if key in cols else ""
-                detail = {_CSV_DETAIL_KEY.get(k, k): cell(k) for k in ("mac", "site", "kind")
-                          if cell(k)}
+                detail: dict[str, Any] = {
+                    _CSV_DETAIL_KEY.get(k, k): cell(k)
+                    for k in ("mac", "site", "kind", "assignment", "vlan") if cell(k)}
                 if len(paths) > 1:
                     detail["file"] = path.name
                 ips, bad = _ips(cell("ip"))
@@ -859,6 +904,10 @@ def _addresses(sightings: list[Sighting], sub: dict, sources: dict, sites: dict,
                            "observed": sg.seen or sources.get(sg.source, {}).get("as_of", ""),
                            **sg.detail} for sg in sgs],
         }
+        entry.update(_assignment(sgs, sources))
+        vlans = sorted({v for sg in sgs if (v := _vlan(sg.detail.get("vlan"))) is not None})
+        if vlans:
+            entry["vlans"] = vlans
         if len(current) > 1:
             entry["name_conflict"] = current
         if previous:

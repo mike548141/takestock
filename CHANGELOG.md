@@ -12,6 +12,10 @@ command line or a file format, and its entry says how.
 - **IP address plan**: a source can set `name_is: history` for an export that
   lists every address a device has held. Its names are kept on each address
   as past holders and never count as a second machine.
+- **IP address plan**: each address says how it was given out (`static`,
+  `dynamic`, or `disputed` when sources disagree) and on what basis, from an
+  allocation or DHCP setting a reader reports, and which VLANs it was seen
+  on. The `csv` reader takes optional `assignment` and `vlan` columns.
 
 ## [0.1.0] — 2026-10-17
 

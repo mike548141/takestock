@@ -327,6 +327,32 @@ def test_an_address_history_names_past_holders_without_a_conflict(tmp_path):
     assert only_past["machine_names"] == [] and only_past["evidence"] == ["observed"]
 
 
+def test_each_address_carries_how_it_was_given_out_and_its_vlans(tmp_path, clean_registry):
+    def read_hosts(src: dict, paths: list[Path], h: Harvest) -> None:
+        h.sightings.append(Sighting("192.0.2.3", "hv-01", src["id"], "", {"dhcp": False, "vlan": 30}))
+        h.sightings.append(Sighting("192.0.2.4", "hv-02", src["id"], "", {"dhcp": "true"}))
+
+    ipam.register_reader("host-settings", read_hosts)
+    doc = minimal()
+    doc["sources"][0]["columns"].update(assignment="alloc", vlan="vlan")
+    doc["sources"].append({"id": "hosts", "kind": "host-settings", "label": "Host settings",
+                           "path": "hosts.txt"})
+    text = ("ip,host,alloc,vlan\n192.0.2.1,bench-01,Static,20\n192.0.2.2,bench-02,,\n"
+            "192.0.2.4,hv-02,Static,\n")
+    plan = ipam.build_plan(write_plan(tmp_path, doc, {"inv.csv": text, "hosts.txt": ""}),
+                           tmp_path / "exports")
+    one = address(plan, "192.0.2.1")
+    assert (one["assignment"], one["assignment_basis"], one["vlans"]) == (
+        "static", ["Inventory: allocation static"], [20])
+    assert "assignment" not in address(plan, "192.0.2.2") and "vlans" not in address(plan, "192.0.2.2")
+    hv = address(plan, "192.0.2.3")
+    assert (hv["assignment"], hv["assignment_basis"], hv["vlans"]) == (
+        "static", ["Host settings: DHCP off"], [30])
+    disputed = address(plan, "192.0.2.4")
+    assert disputed["assignment"] == "disputed"
+    assert disputed["assignment_basis"] == ["Host settings: DHCP on", "Inventory: allocation static"]
+
+
 def test_a_mirror_needs_two_prefixes_of_one_size(tmp_path):
     doc = minimal(mirrors=[{"name": "m", "left": {"prefix": "192.0.2.0/24"},
                             "right": {"prefix": "198.51.100.0/25"}}])

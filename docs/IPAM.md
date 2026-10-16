@@ -268,6 +268,22 @@ a name or document vouched for it, and any of these flags:
 | only in a superseded source | every source that saw it in use has been replaced, and the newer one no longer reports it |
 | source says another site | the source's own site column names a different site |
 
+### How an address was given out
+
+An address also carries `assignment` (`static`, `dynamic`, or `disputed`
+when its sources disagree) and `assignment_basis` (each statement, naming
+its source) when a source says how it was given out. A reader says so in a
+sighting's detail, in either of two ways:
+
+- `allocation`: `static` or `dynamic`, as a cloud platform's list of network
+  interfaces states it (the `csv` reader's `assignment` column lands here);
+- `dhcp`: true or false, as a host's interface settings state it. DHCP off
+  means a fixed address.
+
+An address seen on a VLAN carries `vlans`, from a `vlan` number in a
+sighting's detail. A subnet's own VLANs come from the plan file and from
+segments, never from its addresses.
+
 ## Evidence classes
 
 | Class | Shown as | Means |
@@ -297,6 +313,8 @@ names to the file's header names:
 | `name` | no | The name the sighting carries |
 | `date` | no | The date the address was seen (the `YYYY-MM-DD` the value starts with) |
 | `mac`, `site`, `kind` | no | Kept with the sighting; `site` is compared with the subnet's site |
+| `assignment` | no | How the address was given out, `static` or `dynamic` (see [How an address was given out](#how-an-address-was-given-out)) |
+| `vlan` | no | The VLAN the address was seen on |
 
 A header the mapping names but the file lacks stops the build. `delimiter`
 sets the field separator (default `,`).
@@ -326,6 +344,9 @@ A reader is a function `fn(source, paths, harvest)`:
 - `paths` are its resolved input paths, all of which exist;
 - `harvest` is a `takestock.ipam.Harvest` to add to:
   - `harvest.sightings.append(Sighting(ip, name, source["id"], seen, detail, name_is))`;
+    `detail` may carry `allocation`, `dhcp` and `vlan`, which the plan reads
+    (see [How an address was given out](#how-an-address-was-given-out)), and
+    anything else, which is kept with the sighting;
   - `harvest.segments.append(Segment(source["id"], site, name, vlan, subnet, switch))`
     for a layer-2 network (a VLAN or switch port group) the source reports;
   - `harvest.declared[cidr] = {"source": source["id"], "name": ..., "site": ...}`
