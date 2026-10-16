@@ -4,17 +4,23 @@
 # the organisation that operates it, so a reader sees "Microsoft" rather than a list of service
 # names. The lookup is by suffix: an entry covers the domain and every name beneath it.
 #
-# Where the entries come from: providers of cloud, software-as-a-service, content delivery,
-# identity, security, certificate and developer services, chosen for their global market
-# presence. Each domain is one the provider documents as its own, on its website or in its
-# published network requirements. Nothing here records who uses a provider. A domain missing
-# from the table is a limit of the table, never a fact about the domain.
+# How rows are chosen. The providers are large platforms of cloud, software-as-a-service,
+# collaboration, content delivery, identity, security, certificate and developer services, and
+# the projects that publish operating systems and software packages, chosen for global market
+# presence. Rows reach the table in two ways: for breadth, from the providers' own lists of
+# their service domains; and when a contributor needed a provider's domain named.
+#
+# How rows are sourced. Either way, a row is admitted only when the provider documents the
+# domain as its own, on its website or in its published network requirements (its list of
+# addresses to allow through a firewall or proxy). Nothing here records who uses a provider.
+# A domain missing from the table is a limit of the table, never a fact about the domain.
 #
 # Columns:
 #   domain    the registered domain, lower case, no leading dot
 #   vendor    the company that operates it
 #   category  one of: cloud, saas, collaboration, cdn, identity, security, pki, devtools,
-#             infrastructure (operating system updates, DNS, email delivery, registrars)
+#             infrastructure (operating system updates and package archives, DNS, email
+#             delivery, registrars)
 #   notes     what the domain is used for
 #
 # To extend it: add one row per registered domain, keep the domain column unique, and add only
@@ -111,6 +117,34 @@ cloudflare.net,Cloudflare,cdn,Cloudflare edge network
 cloudflare-dns.com,Cloudflare,infrastructure,Cloudflare public DNS resolver
 workers.dev,Cloudflare,cloud,Cloudflare Workers hosting
 pages.dev,Cloudflare,cloud,Cloudflare Pages hosting
+amazonworkspaces.com,Amazon Web Services,cloud,Amazon WorkSpaces client registration and connectivity
+a2z.com,Amazon Web Services,cloud,Amazon WorkSpaces DCV streaming gateways
+amplifyapp.com,Amazon Web Services,cloud,AWS Amplify hosted web apps
+on.aws,Amazon Web Services,cloud,AWS Lambda function URLs
+api.aws,Amazon Web Services,cloud,AWS dual-stack (IPv6) service API endpoints
+awsglobalaccelerator.com,Amazon Web Services,cloud,AWS Global Accelerator default DNS names
+apple-cloudkit.com,Apple,cloud,iCloud services (CloudKit)
+apple-livephotoskit.com,Apple,cloud,iCloud services (Live Photos)
+apzones.com,Apple,cloud,iCloud services
+icloud-content.com,Apple,cloud,iCloud content storage and delivery
+run.app,Google,cloud,Google Cloud Run services
+cloudfunctions.net,Google,cloud,Google Cloud Functions
+gke.goog,Google,cloud,Google Kubernetes Engine endpoints
+customer-oci.com,Oracle,cloud,Oracle Cloud Infrastructure dedicated (namespace) endpoints and Console
+appdomain.cloud,IBM,cloud,IBM Cloud default app and cluster domains
+ondemand.com,SAP,cloud,SAP Business Technology Platform (BTP) regions and APIs
+herokuapp.com,Salesforce,cloud,Heroku app hosting
+herokudns.com,Salesforce,cloud,Heroku DNS targets for custom domains
+cloudhub.io,Salesforce,cloud,MuleSoft CloudHub app endpoints
+snowflakecomputing.com,Snowflake,cloud,Snowflake account and service endpoints
+snowflake.app,Snowflake,cloud,Snowflake hosted app services
+databricks.com,Databricks,cloud,Databricks control plane and web app
+mongodb.net,MongoDB,cloud,MongoDB Atlas database clusters
+mongodb.com,MongoDB,cloud,MongoDB Atlas UI and downloads
+vercel.com,Vercel,cloud,Vercel dashboard and REST API
+vercel.app,Vercel,cloud,Vercel-hosted deployment sites
+netlify.com,Netlify,cloud,Netlify dashboard and services
+netlify.app,Netlify,cloud,Netlify-hosted sites
 akamai.com,Akamai,cdn,Corporate site
 akamai.net,Akamai,cdn,Akamai edge network
 akamaiedge.net,Akamai,cdn,Akamai edge network
@@ -155,6 +189,12 @@ myworkday.com,Workday,saas,Workday tenant sign-in
 sap.com,SAP,saas,Corporate site and SAP services
 adobe.com,Adobe,saas,Adobe Creative Cloud and Document Cloud
 adobelogin.com,Adobe,identity,Adobe sign-in
+awsapps.com,Amazon Web Services,identity,"AWS access portal and directory login pages (IAM Identity Center, WorkSpaces)"
+amazoncognito.com,Amazon Web Services,identity,Amazon Cognito hosted sign-in (managed login) domains
+oktapreview.com,Okta,identity,Okta preview (sandbox) organisations
+jumpcloud.com,JumpCloud,identity,JumpCloud console and agent services
+yubico.com,Yubico,identity,YubiCloud OTP validation service
+zslogin.net,Zscaler,identity,Zscaler authentication service (ZIdentity)
 adobe.io,Adobe,saas,Adobe service interfaces
 acrobat.com,Adobe,saas,Adobe Acrobat and Document Cloud services
 adobecces.com,Adobe,saas,Creative Cloud services
@@ -164,7 +204,31 @@ typekit.net,Adobe,cdn,Adobe Fonts delivery
 dropbox.com,Dropbox,collaboration,Dropbox
 dropboxapi.com,Dropbox,collaboration,Dropbox API
 box.com,Box,collaboration,Box
+googledrive.com,Google,collaboration,Google Drive
+googlegroups.com,Google,collaboration,Google Groups and Sites
+turns.goog,Google,collaboration,Google Meet media relay (TURN)
+zoomapp.cloud,Zoom,collaboration,Zoom Apps built by Zoom
+zoomstatus.com,Zoom,collaboration,"Zoom service status, support and community"
+wbx2.com,Cisco,collaboration,Webex micro-services
+ciscospark.com,Cisco,collaboration,Webex micro-services
+webexapis.com,Cisco,collaboration,Webex micro-services and APIs
+webexcontent.com,Cisco,collaboration,Webex storage for user content and logs
+slido.com,Cisco,collaboration,Slido audience interaction (Webex Webcasts)
+miro.com,Miro,collaboration,Miro whiteboard service
+mirostatic.com,Miro,collaboration,Miro static assets
+miro-apps.com,Miro,collaboration,Miro apps
+realtimeboard.com,Miro,collaboration,Miro legacy domain (formerly RealtimeBoard)
+notion.com,Notion,collaboration,Notion workspace and API
+notion.site,Notion,collaboration,Published Notion pages
+notionusercontent.com,Notion,collaboration,Notion user-uploaded content
+notion-static.com,Notion,collaboration,Notion static assets
+smartsheet.com,Smartsheet,collaboration,Smartsheet service and API
+ringcentral.com,RingCentral,collaboration,RingCentral application services
+ringcentral.biz,RingCentral,collaboration,RingCentral discovery and integration APIs
+glip.com,RingCentral,collaboration,RingCentral messaging service API
+slack-files.com,Salesforce,collaboration,Slack file thumbnails and public file links
 boxcdn.net,Box,cdn,Box static content
+mongodb-cdn.com,MongoDB,cdn,MongoDB Atlas UI CDN
 docusign.com,Docusign,saas,Corporate site
 docusign.net,Docusign,saas,Docusign eSignature service
 zendesk.com,Zendesk,saas,Zendesk
@@ -191,6 +255,29 @@ eset.com,ESET,security,Corporate site and ESET services
 kaspersky.com,Kaspersky,security,Corporate site and Kaspersky services
 trellix.com,Trellix,security,Corporate site and Trellix services
 broadcom.com,Broadcom,security,Corporate site and support portal for Symantec and VMware products
+securegateway.goog,Google,security,Chrome Enterprise Premium secure gateway
+cloudproxy.app,Google,security,Google Cloud and Chrome Enterprise ingress proxy
+1password.com,1Password,security,1Password core service
+1passwordservices.com,1Password,security,1Password supporting services
+1passwordusercontent.com,1Password,security,"1Password user content (files, profile pictures)"
+1infra.net,1Password,security,1Password infrastructure and app updates
+agilebits.com,1Password,security,1Password app updates and item icons
+bitwarden.com,Bitwarden,security,Bitwarden web vault and service endpoints
+bitwarden.net,Bitwarden,security,Bitwarden CDN and icons service
+wandera.com,Jamf,security,Jamf Trust app and Jamf Security Cloud (formerly Wandera)
+zscalerone.net,Zscaler,security,Zscaler Internet Access cloud (zscalerone)
+zscalertwo.net,Zscaler,security,Zscaler Internet Access cloud (zscalertwo)
+zscalerthree.net,Zscaler,security,Zscaler Internet Access cloud (zscalerthree)
+zscloud.net,Zscaler,security,Zscaler Internet Access cloud (zscloud)
+zpath.net,Zscaler,security,Zscaler Private Access connector and broker endpoints
+zpath.vip,Zscaler,security,Zscaler Private Access connector and broker endpoints
+gpcloudservice.com,Palo Alto Networks,security,Prisma Access GlobalProtect portal and gateways
+umbrella.com,Cisco,security,"Cisco Umbrella dashboard, login and service"
+forticloud.com,Fortinet,security,FortiClient Cloud endpoint management
+tenable.com,Tenable,security,Tenable Vulnerability Management cloud and sensor link
+qualys.com,Qualys,security,Qualys cloud platform and scanner/agent endpoints
+rapid7.com,Rapid7,security,Rapid7 Insight Agent and platform endpoints
+snyk.io,Snyk,security,Snyk web app and API
 vmware.com,Broadcom,infrastructure,VMware product downloads and documentation
 citrix.com,Cloud Software Group,saas,Citrix
 digicert.com,DigiCert,pki,DigiCert certificate authority
@@ -201,6 +288,15 @@ usertrust.com,Sectigo,pki,Sectigo certificate status endpoints
 globalsign.com,GlobalSign,pki,GlobalSign certificate authority
 entrust.net,Entrust,pki,Entrust certificate authority
 identrust.com,IdenTrust,pki,IdenTrust certificate authority
+comodoca.com,Sectigo,pki,Sectigo legacy Comodo OCSP and CRL
+geotrust.com,DigiCert,pki,DigiCert GeoTrust OCSP and CRL
+thawte.com,DigiCert,pki,DigiCert Thawte OCSP and CRL
+rapidssl.com,DigiCert,pki,DigiCert RapidSSL OCSP and CRL
+digitalcertvalidation.com,DigiCert,pki,DigiCert OCSP and CRL
+omniroot.com,DigiCert,pki,DigiCert legacy Omniroot OCSP
+public-trust.com,DigiCert,pki,DigiCert legacy CRL distribution
+quovadisglobal.com,DigiCert,pki,DigiCert QuoVadis OCSP
+ssl.com,SSL.com,pki,SSL.com certificate repository and CA services
 godaddy.com,GoDaddy,infrastructure,Domain registrar and certificate authority
 domaincontrol.com,GoDaddy,infrastructure,GoDaddy DNS hosting
 datadoghq.com,Datadog,saas,Datadog monitoring
@@ -209,6 +305,51 @@ splunkcloud.com,Splunk,saas,Splunk Cloud Platform
 sumologic.com,Sumo Logic,saas,Sumo Logic
 elastic.co,Elastic,saas,Corporate site and Elastic Cloud
 pagerduty.com,PagerDuty,saas,PagerDuty
+connect.aws,Amazon Web Services,saas,Amazon Connect contact centre instances
+apple-mapkit.com,Apple,saas,Apple MapKit (device location in Managed Lost Mode)
+usercontent.goog,Google,saas,Google Workspace user content
+netsuite.com,Oracle,saas,Oracle NetSuite ERP
+concursolutions.com,SAP,saas,SAP Concur APIs
+ariba.com,SAP,saas,SAP Ariba APIs and developer portal
+successfactors.com,SAP,saas,SAP SuccessFactors API servers
+sapsf.com,SAP,saas,SAP SuccessFactors API servers
+cloud.sap,SAP,saas,SAP cloud services
+forceusercontent.com,Salesforce,saas,Salesforce maps and location services
+force-user-content.com,Salesforce,saas,Salesforce user content storage
+salesforce.app,Salesforce,saas,Salesforce hosted multi-framework web apps
+salesforceliveagent.com,Salesforce,saas,"Salesforce Chat, Omni-Channel and SOS"
+salesforce-experience.com,Salesforce,saas,Salesforce Experience Builder
+salesforce-scrt.com,Salesforce,saas,Salesforce Omni-Channel voice and messaging
+salesforce-setup.com,Salesforce,saas,Salesforce Setup pages
+salesforce-sites.com,Salesforce,saas,Salesforce Sites
+site.com,Salesforce,saas,Salesforce Experience Cloud sites
+documentforce.com,Salesforce,saas,Salesforce file content (orgs without enhanced domains)
+visualforce.com,Salesforce,saas,Salesforce Visualforce pages (orgs without enhanced domains)
+sfdcstatic.com,Salesforce,saas,Salesforce login page static content
+tableau.com,Salesforce,saas,Tableau Cloud and Tableau Bridge
+dropboxstatic.com,Dropbox,saas,Dropbox static assets
+dropboxusercontent.com,Dropbox,saas,Dropbox user content and shared-link downloads
+getdropbox.com,Dropbox,saas,Dropbox alternate web domain
+docsend.com,Dropbox,saas,DocSend document sharing
+hellosign.com,Dropbox,saas,Dropbox Sign (formerly HelloSign) e-signature
+box.net,Box,saas,Box services
+boxcloud.com,Box,saas,Box file upload and download
+boxenterprise.net,Box,saas,Box for Microsoft Teams
+jira.com,Atlassian,saas,Jira and Confluence
+ss-inf.net,Atlassian,saas,Atlassian shared infrastructure for all apps
+jamfcloud.com,Jamf,saas,"Jamf cloud services, including Jamf Security Cloud"
+jamf.com,Jamf,saas,Jamf Account and API gateway
+jamf.io,Jamf,saas,Jamf web front-end CDN
+figma.com,Figma,saas,Figma design service
+figma.site,Figma,saas,Figma Sites and Figma Make hosting
+figma.app,Figma,saas,Figma app services
+canva.com,Canva,saas,Canva design service
+canva-apps.com,Canva,saas,Canva Apps
+canvacode.com,Canva,saas,Canva AI features
+canva.ai,Canva,saas,Canva AI features
+zdxcloud.net,Zscaler,saas,Zscaler Digital Experience (ZDX) cloud
+dynatrace.com,Dynatrace,saas,Dynatrace SaaS ingest for OneAgent and ActiveGate
+grafana.net,Grafana Labs,saas,Grafana Cloud hosted stacks and services
 sentry.io,Sentry,devtools,Sentry error monitoring
 docker.com,Docker,devtools,Docker
 docker.io,Docker,devtools,Docker Hub registry
@@ -221,6 +362,31 @@ rubygems.org,Ruby Central,devtools,RubyGems package registry
 maven.org,Sonatype,devtools,Maven Central repository
 crates.io,Rust Foundation,devtools,Rust package registry
 hashicorp.com,HashiCorp,devtools,HashiCorp releases and services
+gcr.io,Google,devtools,Google Container Registry
+pkg.dev,Google,devtools,Google Artifact Registry
+ocir.io,Oracle,devtools,Oracle Cloud Infrastructure Container Registry
+github.dev,GitHub,devtools,GitHub web editor and Codespaces
+githubassets.com,GitHub,devtools,GitHub static web assets
+githubcopilot.com,GitHub,devtools,GitHub Copilot service
+githubapp.com,GitHub,devtools,GitHub Actions hosted compute and attestation services
+atlassian-dev.net,Atlassian,devtools,Atlassian Marketplace and custom (Forge) apps
+atlassian-3p.com,Atlassian,devtools,Third-party assets for Atlassian Forge apps
+gitlab-static.net,GitLab,devtools,GitLab.com static assets and registry CDN
+gitlab.io,GitLab,devtools,GitLab Pages sites
+gitlab.net,GitLab,devtools,GitLab.com services
+jfrog.io,JFrog,devtools,"JFrog releases, charts and entitlement services"
+nodejs.org,OpenJS Foundation,devtools,Node.js release downloads
+golang.org,Google,devtools,Go module proxy and checksum database
+packagist.org,Packagist,devtools,PHP Composer package repository
+anaconda.org,Anaconda,devtools,conda package channels
+anaconda.com,Anaconda,devtools,Anaconda default package repository
+anaconda.cloud,Anaconda,devtools,Anaconda package repository
+brew.sh,Homebrew,devtools,Homebrew formulae API
+chocolatey.org,Chocolatey Software,devtools,Chocolatey community package repository
+terraform.io,HashiCorp,devtools,Terraform public registry
+gradle.org,Gradle,devtools,Gradle distributions and plugin portal
+k8s.io,Cloud Native Computing Foundation,devtools,Kubernetes package repositories
+helm.sh,Cloud Native Computing Foundation,devtools,Helm binary downloads
 redhat.com,Red Hat,infrastructure,Red Hat customer portal and updates
 ubuntu.com,Canonical,infrastructure,Ubuntu package archives and services
 canonical.com,Canonical,infrastructure,Corporate site and Canonical services
@@ -231,3 +397,17 @@ mozilla.org,Mozilla,infrastructure,Firefox updates and services
 mozilla.com,Mozilla,infrastructure,Firefox updates and services
 mozilla.net,Mozilla,infrastructure,Firefox updates and services
 firefox.com,Mozilla,infrastructure,Firefox accounts and services
+apple-dns.net,Apple,infrastructure,Apple DNS for iCloud services
+cdn-apple.com,Apple,infrastructure,Apple software updates and Apple ID content delivery
+gvt2.com,Google,infrastructure,Chrome and ChromeOS updates and downloads
+gvt3.com,Google,infrastructure,Chrome and ChromeOS updates and downloads
+dropbox-dns.com,Dropbox,infrastructure,Dropbox DNS
+vercel-dns.com,Vercel,infrastructure,Vercel DNS nameservers
+fedoraproject.org,Fedora Project,infrastructure,Fedora package mirrors and downloads
+centos.org,CentOS Project,infrastructure,CentOS Stream mirrors and downloads
+rockylinux.org,Rocky Enterprise Software Foundation,infrastructure,Rocky Linux package repositories and downloads
+almalinux.org,AlmaLinux OS Foundation,infrastructure,AlmaLinux package repositories
+alpinelinux.org,Alpine Linux,infrastructure,Alpine Linux package CDN and downloads
+opensuse.org,openSUSE Project,infrastructure,openSUSE package repositories and downloads
+archlinux.org,Arch Linux,infrastructure,Arch Linux mirror list service
+pkgbuild.com,Arch Linux,infrastructure,Arch Linux worldwide package mirror

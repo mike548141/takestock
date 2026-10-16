@@ -106,6 +106,14 @@ command line or a file format, and its entry says how.
   security sensors. Each row cites the vendor, project or distribution
   document that gives the name. The header now describes how rows are chosen
   and sourced.
+- **Vendor domains** (`data/vendor-domains.csv`) gain registered domains
+  taken from the providers' own published lists of service domains:
+  more of the large cloud and enterprise platforms (Amazon Web Services,
+  Apple, Google, Oracle, IBM, SAP, Salesforce), collaboration and
+  software-as-a-service platforms, identity and password managers, security
+  services, certificate authorities' status domains, Linux distributions'
+  mirrors, and language package registries. The header now describes how
+  rows are chosen and sourced.
 - **Configuration register**: a declared-estate row's `collectors_live` may
   name an instrument by its collector id (a row's `source`) as well as by its
   display name (`source_name`), and a `member-of` edge is drawn either way.
