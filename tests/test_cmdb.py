@@ -374,6 +374,92 @@ def test_a_name_row_listing_names_makes_a_dns_name_for_each(tmp_path):
     assert _value(register, "intranet.example.test", "name").value == "intranet.example.test"
 
 
+PLAN = {"schema": 1, "title": "Example plan", "built_on": "2030-01-20", "subnets": [
+    {"cidr": "192.0.2.0/26", "addresses": [
+        {"ip": "192.0.2.10", "machine_names": ["app-01"], "evidence": ["observed", "named"],
+         "last_observed": "2030-01-12", "last_documented": "2030-01-05", "sightings": [
+             {"source": "inventory", "name": "app-01.example.test", "name_is": "machine"},
+             {"source": "old-inventory", "name": "web-01.example.test", "name_is": "machine"},
+             {"source": "dns", "name": "www.example.test", "name_is": "alias"}]},
+        {"ip": "192.0.2.45", "machine_names": ["lt-02"], "evidence": ["observed"],
+         "last_observed": "2030-01-11", "sightings": [
+             {"source": "checkins", "name": "lt-02.example.test", "name_is": "machine"}]},
+        {"ip": "192.0.2.11", "machine_names": ["old-app"], "evidence": ["observed"],
+         "only_in_superseded": "Old inventory", "sightings": [
+             {"source": "old-inventory", "name": "old-app.example.test", "name_is": "machine"}]},
+        {"ip": "192.0.2.12", "machine_names": [], "evidence": ["documented"], "sightings": [
+            {"source": "diagram", "name": "core-sw-09", "name_is": "label"}]}]},
+    {"cidr": "2001:db8::/64", "addresses": [
+        {"ip": "2001:db8::10", "machine_names": ["app-01"], "evidence": ["documented"],
+         "last_documented": "2030-01-05", "sightings": [
+             {"source": "inventory", "name": "app-01.example.test (dual stack)",
+              "name_is": "machine"}]}]}]}
+
+
+def _plan_file(tmp_path):
+    path = tmp_path / "example-plan.json"
+    path.write_text(json.dumps(PLAN))
+    return path
+
+
+def test_an_ip_plan_is_read_only_when_named(tmp_path):
+    obs = cmdbfake.write_observation(tmp_path)
+    plain = cmdb.build(obs)
+    assert not [a for a in plain.assertions if a.actor.name == "Example plan"]
+    assert "lt-02.example.test" not in {i.label for i in plain.items.values()}
+
+
+def test_an_ip_plan_makes_an_item_for_each_machine_it_names(tmp_path):
+    register = cmdb.build(cmdbfake.write_observation(tmp_path), ip_plan=_plan_file(tmp_path))
+    classes = {i.label: i.item_class for i in register.items.values()}
+    # A machine only the plan names is a Host; one a probe typed keeps its class.
+    assert classes["lt-02.example.test"] == "Host"
+    assert classes["app-01.example.test"] == "Server"
+    # Past holders, aliases, labels and superseded entries are not machines.
+    for absent in ("web-01.example.test", "old-app.example.test", "core-sw-09"):
+        assert absent not in classes
+    address = _value(register, "app-01.example.test", "address")
+    said = next(a for a in address.assertions if a.actor.name == "Example plan")
+    assert said.value == "192.0.2.10, 2001:db8::10"
+    assert said.evidence_strength == cmdb.REPORTED and said.valid_at == "2030-01-12"
+    assert said.actor.artefact == "example-plan.json"
+    assert said.actor.artefact_digest.startswith("sha256:")
+    counts = {p.instrument: p.count for p in register.populations}
+    assert counts["Example plan"] == 2
+
+
+def test_the_command_line_takes_an_ip_plan(tmp_path):
+    from takestock import cli
+    obs = cmdbfake.write_observation(tmp_path)
+    assert cli.main(["cmdb", str(obs), str(tmp_path / "out"),
+                     "--ip-plan", str(_plan_file(tmp_path))]) == 0
+    written = json.loads((tmp_path / "out" / "cmdb.json").read_text())
+    assert "lt-02.example.test" in {i["name"] for i in written["items"]}
+
+
+def test_a_file_that_is_not_an_ip_plan_is_refused(tmp_path):
+    path = tmp_path / "not-a-plan.json"
+    path.write_text(json.dumps({"title": "no subnets"}))
+    with pytest.raises(ValueError, match="no list of subnets"):
+        cmdb.build(cmdbfake.write_observation(tmp_path), ip_plan=path)
+
+
+def test_the_sample_ip_plan_reaches_the_register(tmp_path):
+    from pathlib import Path
+
+    from takestock import ipam
+    sample = Path(__file__).resolve().parents[1] / "examples" / "example-widgets"
+    plan = ipam.build_plan(sample / "targets" / "example-widgets.ipam.yaml",
+                           sample / "exports", built_on="2030-03-02")
+    written = ipam.write_outputs(plan, tmp_path / "ipam")["json"]
+    register = cmdb.build(cmdbfake.write_observation(tmp_path, assets=[]), ip_plan=written)
+    hosts = sorted(i.label for i in register.items.values() if i.item_class == "Host")
+    # old-app is listed only by a superseded inventory, and file-01 is a past holder.
+    assert hosts == ["app-01", "db-01", "fw-01", "lt-01", "print-01", "print-02",
+                     "scanner-01", "web-01", "wh-app-01", "wh-db-01"]
+    assert _value(register, "app-01", "address").value == "192.0.2.10, 2001:db8:10:1::10"
+
+
 def test_disagreeing_sources_are_both_published(built):
     os = _value(built, "app-01.example.test", "os")
     assert os.contested and os.tie

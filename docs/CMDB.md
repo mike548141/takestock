@@ -33,7 +33,8 @@ service stops when it stops) until someone supplies that.
 ## Building a register
 
 ```bash
-takestock cmdb <observation_dir> [<out_dir>] [--keys <keys.jsonl>] [--workspace <dir>]
+takestock cmdb <observation_dir> [<out_dir>] [--keys <keys.jsonl>] [--ip-plan <plan.json>]
+               [--workspace <dir>]
 ```
 
 For the sample organisation, from inside a copy of its workspace (see the
@@ -52,6 +53,10 @@ observations/latest/cmdb/keys.jsonl
 - `out_dir` defaults to `<observation_dir>/cmdb`.
 - `--keys` names the `keys.jsonl` an earlier build wrote, so every item keeps
   the key it had before (see [Keys](#keys-and-identity)).
+- `--ip-plan` names an IP address plan's JSON, as `takestock ipam` writes it,
+  so the machines it names become items too (see
+  [Machines from an IP address plan](#machines-from-an-ip-address-plan)). It
+  is off unless given.
 - The recording date is the observation's own date when its directory is
   named by a time stamp, otherwise today. Rebuilding the same observation
   therefore gives the same register.
@@ -68,8 +73,8 @@ observations/latest/cmdb/keys.jsonl
 The build checks the schema before it starts and stops with a list of every
 problem it finds (see [Changing the schema](#changing-the-schema)).
 
-From Python, `takestock.cmdb.build_register(observation_dir, keys=...)`
-returns the whole register as one dictionary, and `write_outputs(register,
+From Python, `takestock.cmdb.build_register(observation_dir, keys=...,
+ip_plan=...)` returns the whole register as one dictionary, and `write_outputs(register,
 out_dir)` writes it.
 
 ## How rows become items
@@ -136,6 +141,27 @@ applicable*, with a note, when the lookup settled with nothing to report: no NS
 record because the name is not the top of its own zone, or no DMARC record or
 no `rua=` in it. A name nothing read for them shows *not collected*.
 
+### Machines from an IP address plan
+
+Given `--ip-plan`, the build also reads the plan's addresses. Each name a
+source gives as a **machine** at an address, and that the plan counts as the
+address's current holder, becomes a machine item keyed on that name, with the
+plan's addresses for it as its `address`:
+
+- a name no row of the observation uses becomes a **Host**; a name a row
+  already typed keeps its class, and the plan's addresses sit beside the
+  row's, so a difference shows as contested;
+- the evidence is `reported` when a source saw or named the address in use,
+  and `declared` when the address is only documented; the date is the newest
+  the plan holds for that machine;
+- aliases (DNS names), labels, past holders, and addresses that only a
+  superseded source lists are not machines and are left out;
+- the plan is counted as one more instrument in the population rows.
+
+A machine is matched on its name exactly as the plan's source spells it. A
+source that gives `app-01` and a probe that names `app-01.example.test` make
+two items, because nothing in either says they are the same machine.
+
 ## What the register holds
 
 ### Classes
@@ -144,7 +170,7 @@ no `rua=` in it. A name nothing read for them shows *not collected*.
 |---|---|---|
 | Service | Business Service, Technical Service | nothing yet: declared for the organisation to fill |
 | Deployment | Application, Application Instance | nothing yet |
-| Hardware | Server, Endpoint Device, Domain Controller, Network Device, Virtual Machine, Host | machine rows, by host type |
+| Hardware | Server, Endpoint Device, Domain Controller, Network Device, Virtual Machine, Host | machine rows, by host type; with `--ip-plan`, the plan's machines |
 | Software | Software Product, Software Release | rows naming software, on a machine or in an inventory |
 | Network and Naming | DNS Name | discovery and mail-authentication rows, DNS-layer readings of a name, and names a zone file publishes |
 | Network and Naming | Network Service | rows naming a listening port on a machine |

@@ -26,6 +26,7 @@ with the schema beside the data, and :func:`write_outputs` writes it as JSON,
 one CSV per class, and a workbook. From a shell::
 
     python -m takestock.cmdb <observation_dir> [<out_dir>] [--keys keys.jsonl]
+                             [--ip-plan <plan>.json]
 
 What the builder reads from each row of ``assets.json``:
 
@@ -938,6 +939,59 @@ def _cert_first_seen(observations_root: Path, before: str) -> dict[str, str]:
     return index
 
 
+_PLAN_EVIDENCE_REPORTED = ("observed", "named")
+_NAME_NOTE = re.compile(r"[\s(\[]")
+
+
+def _ip_sort(value: str) -> tuple[int, int]:
+    ip = ipaddress.ip_address(value)
+    return ip.version, int(ip)
+
+
+def plan_machines(plan: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """The machines an IP address plan names at an address, one entry per name.
+
+    Reads the JSON ``takestock ipam`` writes: for each address, the names its
+    sightings give as a ``machine`` that the plan counts as the address's
+    current holder (``machine_names``). Aliases, labels and past holders are
+    not machines, and an address only a superseded source lists is skipped.
+    Each entry has the ``name`` as a source gave it, its ``addresses``, the
+    evidence ``strength`` (reported when a source saw or named the address,
+    declared when it is only documented) and the newest date, ``valid_at``.
+    """
+    from .ipam import _short
+
+    out: dict[str, dict[str, Any]] = {}
+    for subnet in plan.get("subnets") or []:
+        for address in (subnet.get("addresses") or []) if isinstance(subnet, Mapping) else []:
+            if not isinstance(address, Mapping) or address.get("only_in_superseded"):
+                continue
+            current = {str(n).lower() for n in address.get("machine_names") or []}
+            ip = str(address.get("ip") or "")
+            if not current or not _is_ip(ip):
+                continue
+            evidence = set(address.get("evidence") or [])
+            strength = REPORTED if evidence & set(_PLAN_EVIDENCE_REPORTED) else DECLARED
+            dates = [d for d in (str(address.get("last_observed") or ""),
+                                 str(address.get("last_documented") or "")) if _ISO_DATE.match(d)]
+            for sighting in address.get("sightings") or []:
+                if not isinstance(sighting, Mapping) or sighting.get("name_is") != "machine":
+                    continue
+                name = _NAME_NOTE.split(str(sighting.get("name") or "").strip(), maxsplit=1)[0]
+                if not name or _short(name) not in current:
+                    continue
+                entry = out.setdefault(name.casefold(), {"name": name, "addresses": [],
+                                                         "strength": strength, "valid_at": ""})
+                if ip not in entry["addresses"]:
+                    entry["addresses"].append(ip)
+                if _STRENGTH_RANK[strength] < _STRENGTH_RANK[entry["strength"]]:
+                    entry["strength"] = strength
+                entry["valid_at"] = max([entry["valid_at"], *dates])
+    for entry in out.values():
+        entry["addresses"].sort(key=_ip_sort)
+    return [out[k] for k in sorted(out)]
+
+
 def _default_recorded_at(observation: Path) -> str:
     if obsarchive.is_stamp(observation.name):
         return observation.name[:10]
@@ -948,7 +1002,8 @@ def _default_recorded_at(observation: Path) -> str:
 
 
 class _Builder:
-    def __init__(self, observation: Path, ledger: KeyLedger | None, recorded_at: str) -> None:
+    def __init__(self, observation: Path, ledger: KeyLedger | None, recorded_at: str,
+                 ip_plan: Path | None = None) -> None:
         self.dir = Path(observation)
         self.schema = load_schema()
         self.ledger = ledger or KeyLedger(self.schema)
@@ -978,6 +1033,21 @@ class _Builder:
         self._release_of: dict[str, str] = {}
         self._environment_said: set[tuple[str, str]] = set()
         self._cert_history: dict[str, str] | None = None
+        self._plan: list[dict[str, Any]] = []
+        self._plan_actor: Actor | None = None
+        if ip_plan is not None:
+            self._read_plan(Path(ip_plan))
+
+    def _read_plan(self, path: Path) -> None:
+        raw = path.read_bytes()
+        plan = json.loads(raw)
+        if not isinstance(plan, dict) or not isinstance(plan.get("subnets"), list):
+            raise ValueError(f"{path} is not an IP address plan: it has no list of subnets")
+        self._plan = plan_machines(plan)
+        self._plan_actor = Actor(kind=COLLECTOR, name=str(plan.get("title") or "IP address plan"),
+                                 artefact=path.name,
+                                 artefact_digest="sha256:" + hashlib.sha256(raw).hexdigest(),
+                                 source="ipam")
 
     # Keys
 
@@ -1041,6 +1111,12 @@ class _Builder:
         return (self._named_key("estate-name", f"product:{software}", asset),
                 self._named_key("estate-name", f"release:{label}", asset), software, label)
 
+    def _plan_key(self, machine: Mapping[str, Any]) -> str:
+        return self.ledger.key_for(
+            [("hostname", str(machine["name"]))], source="ipam",
+            seen_at=str(machine["valid_at"] or self.recorded_at), merged_at=self.recorded_at,
+            reason="one IP address plan entry named both identifiers")
+
     def _listener_key(self, asset: Mapping[str, Any], service: str) -> str:
         return self._named_key("estate-name", f"{asset.get('host') or ''}:{service}", asset)
 
@@ -1082,6 +1158,8 @@ class _Builder:
             elif _is_name_row(asset):
                 self._set(key, "DNS Name", host)
                 self._names[host] = key
+        for machine in self._plan:
+            self._set(self._plan_key(machine), _UNTYPED_CLASS, str(machine["name"]))
 
     def _classify_machine_row(self, asset: Mapping[str, Any], key: str | None) -> None:
         extra = asset.get("extra") or {}
@@ -1166,6 +1244,19 @@ class _Builder:
                 self._machine_facts(key, asset, extra, strength, seen, actor)
             if _is_machine_row(asset):
                 self._software_facts(key, asset, strength, seen, actor)
+        self._plan_facts()
+
+    def _plan_facts(self) -> None:
+        if self._plan_actor is None:
+            return
+        for machine in self._plan:
+            key = self._plan_key(machine)
+            valid_at = str(machine["valid_at"] or self.recorded_at)
+            strength = str(machine["strength"])
+            self._say(key, "hostname", str(machine["name"]), strength, valid_at,
+                      self._plan_actor)
+            self._say(key, "address", ", ".join(machine["addresses"]), strength, valid_at,
+                      self._plan_actor)
 
     def _machine_facts(self, key: str, asset: Mapping[str, Any], extra: Mapping[str, Any],
                        strength: str, seen: str, actor: Actor) -> None:
@@ -1374,6 +1465,13 @@ class _Builder:
                     count=discovered, valid_at=self._seen_at(asset), evidence_strength=REPORTED,
                     note=("A count of what exists, as a discovery source reports it. The other "
                           "rows count what an instrument can see.")))
+        if self._plan_actor is not None and self._plan:
+            rows.append(Population(
+                population="machines", instrument=self._plan_actor.name,
+                count=len({self._plan_key(m) for m in self._plan}),
+                valid_at=max(str(m["valid_at"]) for m in self._plan) or self.recorded_at,
+                evidence_strength=REPORTED,
+                note="Machines the IP address plan's sources name at an address."))
         if not machines and not rows:
             return
         rows = [Population(population="machines", instrument=name, count=len(keys),
@@ -1405,14 +1503,18 @@ class _Builder:
 
 
 def build(observation: Path | str, *, ledger: KeyLedger | None = None,
-          recorded_at: str = "") -> Cmdb:
+          recorded_at: str = "", ip_plan: Path | str | None = None) -> Cmdb:
     """Build the register for one observation directory.
 
     ``recorded_at`` defaults to the observation's own date when its directory
     is named by a time stamp, so rebuilding the same observation gives the
-    same register.
+    same register. ``ip_plan`` names an IP address plan's JSON (as
+    ``takestock ipam`` writes it); when given, every machine it names at an
+    address is an item too (:func:`plan_machines`). It is never read unless
+    named.
     """
-    builder = _Builder(Path(observation), ledger, recorded_at)
+    builder = _Builder(Path(observation), ledger, recorded_at,
+                       Path(ip_plan) if ip_plan else None)
     builder.classify()
     builder.assert_facts()
     builder.fold()
@@ -1604,14 +1706,16 @@ def read_keys(path: Path | str) -> KeyLedger:
 
 
 def build_register(observation_dir: Path | str, *, keys: Path | str | None = None,
-                   recorded_at: str = "", title: str = "") -> dict[str, Any]:
+                   recorded_at: str = "", title: str = "",
+                   ip_plan: Path | str | None = None) -> dict[str, Any]:
     """Build the register for ``observation_dir`` and return it as one dict.
 
-    ``keys`` names an earlier build's ``keys.jsonl`` so items keep their keys.
+    ``keys`` names an earlier build's ``keys.jsonl`` so items keep their keys;
+    ``ip_plan`` an IP address plan's JSON whose named machines become items.
     """
     ledger = read_keys(keys) if keys else None
-    return register_payload(build(observation_dir, ledger=ledger, recorded_at=recorded_at),
-                            title=title)
+    return register_payload(build(observation_dir, ledger=ledger, recorded_at=recorded_at,
+                                  ip_plan=ip_plan), title=title)
 
 
 def write_outputs(register: Mapping[str, Any], out_dir: Path | str) -> list[Path]:
@@ -1638,9 +1742,11 @@ def _main(argv: Sequence[str] | None) -> int:
                         help="where to write it (default: <observation>/cmdb)")
     parser.add_argument("--keys", type=Path,
                         help="an earlier build's keys.jsonl, so items keep their keys")
+    parser.add_argument("--ip-plan", type=Path,
+                        help="an IP address plan's JSON; each machine it names becomes an item")
     args = parser.parse_args(argv)
     out = args.out or args.observation / "cmdb"
-    register = build_register(args.observation, keys=args.keys)
+    register = build_register(args.observation, keys=args.keys, ip_plan=args.ip_plan)
     for path in write_outputs(register, out):
         print(path)
     counts = register["register"]["counts"]

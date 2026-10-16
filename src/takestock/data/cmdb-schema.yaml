@@ -372,7 +372,9 @@ classes:
     family: Hardware
     attributes: [hostname, agent_id, os, os_version, address, environment, lifecycle_state,
                  last_seen, disk_encryption_state, key_custody]
-    built_from: machine rows that do not say what kind of machine they are
+    built_from: >-
+      machine rows that do not say what kind of machine they are, and machines
+      an IP address plan names, when the build is given one
     answers: Which machines are known to exist and not yet classified.
     note: >-
       Its own class rather than a guess, because "nothing said what this is"

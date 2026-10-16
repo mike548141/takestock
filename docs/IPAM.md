@@ -466,6 +466,12 @@ refuses to write a value shaped like a credential (a private-key block, an
 access key, or a `password=`-style pair). An export carrying one is a
 finding to deal with at its source, not something to copy into a plan.
 
+The configuration register can read `<stem>.json` too, when asked: `takestock
+cmdb <observation> --ip-plan <stem>.json` makes an item for each machine the
+plan names at an address (see
+[`CMDB.md`](CMDB.md#machines-from-an-ip-address-plan)). Nothing reads the plan
+into the register unless it is named that way.
+
 ## The page
 
 The page is drawn entirely from the plan, so it cannot disagree with the

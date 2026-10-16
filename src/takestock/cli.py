@@ -97,6 +97,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("observation", type=Path, help="an observation directory")
     p.add_argument("out", type=Path, nargs="?", help="where to write (default: <observation>/cmdb)")
     p.add_argument("--keys", type=Path, help="an earlier build's keys.jsonl, so items keep their keys")
+    p.add_argument("--ip-plan", type=Path,
+                   help="an IP address plan's JSON (from takestock ipam); each machine it names "
+                        "at an address becomes an item. Off unless given")
 
     p = sub.add_parser("ipam", parents=[common], help="build an IP address plan",
                        description="Build an IP address plan from a <stem>.ipam.yaml file.")
@@ -174,7 +177,7 @@ def _observe(args: argparse.Namespace) -> int:
 
 def _cmdb(args: argparse.Namespace) -> int:
     from . import cmdb
-    register = cmdb.build_register(args.observation, keys=args.keys)
+    register = cmdb.build_register(args.observation, keys=args.keys, ip_plan=args.ip_plan)
     for path in cmdb.write_outputs(register, args.out or args.observation / "cmdb"):
         print(path)
     return EXIT_CLEAN

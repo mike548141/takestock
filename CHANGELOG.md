@@ -9,6 +9,11 @@ command line or a file format, and its entry says how.
 
 ### Added
 
+- **Configuration register**: `takestock cmdb --ip-plan <plan>.json` (and
+  `ip_plan=` in Python) reads an IP address plan's JSON and makes an item for
+  each machine it names at an address, carrying the plan's addresses. It is
+  off unless given. Aliases, labels, past holders and addresses only a
+  superseded source lists are left out.
 - **DNS zone files**: the "names nobody measured" row lists every name the
   served zones publish in `extra.dns_names`, and the configuration register
   makes a DNS Name for each. The observation gains no rows.
