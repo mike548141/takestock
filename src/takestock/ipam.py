@@ -122,6 +122,9 @@ class Segment:
     vlan: int | None = None
     subnet: str | None = None
     switch: str = ""
+    #: Anything else the source says about it; a newer source's ``cannot_see``
+    #: is compared with these values as it is with a sighting's.
+    detail: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -601,8 +604,8 @@ def _sources(cfg: dict) -> dict[str, dict]:
     return out
 
 
-def _unseen_by_newer(sg: Sighting, newer: dict) -> bool:
-    """Whether the newer source says it cannot see sightings like ``sg``."""
+def _unseen_by_newer(sg: Sighting | Segment, newer: dict) -> bool:
+    """Whether the newer source says it cannot see sightings (or segments) like ``sg``."""
     return any(str(sg.detail.get(key, "")).lower() in values
                for key, values in (newer.get("cannot_see") or {}).items())
 
@@ -772,6 +775,27 @@ def segment_meaning(name: str, codes: dict[str, dict[str, str]]) -> tuple[list[s
     return found, env, matched
 
 
+def _hop_target(value: str) -> tuple[str, str]:
+    """A hop's ``address`` as ``("address", ip)`` or ``("network", cidr)``.
+
+    A hop may be one address, or a network written in CIDR form for a group
+    of machines a request can reach any of (the workers behind a load
+    balancer, say). A network must be written from its first address
+    (``192.0.2.0/24``, not ``192.0.2.5/24``), and a network of one address is
+    read as that address. Anything else is refused.
+    """
+    try:
+        return "address", str(ipaddress.ip_address(value))
+    except ValueError:
+        pass
+    if "/" not in value:
+        raise ValueError(value)
+    net = ipaddress.ip_network(value)                 # strict: host bits refuse
+    if net.num_addresses == 1:
+        return "address", str(net.network_address)
+    return "network", str(net)
+
+
 def _exposure_chains(cfg: dict, sources: dict) -> list[dict]:
     """The plan file's ``exposure_chains``, checked: each names a declared source."""
     out = []
@@ -786,10 +810,11 @@ def _exposure_chains(cfg: dict, sources: dict) -> list[dict]:
         for hop in c.get("hops") or []:
             addr = str(hop.get("address") or "")
             try:
-                addr = str(ipaddress.ip_address(addr))
+                key, target = _hop_target(addr)
             except ValueError as exc:
-                raise IpamError(f"exposure chain {name!r}: {addr!r} is not an address") from exc
-            hops.append({"label": str(hop.get("label") or ""), "address": addr,
+                raise IpamError(f"exposure chain {name!r}: {addr!r} is not an address or "
+                                "a network written from its first address") from exc
+            hops.append({"label": str(hop.get("label") or ""), key: target,
                          **({"name": str(hop["name"])} if hop.get("name") else {})})
         if len(hops) < 2:
             raise IpamError(f"exposure chain {name!r}: needs at least two hops")
@@ -807,14 +832,34 @@ def build(cfg: dict, h: Harvest, *, plan_sha256: str = "", built_on: str = "",
     codes = _segment_codes(cfg)
     chains = _exposure_chains(cfg, sources)
 
-    def site_for(net: ipaddress.IPv4Network | ipaddress.IPv6Network) -> str:
-        best, best_len = NO_SITE, -1
+    def site_for(net: ipaddress.IPv4Network | ipaddress.IPv6Network, stated: Any = "") -> str:
+        """The site a subnet a source declares belongs to.
+
+        The plan file's site ranges are the operator's own statement of where
+        addresses live, so the most specific range holding the subnet wins. A
+        source's own site (the place its export was taken, which for a platform
+        serving several sites is not always where the network is) is used only
+        when no declared range holds the subnet.
+        """
+        best, best_len = "", -1
         for sid, site in sites.items():
             for r in site["ranges"]:
                 rn = _net(r)
                 if net.version == rn.version and net.subnet_of(rn) and rn.prefixlen > best_len:  # type: ignore[arg-type]
                     best, best_len = sid, rn.prefixlen
-        return best
+        return best or str(stated or "") or NO_SITE
+
+    classes = {sid: _evidence_class(s) for sid, s in sources.items()}
+
+    def confidence(sid: str) -> str:
+        """A source-declared subnet's confidence, from the source's evidence class.
+
+        A source that reads a running system (class ``observed``) is trusted to
+        have seen its addresses in use; the networks the same reading lists are
+        configured on that system, so they are ``measured`` too. Any other
+        source's statement is ``declared``.
+        """
+        return "measured" if classes.get(sid) == "observed" else "declared"
 
     for cidr, d in h.declared.items():
         key = str(_net(cidr))
@@ -823,14 +868,20 @@ def build(cfg: dict, h: Harvest, *, plan_sha256: str = "", built_on: str = "",
             subnets[key].setdefault("declared_as", d.get("name", ""))
             continue
         name = str(d.get("name") or "")
-        subnets[key] = {"cidr": key, "site": d.get("site") or site_for(_net(key)),
-                        "purpose": name[:1].upper() + name[1:], "confidence": "declared",
+        subnets[key] = {"cidr": key, "site": site_for(_net(key), d.get("site")),
+                        "purpose": name[:1].upper() + name[1:],
+                        "confidence": confidence(str(d["source"])),
                         "origin": "declared by a source", "evidence": [d["source"]],
                         "declared_as": name}
 
     # Segments: one row per (site, name), from the newest source that reports it.
     def as_of(sid: str) -> str:
         return str(sources.get(sid, {}).get("as_of") or "")
+
+    superseded = {sid: list(s.get("supersedes") or []) for sid, s in sources.items()}
+    newer_of = {old: new for new, olds in superseded.items() for old in olds}
+    # A newer source can only say a segment is gone if it lists segments itself.
+    lists_segments = {seg.source for seg in h.segments}
 
     by_name: dict[tuple[str, str], list[Segment]] = defaultdict(list)
     for seg in h.segments:
@@ -851,16 +902,20 @@ def build(cfg: dict, h: Harvest, *, plan_sha256: str = "", built_on: str = "",
         older = sorted({g.source for g in group[1:]} - {seg.source})
         if older:
             row["also_in"] = older
+        newer = newer_of.get(seg.source, "")
+        if (newer in lists_segments and all(g.source in newer_of for g in group)
+                and not any(_unseen_by_newer(g, sources[newer_of[g.source]]) for g in group)):
+            row["superseded_by"] = sources[newer]["label"]
         segments.append(row)
         if subnet is None:
             continue
         by_subnet_seg[subnet].append(row)
         if subnet not in subnets:
             said = ", ".join(meanings) if matched else ""
-            subnets[subnet] = {"cidr": subnet, "site": seg.site or site_for(_net(subnet)),
+            subnets[subnet] = {"cidr": subnet, "site": site_for(_net(subnet), seg.site),
                                "purpose": f"Network segment {seg.name}"
                                           + (f": {said}" if said else ""),
-                               "confidence": "declared",
+                               "confidence": confidence(seg.source),
                                "origin": "declared by a source", "evidence": []}
             if env:
                 subnets[subnet]["environment"] = env
@@ -872,8 +927,6 @@ def build(cfg: dict, h: Harvest, *, plan_sha256: str = "", built_on: str = "",
     authority = {site_id: s["id"] for s in sources.values()
                  for site_id in s.get("authoritative_for") or []}
     roaming = {sid for sid, s in sources.items() if s.get("roams")}
-    superseded = {sid: list(s.get("supersedes") or []) for sid, s in sources.items()}
-    newer_of = {old: new for new, olds in superseded.items() for old in olds}
     inside = [(_net(r["cidr"]), f"inside a machine: {r.get('reason') or 'no reason given'}")
               for r in cfg.get("host_internal_ranges") or []]
     ips_by_source: dict[str, set[str]] = defaultdict(set)
@@ -912,7 +965,6 @@ def build(cfg: dict, h: Harvest, *, plan_sha256: str = "", built_on: str = "",
             continue
         placed[home].append(sg)
 
-    classes = {sid: _evidence_class(s) for sid, s in sources.items()}
     for cidr, sub in subnets.items():
         net = _net(cidr)
         sub["addresses"] = _addresses(placed.get(cidr, []), sub, sources, sites, classes,
@@ -1058,13 +1110,15 @@ def _counts(subnets: dict[str, dict], segments: list[dict], sites: dict,
     by_kind: dict[str, int] = defaultdict(int)
     for site in sites.values():
         by_kind[site["kind"] or "unspecified"] += 1
-    vlans = {(s["site"], s["vlan"]) for s in segments if s["vlan"] not in (None, 0)}
+    current = [s for s in segments if not s.get("superseded_by")]
+    vlans = {(s["site"], s["vlan"]) for s in current if s["vlan"] not in (None, 0)}
     vlans |= {(s["site"], s["vlan"]) for s in subnets.values() if s.get("vlan") not in (None, 0)}
     return {
         "blocks": len(subnets), "subnets": len(subnets) - single, "single_addresses": single,
         "addresses": seen + named + documented, "addresses_seen_in_use": seen,
         "addresses_named_only": named, "addresses_documented_only": documented,
-        "segments": len(segments), "vlans": len(vlans),
+        "segments": len(current), "segments_superseded": len(segments) - len(current),
+        "vlans": len(vlans),
         "sites": len(sites), "sites_by_kind": dict(sorted(by_kind.items())),
         "sites_planned": sum(1 for x in sites.values() if x["status"] == "planned"),
         "sites_with_subnets": len({s["site"] for s in subnets.values()} & set(sites)),
@@ -1086,7 +1140,7 @@ def _checks(subnets: dict[str, dict], segments: list[dict], sources: dict) -> di
     # the same version is the conflict.
     on_vlan: dict[tuple[str, int, int], set[str]] = defaultdict(set)
     for e in segments:
-        if e["vlan"] not in (None, 0) and e["subnet"]:
+        if e["vlan"] not in (None, 0) and e["subnet"] and not e.get("superseded_by"):
             on_vlan[(e["site"], e["vlan"], _net(e["subnet"]).version)].add(e["subnet"])
     for c, s in subnets.items():
         if s.get("vlan") not in (None, 0):

@@ -141,13 +141,15 @@ def test_the_page_shows_the_audience_segment_meanings_and_exposure_chains():
                                        "as_of": "2030-01-01",
                                        "hops": [{"label": "public address", "address": "203.0.113.5"},
                                                 {"label": "web server", "address": "192.0.2.1",
-                                                 "name": "bench-01"}]}])
+                                                 "name": "bench-01"},
+                                                {"label": "workers", "network": "192.0.2.64/27"}]}])
     page = ipam_view.render(plan)
     assert "Written for network engineers." in page
     assert "lab-users-20 (Staff devices)" in page
     assert ("public" in [i for i, _l, _n in sections(page).panels]
             and "as Bench inventory describes it, 2030-01-01" in page
-            and "<code>192.0.2.1</code> (bench-01)" in page)
+            and "<code>192.0.2.1</code> (bench-01)" in page
+            and "workers: any address in the network <code>192.0.2.64/27</code>" in page)
 
 
 def test_an_unknown_addressing_value_is_shown_as_read_as_static():

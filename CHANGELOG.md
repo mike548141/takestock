@@ -56,6 +56,24 @@ command line or a file format, and its entry says how.
   label above the title and a line under it.
 - **HTML pages**: `htmlpage.page` takes an optional `eyebrow` (a short label
   above the title) and `byline` (a line under it).
+- **IP address plan**: an exposure-chain hop may be a network in CIDR form,
+  for a group of machines a request can reach any one of. It is written as
+  `network` rather than `address` and shown as a network on the page; a
+  range with host bits set is still refused.
+- **IP address plan**: a segment that only replaced sources list, and that a
+  newer source listing segments of its own does not, is marked
+  `superseded_by` and left out of the segment and VLAN counts and the VLAN
+  check (`counts.segments_superseded` says how many). `Segment` takes an
+  optional `detail`, which a newer source's `cannot_see` is compared with.
+
+### Changed
+
+- **IP address plan**: a subnet a source declares goes to the site whose
+  plan-file range holds it, even when the source reports another site; the
+  source's site is used only when no range holds the subnet.
+- **IP address plan**: a subnet a source of class `observed` declares reads
+  `confidence: measured` (it was `declared`); other sources' subnets still
+  read `declared`.
 
 ## [0.1.0] — 2026-10-17
 

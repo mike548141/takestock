@@ -115,7 +115,7 @@ sites:
 | `name` | no | Shown on the page; defaults to the id |
 | `kind` | no | Any word (`office`, `warehouse`, `internet-facing`); sites are counted by kind |
 | `status` | no | `in use` by default; anything else (such as `planned`) is shown beside the name |
-| `ranges` | no | The address ranges the site holds. A subnet a source declares is given to the site whose range holds it most specifically |
+| `ranges` | no | The address ranges the site holds. A subnet a source declares is given to the site whose range holds it most specifically, even when the source names another site (see [Which site a declared subnet belongs to](#which-site-a-declared-subnet-belongs-to)) |
 | `description`, `location`, `operator` | no | Shown on the site's card |
 
 ### Subnets
@@ -183,7 +183,7 @@ sources:
 | `roams` | `true` for a source that reports addresses a machine held anywhere: home networks, hotspots, its own container bridges |
 | `authoritative_for` | Site ids for which this source is the reference |
 | `supersedes` | Source ids this one replaces |
-| `cannot_see` | For a source that `supersedes` another: sighting-detail values it would never list, as `{key: [values]}` (for example `{device_kind: [Printer]}` for a newer register that lists only computers). Compared ignoring case |
+| `cannot_see` | For a source that `supersedes` another: detail values of sightings or segments it would never list, as `{key: [values]}` (for example `{device_kind: [Printer]}` for a newer register that lists only computers). Compared ignoring case |
 | `columns`, `delimiter` | For `csv` sources (see [Readers](#readers)) |
 
 Three of these change how sightings are placed:
@@ -199,6 +199,12 @@ Three of these change how sightings are placed:
   previous names, and flags addresses that only the older source reports,
   except where the older source's sighting carries a value the newer one's
   `cannot_see` names: the newer source would not have listed it anyway.
+  The same goes for segments: a segment only replaced sources list, which a
+  newer source that lists segments of its own does not, is marked
+  `superseded_by` that source, kept in the plan with its subnet and the
+  older source's date, and left out of the segment and VLAN counts and the
+  VLAN check. A newer source that lists no segments at all cannot retire
+  one, because its silence says nothing about them.
 
 ### Documented addresses
 
@@ -270,12 +276,21 @@ exposure_chains:
     hops:
       - {label: public address, address: 203.0.113.5}
       - {label: load balancer, address: 192.0.2.10, name: lb-01}
+      - {label: web workers, address: 192.0.2.64/27}
 ```
 
 An exposure chain is the path a request takes from the internet to a
 service, hop by hop, as a declared source describes it. Like a documented
 address, it rests on that source and carries its date. Each hop needs a
 `label` and an `address`, and a chain needs at least two hops.
+
+A hop's `address` is one address, or a network in CIDR form when the hop is
+a group of machines a request may reach any one of, such as the workers
+behind a load balancer. A network must be written from its first address
+(`192.0.2.64/27`, not `192.0.2.70/27`), because a range with stray host bits
+is usually a typing slip. The plan writes such a hop as `network` rather than
+`address`, and the page shows it as a network. A network of one address
+(`/32`, `/128`) is read as that address, and anything else is refused.
 
 ### Actions
 
@@ -396,8 +411,10 @@ A reader is a function `fn(source, paths, harvest)`:
     `detail` may carry `allocation`, `dhcp` and `vlan`, which the plan reads
     (see [How an address was given out](#how-an-address-was-given-out)), and
     anything else, which is kept with the sighting;
-  - `harvest.segments.append(Segment(source["id"], site, name, vlan, subnet, switch))`
+  - `harvest.segments.append(Segment(source["id"], site, name, vlan, subnet, switch, detail))`
     for a layer-2 network (a VLAN or switch port group) the source reports;
+    `detail` is optional, and a newer source's `cannot_see` is compared with
+    it;
   - `harvest.declared[cidr] = {"source": source["id"], "name": ..., "site": ...}`
     for a subnet the source states exists;
   - `harvest.notes[source["id"]].append("...")` for a line shown beside the
@@ -428,8 +445,32 @@ A reader loaded this way takes the defaults (required input, class
 
 Segments and declared subnets only arrive through plugged-in readers. A
 subnet a source declares that the plan file lacks is added with
-`confidence: declared` and placed in the site whose range holds it most
-specifically, or under "unassigned" when no site's range holds it.
+`origin: declared by a source`, and its `confidence` follows the source's
+evidence class:
+
+- **`measured`** when the source is of class `observed`. A source that reads
+  a running system is already trusted to have seen its addresses in use, and
+  the networks the same reading lists (a cloud platform's subnets, a
+  hypervisor's port groups) are configured on that system, so they are a
+  measurement too. Reading them as weaker than the addresses inside them
+  would be inconsistent.
+- **`declared`** for any other source, whose statement is a claim rather
+  than a reading of the system.
+
+A reader whose subnets come from free text someone typed (a subnet written
+into a segment's name, say) rather than from the system's configuration can
+give its source `evidence: named`, so they read `declared`.
+
+### Which site a declared subnet belongs to
+
+A subnet a source declares goes to the site whose range in the plan file
+holds it most specifically. Only when no declared range holds it does the
+site the source itself reports stand, and with neither it goes under
+"unassigned". The plan file's ranges are the operator's own statement of
+where addresses live. A source's site is usually where its export was taken,
+which for a platform serving more than one site is not where every network
+it lists lives. The segment row itself keeps the site its source reported,
+so the two can still be compared.
 
 ## Checks
 
@@ -443,7 +484,7 @@ The plan lists what a reviewer should look at, each found in the data:
 | Missing from the site's authoritative source | The authoritative source does not list an address inside its site |
 | Seen only in a source a newer one replaced | The machine may have gone or moved |
 | Subnets with no addresses found | Either unused, or used by machines no source covers |
-| Subnets known only from documents | Nothing read from the network confirms they exist. A `record` source counts as a document |
+| Subnets known only from documents | Nothing read from the network confirms they exist. A `record` source counts as a document: a public record such as a certificate-transparency log entry shows that a certificate was issued for a name, not that anything answers at the address, so it documents the subnet without confirming it |
 | Unknown addressing values | A subnet's `addressing` is not `static`, `dynamic`, `pool` or `overlay`, so it is treated as `static`: usually a typing slip |
 
 The sample is built to trigger every check once, except an unknown

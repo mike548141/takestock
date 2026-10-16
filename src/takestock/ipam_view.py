@@ -341,6 +341,9 @@ class _View:
             vlan_text = _plural(int(c.get("vlans", 0)), "VLAN")
             if c.get("segments"):
                 vlan_text += f", {_plural(int(c['segments']), 'segment')} reported by sources"
+            if c.get("segments_superseded"):
+                vlan_text += (f" ({_plural(int(c['segments_superseded']), 'more segment')}"
+                              " only in a replaced source, not counted)")
             facts.append(("VLANs", vlan_text))
         if dates:
             facts.append(("Evidence dated", dates[0] if dates[0] == dates[-1]
@@ -466,6 +469,8 @@ class _View:
             name = seg["name"]
             if seg.get("meaning"):
                 name += " (" + ", ".join(seg["meaning"]) + ")"
+            if seg.get("superseded_by"):
+                name += f"; no longer listed by {seg['superseded_by']}"
             rows.append((seg["site"], seg.get("vlan"), seg.get("subnet") or "", name,
                          seg.get("switch") or "", self.label(seg["source"])))
         for s in self.subnets:
@@ -533,7 +538,9 @@ class _View:
         out = []
         for c in self.plan.get("exposure_chains") or []:
             hops = "".join(
-                "<li>" + esc(h.get("label") or "") + f": <code>{esc(h['address'])}</code>"
+                "<li>" + esc(h.get("label") or "")
+                + (f": any address in the network <code>{esc(h['network'])}</code>"
+                   if h.get("network") else f": <code>{esc(h.get('address') or '')}</code>")
                 + (f" ({esc(h['name'])})" if h.get("name") else "") + "</li>"
                 for h in c.get("hops") or [])
             when = f", {c['as_of']}" if c.get("as_of") else ""

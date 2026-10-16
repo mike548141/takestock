@@ -274,6 +274,89 @@ def test_an_organisation_can_plug_in_its_own_reader(tmp_path, clean_registry):
     assert plan["counts"]["segments"] == 2
 
 
+def test_a_subnet_a_source_declares_is_as_strong_as_that_source(tmp_path, clean_registry):
+    # A reading of a running system lists its networks: measured, like its addresses.
+    def read_platform(src: dict, paths: list[Path], h: Harvest) -> None:
+        h.declared[{"live": "198.51.100.0/26", "names": "198.51.100.64/26"}[src["id"]]] = {
+            "source": src["id"], "name": "network"}
+        if src["id"] == "live":
+            h.segments.append(Segment("live", "lab", "users", 20, "198.51.100.128/26", "sw-01"))
+
+    ipam.register_reader("platform-export", read_platform)
+    doc = minimal(sources=[{"id": "live", "kind": "platform-export", "path": "pf.txt"},
+                           {"id": "names", "kind": "platform-export", "path": "pf.txt",
+                            "evidence": "named"}])
+    plan = ipam.build_plan(write_plan(tmp_path, doc, {"pf.txt": ""}), tmp_path / "exports")
+    assert subnet(plan, "198.51.100.0/26")["confidence"] == "measured"
+    assert subnet(plan, "198.51.100.128/26")["confidence"] == "measured"
+    assert subnet(plan, "198.51.100.64/26")["confidence"] == "declared"
+    assert {subnet(plan, c)["origin"] for c in ("198.51.100.0/26", "198.51.100.64/26")} == {
+        "declared by a source"}
+
+
+def test_a_segment_only_a_replaced_source_lists_is_not_counted(tmp_path, clean_registry):
+    def read_switches(src: dict, paths: list[Path], h: Harvest) -> None:
+        for line in paths[0].read_text().splitlines():
+            vlan, cidr, name, kind = line.split(",")
+            h.segments.append(Segment(src["id"], "lab", name, int(vlan), cidr or None, "sw-01",
+                                      {"segment_kind": kind}))
+
+    ipam.register_reader("switch-export", read_switches)
+    old = "10,192.0.2.128/26,users,shared\n10,192.0.2.192/26,retired,shared\n30,,local,host\n"
+    new = "10,192.0.2.128/26,users,shared\n"
+    sources = [{"id": "old", "kind": "switch-export", "label": "Old switch list",
+                "path": "old.txt", "as_of": "2030-01-01"},
+               {"id": "new", "kind": "switch-export", "label": "New switch list",
+                "path": "new.txt", "as_of": "2030-02-01", "supersedes": ["old"]}]
+    files = {"old.txt": old, "new.txt": new, "none.txt": ""}
+    plan = ipam.build_plan(write_plan(tmp_path, minimal(sources=sources), files), tmp_path / "exports")
+    rows = {s["name"]: s for s in plan["segments"]}
+    assert rows["retired"]["superseded_by"] == "New switch list"
+    assert rows["local"]["superseded_by"] == "New switch list"
+    assert "superseded_by" not in rows["users"]
+    assert (plan["counts"]["segments"], plan["counts"]["segments_superseded"]) == (1, 2)
+    assert plan["counts"]["vlans"] == 1
+    # Two subnets on VLAN 10 only while the retired segment is counted.
+    assert plan["checks"]["vlan_conflicts"] == []
+    # The older source's statement that the subnet existed is still kept, with its date.
+    assert subnet(plan, "192.0.2.192/26")["evidence"] == ["old"]
+
+    # A newer source that would never list host-local segments cannot retire one.
+    sources[1]["cannot_see"] = {"segment_kind": ["Host"]}
+    plan = ipam.build_plan(write_plan(tmp_path, minimal(sources=sources), files), tmp_path / "exports")
+    rows = {s["name"]: s for s in plan["segments"]}
+    assert "superseded_by" not in rows["local"] and rows["retired"]["superseded_by"]
+
+    # A newer source that lists no segments at all says nothing about them.
+    sources[1].pop("cannot_see")
+    sources[1]["path"] = "none.txt"
+    plan = ipam.build_plan(write_plan(tmp_path, minimal(sources=sources), files), tmp_path / "exports")
+    assert not any(s.get("superseded_by") for s in plan["segments"])
+    assert plan["counts"]["segments"] == 3
+
+
+def test_a_declared_site_range_outranks_the_site_a_source_reports(tmp_path, clean_registry):
+    # A platform export taken at one site reports networks that live at another.
+    def read_platform(src: dict, paths: list[Path], h: Harvest) -> None:
+        h.segments.append(Segment(src["id"], "lab", "shared", 30, "198.51.100.0/26", "sw-01"))
+        h.segments.append(Segment(src["id"], "lab", "nowhere", 40, "203.0.113.0/26", "sw-01"))
+        h.declared["198.51.100.64/26"] = {"source": src["id"], "name": "storage", "site": "lab"}
+        h.declared["203.0.113.64/26"] = {"source": src["id"], "name": "edge", "site": "lab"}
+
+    ipam.register_reader("platform-export", read_platform)
+    doc = minimal(sources=[{"id": "pf", "kind": "platform-export", "path": "pf.txt",
+                            "as_of": "2030-01-03"}])
+    doc["sites"].append({"id": "branch", "name": "Branch", "ranges": ["198.51.100.0/24"]})
+    plan = ipam.build_plan(write_plan(tmp_path, doc, {"pf.txt": ""}), tmp_path / "exports")
+    assert subnet(plan, "198.51.100.0/26")["site"] == "branch"
+    assert subnet(plan, "198.51.100.64/26")["site"] == "branch"
+    # No declared range holds these, so the source's own site stands.
+    assert subnet(plan, "203.0.113.0/26")["site"] == "lab"
+    assert subnet(plan, "203.0.113.64/26")["site"] == "lab"
+    # The segment keeps the site its source reported.
+    assert {s["name"]: s["site"] for s in plan["segments"]}["shared"] == "lab"
+
+
 def test_the_registry_refuses_a_duplicate_a_document_kind_and_an_unknown_kind(tmp_path, clean_registry):
     with pytest.raises(ValueError, match="already registered"):
         ipam.register_reader("csv", ipam.read_csv)
@@ -519,6 +602,24 @@ def test_an_exposure_chain_names_a_declared_source_and_real_addresses(tmp_path):
                      ({**chain, "hops": [{"address": "lb"}, chain["hops"][0]]}, "not an address")):
         doc["exposure_chains"] = [bad]
         with pytest.raises(IpamError, match=why):
+            ipam.build_plan(write_plan(tmp_path, doc, {"inv.csv": "ip,host\n"}), tmp_path / "exports")
+
+
+def test_an_exposure_chain_hop_may_be_a_network_of_machines(tmp_path):
+    chain = {"name": "Public web service", "source": "design",
+             "hops": [{"label": "load balancer", "address": "192.0.2.10"},
+                      {"label": "web workers", "address": "192.0.2.64/27"},
+                      {"label": "one address as a network", "address": "192.0.2.9/32"}]}
+    doc = minimal(exposure_chains=[chain])
+    doc["sources"].append({"id": "design", "kind": "document", "label": "Service design",
+                           "as_of": "2030-01-04"})
+    plan = ipam.build_plan(write_plan(tmp_path, doc, {"inv.csv": "ip,host\n"}), tmp_path / "exports")
+    hops = plan["exposure_chains"][0]["hops"]
+    assert hops[1] == {"label": "web workers", "network": "192.0.2.64/27"}
+    assert hops[2] == {"label": "one address as a network", "address": "192.0.2.9"}
+    for junk in ("192.0.2.70/27", "192.0.2.0/33", "workers", "192.0.2.0-192.0.2.31"):
+        doc["exposure_chains"] = [{**chain, "hops": [chain["hops"][0], {"label": "x", "address": junk}]}]
+        with pytest.raises(IpamError, match="not an address or a network"):
             ipam.build_plan(write_plan(tmp_path, doc, {"inv.csv": "ip,host\n"}), tmp_path / "exports")
 
 
