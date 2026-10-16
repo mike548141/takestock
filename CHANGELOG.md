@@ -7,6 +7,12 @@ command line or a file format, and its entry says how.
 
 ## [Unreleased]
 
+### Added
+
+- **IP address plan**: a source can set `name_is: history` for an export that
+  lists every address a device has held. Its names are kept on each address
+  as past holders and never count as a second machine.
+
 ## [0.1.0] — 2026-10-17
 
 The first release.

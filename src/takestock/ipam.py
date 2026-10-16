@@ -72,8 +72,10 @@ PLAN_SUFFIX = config.IPAM_PLAN_SUFFIX
 DOCUMENT_KINDS = frozenset({"document", "record"})
 
 #: What a sighting's name identifies: a machine, another name for the address
-#: (a DNS record), or a description (a role, a note).
-NAME_IS = ("machine", "alias", "label")
+#: (a DNS record), a description (a role, a note), or a machine that has held
+#: the address at some time (a source that lists every address a device has
+#: ever reported). Only ``machine`` names can conflict.
+NAME_IS = ("machine", "alias", "label", "history")
 
 #: How far a source's sightings go: ``observed`` means seen in use, ``named``
 #: means a name was configured for the address (DNS, say) without showing it is

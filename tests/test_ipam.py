@@ -311,6 +311,22 @@ def test_two_names_on_a_dynamic_subnet_are_not_a_conflict(tmp_path):
     assert [i["ip"] for i in plan["checks"]["name_conflicts"]] == ["192.0.2.1"]
 
 
+def test_an_address_history_names_past_holders_without_a_conflict(tmp_path):
+    doc = minimal()
+    doc["sources"].append({"id": "past", "kind": "csv", "label": "Address history",
+                           "path": "past.csv", "as_of": "2030-01-02", "name_is": "history",
+                           "columns": {"ip": "addresses", "name": "device"}})
+    files = {"inv.csv": "ip,host\n192.0.2.5,bench-05\n",
+             "past.csv": "device,addresses\nbench-07,192.0.2.5 192.0.2.6\nbench-08,192.0.2.5\n"}
+    plan = ipam.build_plan(write_plan(tmp_path, doc, files), tmp_path / "exports")
+    held = address(plan, "192.0.2.5")
+    assert held["names"] == ["bench-05", "bench-07", "bench-08"]
+    assert held["machine_names"] == ["bench-05"]
+    assert "name_conflict" not in held and not plan["checks"]["name_conflicts"]
+    only_past = address(plan, "192.0.2.6")
+    assert only_past["machine_names"] == [] and only_past["evidence"] == ["observed"]
+
+
 def test_a_mirror_needs_two_prefixes_of_one_size(tmp_path):
     doc = minimal(mirrors=[{"name": "m", "left": {"prefix": "192.0.2.0/24"},
                             "right": {"prefix": "198.51.100.0/25"}}])

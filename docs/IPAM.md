@@ -175,7 +175,7 @@ sources:
 | `path` or `paths` | The input, relative to the exports directory unless absolute. Not used by documents |
 | `as_of`, `as_of_basis` | The source's date, and what the date means (`exported`, `issued`; default `dated`) |
 | `evidence` | `observed` or `named`, to override the reader's default |
-| `name_is` | What the name column identifies: `machine` (default), `alias` (another name for the address) or `label` (a description) |
+| `name_is` | What the name column identifies: `machine` (default), `alias` (another name for the address), `label` (a description) or `history` (a machine that has held the address at some time, from a source listing every address a device has reported) |
 | `roams` | `true` for a source that reports addresses a machine held anywhere: home networks, hotspots, its own container bridges |
 | `authoritative_for` | Site ids for which this source is the reference |
 | `supersedes` | Source ids this one replaces |
@@ -262,7 +262,7 @@ a name or document vouched for it, and any of these flags:
 
 | Flag | Raised when |
 |---|---|
-| several machine names | two or more machines claim the address in a subnet with fixed addressing |
+| several machine names | two or more machines claim the address in a subnet with fixed addressing. Only `machine` names count: an alias, a label or a past holder from a `history` source never makes a conflict |
 | previous names | a superseded source named a different machine |
 | not in the authoritative source | the site's authoritative source does not list it |
 | only in a superseded source | every source that saw it in use has been replaced, and the newer one no longer reports it |
