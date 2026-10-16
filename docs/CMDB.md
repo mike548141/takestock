@@ -141,6 +141,44 @@ applicable*, with a note, when the lookup settled with nothing to report: no NS
 record because the name is not the top of its own zone, or no DMARC record or
 no `rua=` in it. A name nothing read for them shows *not collected*.
 
+### Releases a row lists
+
+A row can list software releases in `extra.releases`, such as a plug-in that
+reads a vendor's lifecycle data or a vulnerability export. Each entry becomes
+a **Software Product** and a **Software Release**, joined by `release-of`:
+
+```json
+{"releases": [
+  {"product": "Example TLS library", "line": "41.x", "versions": ["41.7.3", "41.9.0"],
+   "support": {"status": "security-only", "end_of_support": "2031-06-30",
+               "end_of_life": "2033-06-30", "as_of": "2030-01-12"},
+   "exploited": {"identifiers": ["CVE-2099-4826193"], "past_due": 1, "as_of": "2030-01-11"}}
+]}
+```
+
+| Field | Means | Becomes |
+|---|---|---|
+| `product` | The product's name. Required | the product's `name` |
+| `versions` | The version strings the release covers, as the source spells them | `covered_versions`; with no `line`, the one version is the release's `version` |
+| `line` | The vendor's version line the versions belong to, such as `41.x`. Required when `versions` lists more than one | the release is the line; its `version` is *not applicable* |
+| `label` | The release's name, if not `product` and the line or version | the release's `name` |
+| `support` | `status`, `end_of_support` and `end_of_life` as the vendor publishes them, and the `as_of` date they were read | `support_status`, `end_of_support`, `end_of_life` |
+| `exploited` | `identifiers`: the CVE identifiers of defects in CISA's *Known Exploited Vulnerabilities Catalog* that the source says are open against the release; `past_due`: how many were past the catalogue's own remediation date; `as_of`: the source's date | `exploited_defect_ids`, `exploited_defects_past_due` |
+
+- The release is keyed on its name, as a machine row's release is, so an
+  entry for one version and a row naming that software at that version on a
+  machine are the same item, and the release keeps its `installed-on` edge.
+- An entry draws no `installed-on` of its own: listing a release says what is
+  known about it, not where it is.
+- A support date is `declared` (the vendor's published date) and the support
+  status is `inferred`, as a status read on one date is. The names and the
+  defects take the row's own strength, capped at `reported` for the defects,
+  because the source attributes each defect to the release. An empty
+  identifier list is *not applicable*: the source found none open.
+- The build stops on an entry that is not a mapping, names no product, or
+  lists several versions with no `line`, because joining versions without
+  the vendor's line would be a guess.
+
 ### Technology zones and locations
 
 The New Zealand Government Enterprise Architecture's *GEANZ Technologies
@@ -216,7 +254,7 @@ two items, because nothing in either says they are the same machine.
 | Service | Business Service, Technical Service | nothing yet: declared for the organisation to fill |
 | Deployment | Application, Application Instance | nothing yet |
 | Hardware | Server, Endpoint Device, Domain Controller, Network Device, Virtual Machine, Host | machine rows, by host type; with `--ip-plan`, the plan's machines |
-| Software | Software Product, Software Release | rows naming software, on a machine or in an inventory |
+| Software | Software Product, Software Release | rows naming software, on a machine or in an inventory, and releases a row lists |
 | Network and Naming | DNS Name | discovery and mail-authentication rows, DNS-layer readings of a name, and names a zone file publishes |
 | Network and Naming | Network Service | rows naming a listening port on a machine |
 | Network and Naming | Certificate | certificate rows |

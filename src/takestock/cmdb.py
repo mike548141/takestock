@@ -58,6 +58,9 @@ host                   machine ``extra.hosts`` names (a list, or names
 ``products``           release: an inventory's list of every product it names
 ``extra.dns_names`` on a DNS Name for each name listed, such as a zone
 a name row             file reader's list of every name the zones publish
+``extra.releases``     a Software Product and Release for each entry, with its
+                       versions, support dates and exploited defects (see
+                       ``docs/CMDB.md``)
 ``technology_zone``    in ``extra``: the item's GEANZ technology zone, one
                        of the ``technology_zone`` vocabulary's codes
 ``technology_``        in ``extra``: the item's GEANZ technology location,
@@ -832,6 +835,42 @@ def _named_products(extra: Mapping[str, Any]) -> list[str]:
     return _names_in(extra.get("software_products"))
 
 
+def _release_entries(asset: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """The releases a row lists in ``extra.releases``, checked and normalised.
+
+    Each entry names a ``product`` and either one version in ``versions`` or a
+    vendor version ``line`` that the listed versions all belong to. A release
+    covering several versions with no line would be a guess at what joins
+    them, so it is refused, as is an entry with no product.
+    """
+    raw = (asset.get("extra") or {}).get("releases")
+    if raw in (None, "", []):
+        return []
+    who = str(asset.get("source_name") or asset.get("source") or "a row")
+    if not isinstance(raw, list):
+        raise ValueError(f"{who}: extra.releases is not a list of releases")
+    out: list[dict[str, Any]] = []
+    for entry in raw:
+        if not isinstance(entry, Mapping):
+            raise ValueError(f"{who}: an entry of extra.releases is not a mapping")
+        product = " ".join(str(entry.get("product") or "").split())
+        if not product:
+            raise ValueError(f"{who}: an entry of extra.releases names no product")
+        line = " ".join(str(entry.get("line") or "").split())
+        versions = _names_in(entry.get("versions"))
+        if len(versions) > 1 and not line:
+            raise ValueError(f"{who}: the {product} entry of extra.releases lists "
+                             f"{len(versions)} versions and no version line joining them")
+        label = (" ".join(str(entry.get("label") or "").split())
+                 or f"{product} {line or (versions[0] if versions else '')}".strip())
+        support = entry.get("support")
+        exploited = entry.get("exploited")
+        out.append({"product": product, "line": line, "versions": versions, "label": label,
+                    "support": dict(support) if isinstance(support, Mapping) else {},
+                    "exploited": dict(exploited) if isinstance(exploited, Mapping) else None})
+    return out
+
+
 _RUA = re.compile(r"(?:^|;)\s*rua\s*=\s*([^;]*)", re.IGNORECASE)
 
 
@@ -1125,6 +1164,16 @@ class _Builder:
         return (self._named_key("estate-name", f"product:{software}", asset),
                 self._named_key("estate-name", f"release:{label}", asset), software, label)
 
+    def _entry_keys(self, asset: Mapping[str, Any], entry: Mapping[str, Any]) -> tuple[str, str]:
+        """(product key, release key) for one entry of ``extra.releases``.
+
+        The release is keyed on its label, as a machine row's release is, so an
+        entry for one version and a row naming that software at that version
+        are the same item.
+        """
+        return (self._named_key("estate-name", f"product:{entry['product']}", asset),
+                self._named_key("estate-name", f"release:{entry['label']}", asset))
+
     def _plan_key(self, machine: Mapping[str, Any]) -> str:
         return self.ledger.key_for(
             [("hostname", str(machine["name"]))], source="ipam",
@@ -1150,6 +1199,10 @@ class _Builder:
                 listed = self._named_key("estate-name", name, asset)
                 self._set(listed, "DNS Name", name)
                 self._names.setdefault(name, listed)
+            for entry in _release_entries(asset):
+                product, release = self._entry_keys(asset, entry)
+                self._set(product, "Software Product", entry["product"])
+                self._set(release, "Software Release", entry["label"])
             if _is_machine_row(asset):
                 self._classify_machine_row(asset, key)
                 continue
@@ -1256,6 +1309,8 @@ class _Builder:
             for name in _listed_names(asset):
                 self._say(self._named_key("estate-name", name, asset), "name", name,
                           strength, seen, actor)
+            for entry in _release_entries(asset):
+                self._release_facts(asset, entry, strength, seen, actor)
             if key is None:
                 if _is_machine_row(asset):
                     self._software_facts(None, asset, strength, seen, actor)
@@ -1340,6 +1395,50 @@ class _Builder:
         machines += [m for _, m in listed if m not in machines]
         for machine in machines:
             self._installs[(release, machine)] = self._installs.get((release, machine), 0) + 1
+
+    def _release_facts(self, asset: Mapping[str, Any], entry: Mapping[str, Any],
+                       strength: str, seen: str, actor: Actor) -> None:
+        """One entry of ``extra.releases``: a product, its release, and their facts."""
+        product, release = self._entry_keys(asset, entry)
+        versions = list(entry["versions"])
+        self._say(product, "name", entry["product"], strength, seen, actor)
+        self._say(release, "name", entry["label"], strength, seen, actor)
+        if entry["line"]:
+            version: Any = Absence("not-applicable", note=(
+                f"this release is the version line {entry['line']}; the versions it covers "
+                "are in covered_versions"))
+        else:
+            version = versions[0] if versions else Absence(
+                "not-measured", note=f"{actor.name} names this release without a version")
+        self._say(release, "version", version, strength, seen, actor)
+        self._say(release, "covered_versions", "; ".join(versions) or Absence(
+            "not-measured", note=f"{actor.name} lists no version for this release"),
+            strength, seen, actor)
+        support = entry["support"]
+        if support:
+            as_of = str(support.get("as_of") or "")
+            as_of = as_of if _ISO_DATE.match(as_of) else seen
+            for src, attribute in (("status", "support_status"),
+                                   ("end_of_support", "end_of_support"),
+                                   ("end_of_life", "end_of_life")):
+                value = str(support.get(src) or "")
+                self._say(release, attribute, value or Absence(
+                    "not-measured", note=f"the support entry gives no {src.replace('_', ' ')}"),
+                    DECLARED, as_of, actor)
+        exploited = entry["exploited"]
+        if exploited is not None:
+            as_of = str(exploited.get("as_of") or "")
+            as_of = as_of if _ISO_DATE.match(as_of) else seen
+            identifiers = _names_in(exploited.get("identifiers"))
+            self._say(release, "exploited_defect_ids", "; ".join(identifiers) or Absence(
+                "not-applicable", note=f"{actor.name} lists no exploited defect open against "
+                                       f"this release on {as_of}"),
+                strength, as_of, actor)
+            past_due = exploited.get("past_due")
+            if isinstance(past_due, int) and not isinstance(past_due, bool):
+                self._say(release, "exploited_defects_past_due", past_due, strength, as_of,
+                          actor)
+        self._release_of[release] = product
 
     def _is_hardware(self, key: str) -> bool:
         return self.schema.classes.get(self._class.get(key, ""), {}).get("family") == "Hardware"

@@ -379,6 +379,83 @@ def test_the_software_inventory_rows_reach_the_register(tmp_path):
     assert products == ["Example Drawing Tool", "OpenSSL"]
 
 
+def _release_list(*entries, **kw):
+    return cmdbfake._row(name="release list", data_state="software",
+                         source="example_lifecycle", source_name="Example lifecycle reader",
+                         extra={"releases": list(entries)}, **kw)
+
+
+_LINE = {"product": "Example TLS library", "line": "41.x", "versions": ["41.7.3", "41.9.0"],
+         "support": {"status": "security-only", "end_of_support": "2031-06-30",
+                     "end_of_life": "2033-06-30", "as_of": "2030-01-12"},
+         "exploited": {"identifiers": ["CVE-2099-4826193", "CVE-2099-4826194"], "past_due": 1,
+                       "as_of": "2030-01-11"}}
+
+
+def test_a_listed_release_line_carries_its_versions_support_and_defects(tmp_path):
+    register = cmdb.build(cmdbfake.write_observation(tmp_path, assets=[_release_list(_LINE)]))
+    classes = {i.label: i.item_class for i in register.items.values()}
+    assert classes == {"Example TLS library": "Software Product",
+                       "Example TLS library 41.x": "Software Release"}
+    facts = register.resolved()[_item(register, "Example TLS library 41.x").key]
+    assert facts["covered_versions"].value == "41.7.3; 41.9.0"
+    assert facts["version"].value.reason == "not-applicable"
+    assert facts["support_status"].value == "security-only"
+    assert facts["support_status"].evidence_strength == cmdb.INFERRED
+    assert facts["end_of_support"].value == "2031-06-30"
+    assert facts["end_of_support"].valid_at == "2030-01-12"
+    assert facts["end_of_life"].evidence_strength == cmdb.DECLARED
+    assert facts["exploited_defect_ids"].value == "CVE-2099-4826193; CVE-2099-4826194"
+    assert facts["exploited_defect_ids"].evidence_strength == cmdb.REPORTED
+    assert facts["exploited_defects_past_due"].value == 1
+    assert facts["exploited_defects_past_due"].valid_at == "2030-01-11"
+    assert {e.kind for e in register.edges} == {"release-of"}
+
+
+def test_a_listed_single_version_is_the_release_a_machine_row_names(tmp_path):
+    entry = {"product": "OpenSSL", "versions": ["3.0.13"], "exploited": {"identifiers": []}}
+    rows = cmdbfake.rows() + [_release_list(entry)]
+    register = cmdb.build(cmdbfake.write_observation(tmp_path, assets=rows))
+    releases = [i for i in register.items.values() if i.label == "OpenSSL 3.0.13"]
+    assert len(releases) == 1
+    facts = register.resolved()[releases[0].key]
+    assert facts["version"].value == "3.0.13"
+    assert facts["exploited_defect_ids"].value.reason == "not-applicable"
+    assert ("OpenSSL 3.0.13", "app-01.example.test") in _installed_on(register)
+
+
+def test_a_listed_release_takes_its_label_and_falls_back_to_the_row_date(tmp_path):
+    entry = {"product": "Example TLS library", "line": "41.x", "versions": ["41.7.3"],
+             "label": "Example TLS library long-term line",
+             "support": {"status": "supported", "as_of": "next week"},
+             "exploited": {"identifiers": ["CVE-2099-4826193"], "past_due": True,
+                           "as_of": "15/01/2030"}}
+    register = cmdb.build(cmdbfake.write_observation(tmp_path, assets=[_release_list(entry)]))
+    facts = register.resolved()[_item(register, "Example TLS library long-term line").key]
+    # A date that is not an ISO date gives way to the row's own date.
+    assert facts["support_status"].valid_at == cmdbfake.DAY
+    assert facts["exploited_defect_ids"].valid_at == cmdbfake.DAY
+    # A yes-or-no is not a count, so it is not recorded as one.
+    assert "exploited_defects_past_due" not in facts
+
+
+@pytest.mark.parametrize("entry, message", [
+    ({"versions": ["1.0"]}, "names no product"),
+    ({"product": "Example agent", "versions": ["1.0", "1.1"]}, "no version line"),
+    ("Example agent 1.0", "not a mapping"),
+])
+def test_a_release_entry_that_does_not_hold_together_is_refused(tmp_path, entry, message):
+    with pytest.raises(ValueError, match=message):
+        cmdb.build(cmdbfake.write_observation(tmp_path, assets=[_release_list(entry)]))
+
+
+def test_a_release_list_that_is_not_a_list_is_refused(tmp_path):
+    row = _release_list()
+    row["extra"]["releases"] = {"product": "Example agent", "versions": ["1.0"]}
+    with pytest.raises(ValueError, match="not a list of releases"):
+        cmdb.build(cmdbfake.write_observation(tmp_path, assets=[row]))
+
+
 def test_a_listed_product_is_a_product_with_no_release(tmp_path):
     rows = [cmdbfake._row(name="inventory scope", data_state="software",
                           source="example_inventory", source_name="Example inventory",

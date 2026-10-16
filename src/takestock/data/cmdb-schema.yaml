@@ -65,6 +65,18 @@ authorities:
       per element rather than per record. Six of its codes are adopted in
       absence_reason below, with their published definitions.
 
+  cisa-kev:
+    title: Known Exploited Vulnerabilities Catalog
+    publisher: >-
+      Cybersecurity and Infrastructure Security Agency, United States
+    note: >-
+      A public list of software defects, by CVE identifier, that are known to
+      have been exploited, each with the vendor and product it names and a
+      date by which United States federal civilian executive branch agencies
+      must remediate it under Binding Operational Directive 22-01. That date
+      binds those agencies only; elsewhere it is a published measure of
+      urgency.
+
   geanz-technologies-model:
     title: GEANZ Technologies model, baselined August 2025
     publisher: >-
@@ -466,9 +478,13 @@ classes:
 
   Software Release:
     family: Software
-    attributes: [name, version, end_of_support, end_of_life, support_status,
-                 migration_strategy, lifecycle_state, description]
-    built_from: rows naming software, installed on a machine or listed in an inventory
+    attributes: [name, version, covered_versions, end_of_support, end_of_life, support_status,
+                 migration_strategy, exploited_defect_ids, exploited_defects_past_due,
+                 lifecycle_state, description]
+    built_from: >-
+      rows naming software, installed on a machine or listed in an inventory, and
+      the releases a row lists in extra.releases, each with its versions, support
+      dates and exploited defects
     answers: Is this version supported, and where is it installed.
     note: >-
       Support and end-of-life dates live on the release and nowhere else: on
@@ -846,6 +862,32 @@ attributes:
       the transparency logs, the date the log was read and listed it as
       current.
   version: {refresh_interval_days: 7, expected_strength: measured}
+  covered_versions:
+    refresh_interval_days: 7
+    expected_strength: measured
+    note: >-
+      The version strings a release covers, as its source spelled them. A
+      release listed as a vendor version line covers every version under that
+      line, and its own version is then not applicable.
+  exploited_defect_ids:
+    refresh_interval_days: 30
+    expected_strength: reported
+    cites: [cisa-kev]
+    note: >-
+      The CVE identifiers of defects in the known exploited vulnerabilities
+      catalogue that the source says are open against this release, on the
+      source's date. The attribution of a defect to a release is the source's;
+      the catalogue may file the same identifier under another vendor or
+      product, such as a component the release includes. Not applicable when
+      the source lists none.
+  exploited_defects_past_due:
+    refresh_interval_days: 30
+    expected_strength: reported
+    cites: [cisa-kev]
+    note: >-
+      Of those defects, how many the source says were past the catalogue's own
+      remediation date on the source's date. That date is the catalogue's,
+      not an obligation on the organisation.
   end_of_support: {refresh_interval_days: 180, expected_strength: declared}
   end_of_life: {refresh_interval_days: 180, expected_strength: declared}
   support_status: {refresh_interval_days: 180, expected_strength: inferred}

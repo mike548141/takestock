@@ -9,6 +9,15 @@ command line or a file format, and its entry says how.
 
 ### Added
 
+- **Configuration register**: a row can list software releases in
+  `extra.releases`, each with its product, version or vendor version line
+  and the versions it covers, support status and dates, and the CVE
+  identifiers of known exploited defects open against it. Each entry makes a
+  Software Product and Software Release; Software Release gains
+  `covered_versions`, `exploited_defect_ids` and
+  `exploited_defects_past_due`, citing CISA's Known Exploited
+  Vulnerabilities Catalog. An entry that lists several versions with no line
+  is refused.
 - **Configuration register**: machines, Software Products and Applications
   carry `technology_zone`, one of the five technology zones of New Zealand's
   GEANZ Technologies model (`TAP.00`, `TFA.00`, `TI.00`, `TN.00`, `TUD.00`),
