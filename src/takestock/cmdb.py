@@ -42,10 +42,11 @@ row                    becomes
                        ``extra.registrable_domain``
 ``certificate``        a Certificate keyed on its host
 ``key-material``       a Credential keyed on its name
-``discovery``,         a DNS Name keyed on its host, never a machine
-``email-auth``, or a
-DNS-layer protocol
-with no port
+``discovery`` or       a DNS Name keyed on its host, never a machine
+``email-auth`` (port
+or not), or a DNS-
+layer protocol with
+no port
 anything else with a   a machine, keyed on host name and ``extra.agent_id``;
 host or agent id       its class from ``extra.host_type``, else from
                        ``extra.netdev_device_class``. A port
@@ -54,8 +55,9 @@ host or agent id       its class from ``extra.host_type``, else from
                        it; ``software`` adds a Software Product and Release
                        installed on it
 ``software`` and no    a Software Product and Release, installed on each
-host                   machine ``extra.hosts`` names (a list, or names
-                       separated by commas), or on nothing when it names none
+host                   machine ``extra.installed_on`` names (a list, or names
+                       separated by commas), or on nothing when it names none;
+                       ``extra.hosts`` stands in only as a list of names
 ``extra.software_``    a Software Product for each name listed, with no
 ``products``           release: an inventory's list of every product it names
 ``extra.dns_names`` on a DNS Name for each name listed, such as a zone
@@ -827,9 +829,31 @@ def _names_in(raw: Any) -> list[str]:
     return out
 
 
-def _listed_hosts(extra: Mapping[str, Any]) -> list[str]:
-    """The machine names in ``extra.hosts``."""
-    return _names_in(extra.get("hosts"))
+def _listed_hosts(asset: Mapping[str, Any]) -> list[str]:
+    """The machines a row says carry its software.
+
+    ``extra.installed_on`` holds them: a list of names, or names separated by
+    commas. A name with a space in it cannot be one host name, so it is
+    refused. ``extra.hosts`` is read only when there is no
+    ``installed_on`` and it is a list of names: readers also use ``hosts``
+    for a count of machines or a list joined by spaces, and reading either as
+    a name would make a machine of it.
+    """
+    extra = asset.get("extra") or {}
+    raw = extra.get("installed_on")
+    if raw not in (None, "", []):
+        names = _names_in(raw)
+        spaced = [n for n in names if len(n.split()) > 1]
+        if spaced or not isinstance(raw, (str, list)):
+            who = str(asset.get("source_name") or asset.get("source") or "a row")
+            raise ValueError(f"{who}: extra.installed_on is not a list of host names"
+                             + (f" ({spaced[0]!r} holds a space)" if spaced else ""))
+        return names
+    legacy = extra.get("hosts")
+    if (isinstance(legacy, list)
+            and all(isinstance(n, str) and len(n.split()) == 1 for n in legacy)):
+        return _names_in(legacy)
+    return []
 
 
 def _listed_names(asset: Mapping[str, Any]) -> list[str]:
@@ -1164,7 +1188,7 @@ class _Builder:
                     [("hostname", name)], source=str(asset.get("source") or ""),
                     seen_at=self._seen_at(asset), merged_at=self.recorded_at,
                     reason=f"one row named both identifiers ({self.artefact})"))
-                for name in _listed_hosts(asset.get("extra") or {})]
+                for name in _listed_hosts(asset)]
 
     def _software_keys(self, asset: Mapping[str, Any]) -> tuple[str, str, str, str] | None:
         """(product key, release key, product, release label) for installed software."""

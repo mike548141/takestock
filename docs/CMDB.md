@@ -89,7 +89,7 @@ exist and of which class, then to record what the row says about them.
 | a third-party row naming only a domain (`extra.registrable_domain`) | an **Unattributed Dependency**, keyed on that domain |
 | a certificate | a **Certificate**, keyed on its host |
 | key material | a **Credential**, keyed on its name |
-| a discovered name, a mail-authentication record, or a DNS or DNSSEC reading that names no port | a **DNS Name** |
+| a discovered name or a mail-authentication record, whether or not it names a port; or a DNS or DNSSEC reading that names no port | a **DNS Name** |
 | one of those that lists names in `extra.dns_names`, such as the zone-file reader's list of every published name | a **DNS Name** for each listed name |
 | anything else with a host name or a management agent's id | a **machine** |
 
@@ -153,10 +153,22 @@ Release**, and records that the release is installed on the machine.
 A row that names software and no machine, such as a software inventory's row
 for one product at one version, still creates its Software Product and
 Software Release. If it names the machines carrying that version in
-`extra.hosts` (a list, or names separated by commas), the release is
+`extra.installed_on` (a list, or names separated by commas), the release is
 recorded as installed on each of them, and a machine no other row names
 becomes a **Host** with that host name. A row that names no machine at all
-leaves the release installed on nothing. A row flagged `version-spread:`
+leaves the release installed on nothing.
+
+- A name in `installed_on` that holds a space cannot be one host name, so
+  the build stops on it, naming the row's source. It stops too on an
+  `installed_on` that is neither a list nor a string.
+- A row with no `installed_on` may name its machines in `extra.hosts`
+  instead, but only as a list of names, such as
+  `["app-02.example.test", "build-02.example.test"]`. A `hosts` value of
+  any other shape is not read: readers also use `hosts` for a count of
+  machines (`"12"`) or for names joined by spaces, and reading either as a
+  name would make a machine called `12`.
+
+A row flagged `version-spread:`
 counts how many versions of a product are in service; it is not an install
 and creates no release. A row that lists product names in
 `extra.software_products`, such as a software inventory's scope row listing
@@ -424,7 +436,7 @@ third-party row does not say which machine made the lookup.
 Machines are counted once per instrument, and those counts are kept side by
 side, never averaged: one instrument's count is what it can see, not what
 exists. A software inventory counts the machines its rows name in
-`extra.hosts`. A discovery source that reports how many machines exist is counted
+`extra.installed_on`. A discovery source that reports how many machines exist is counted
 as `reported`. A final row counts every machine any instrument named, once.
 Where the counts differ, every row is marked contested.
 

@@ -31,10 +31,11 @@ matching branch wins. Its ``max_tls`` is the highest TLS version that line can
 negotiate, and its ``citation`` says where that is documented.
 
 **Rows.** One per product and version, with the number of machines carrying it
-in ``hosts_count`` and their names in ``extra["hosts"]``. Machines are named
-by the rule in :mod:`takestock.identity`: an address the target profile pairs
-with a host name is reported by that name, so a machine listed both ways is
-counted once.
+in ``hosts_count`` and their names in ``extra["hosts"]``, and again as a list
+in ``extra["installed_on"]``, which the configuration register reads.
+Machines are named by the rule in :mod:`takestock.identity`: an address the
+target profile pairs with a host name is reported by that name, so a machine
+listed both ways is counted once.
 
 * A release line whose ``max_tls`` is below TLS 1.3, or below the lowest
   version the baseline grades better than weak (the floor), is flagged
@@ -301,6 +302,7 @@ def _version_row(g: _Group, register: list[dict], baseline_tls: Mapping, floor: 
     flags: list[str] = []
     verdict = "unknown"
     extra: dict = {"provides": g.entry.get("provides", ""), "hosts": ", ".join(sorted(g.hosts.values())),
+                   "installed_on": sorted(g.hosts.values()),
                    "inventory_rows": g.rows, "spellings": ", ".join(sorted(g.spellings)),
                    "vendors": ", ".join(sorted(g.vendors)), "paths": ", ".join(sorted(g.paths))}
     line = release_line(register, g.product, g.version) if g.version else None

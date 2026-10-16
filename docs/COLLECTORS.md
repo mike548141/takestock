@@ -892,7 +892,8 @@ that line can negotiate, and its `citation` is the public source for it.
 
 **Rows.** One per provider and version, named `<provider> <version>`, with
 the number of machines that carry it in `hosts_count` and their names in
-`extra.hosts`. The row has no `host` of its own, because it describes every
+`extra.hosts`, and again as a list in `extra.installed_on`, which the
+configuration register reads. The row has no `host` of its own, because it describes every
 machine on the list. Machines are named by the one rule above: an address
 that `scan_targets` pairs with a host name is reported by that name, so a
 machine listed once by name and once by address is counted once.

@@ -410,7 +410,8 @@ def test_an_inventory_row_naming_its_hosts_installs_the_release_on_each(tmp_path
         cmdbfake._row(name="Example TLS library 41.7.3", data_state="software",
                       software="Example TLS library", version="41.7.3",
                       source="example_inventory", source_name="Example inventory",
-                      extra={"hosts": "app-02.example.test, build-02.example.test"}),
+                      extra={"installed_on": "app-02.example.test, build-02.example.test"}),
+        # A row with no installed_on may list its machines in hosts.
         cmdbfake._row(name="Example TLS library 39.2.8", data_state="software",
                       software="Example TLS library", version="39.2.8",
                       source="example_inventory", source_name="Example inventory",
@@ -437,6 +438,30 @@ def test_an_inventory_row_naming_its_hosts_installs_the_release_on_each(tmp_path
     assert sum(1 for c in classes.values() if c == "Software Release") == 2
     counts = {p.instrument: p.count for p in register.populations}
     assert counts["Example inventory"] == 2 and counts["Example port scan"] == 1
+
+
+def test_a_hosts_count_or_a_space_joined_list_names_no_machine(tmp_path):
+    rows = [cmdbfake._row(name=f"Example TLS library {version}", data_state="software",
+                          software="Example TLS library", version=version,
+                          source="example_agent", source_name="Example endpoint agent",
+                          extra={"hosts": hosts})
+            for version, hosts in (("41.7.3", "3"),
+                                   ("41.9.0", "app-04.example.test app-05.example.test"),
+                                   ("42.0.1", ["app-04.example.test app-05.example.test"]))]
+    register = cmdb.build(cmdbfake.write_observation(tmp_path, assets=rows))
+    assert not [i for i in register.items.values() if i.family == "Hardware"]
+    assert _installed_on(register) == set()
+
+
+@pytest.mark.parametrize("listed", ["app-04.example.test app-05.example.test",
+                                    ["app-04.example.test", "app-05 .example.test"], 3])
+def test_an_installed_on_entry_that_is_not_a_host_name_is_refused(tmp_path, listed):
+    rows = [cmdbfake._row(name="Example TLS library 41.7.3", data_state="software",
+                          software="Example TLS library", version="41.7.3",
+                          source="example_inventory", source_name="Example inventory",
+                          extra={"installed_on": listed})]
+    with pytest.raises(ValueError, match="Example inventory: extra.installed_on is not a list"):
+        cmdb.build(cmdbfake.write_observation(tmp_path, assets=rows))
 
 
 def test_the_software_inventory_rows_reach_the_register(tmp_path):

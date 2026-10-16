@@ -172,6 +172,7 @@ def test_an_address_the_profile_names_is_reported_by_that_name(tmp_path):
     row = by_name(assets)["OpenSSL 3.0.0"]
     assert row.hosts_count == 2
     assert row.extra["hosts"] == "198.51.100.7, gw.example.test"
+    assert row.extra["installed_on"] == ["198.51.100.7", "gw.example.test"]
     assert row.host == ""
 
 

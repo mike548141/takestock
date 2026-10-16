@@ -42,8 +42,15 @@ command line or a file format, and its entry says how.
 - **Configuration register**: a row that names software and no machine, such
   as a software inventory's row for one product at one version, now makes its
   Software Product and Software Release. The release is installed on each
-  machine the row names in `extra.hosts`, and a machine only that list names
-  becomes a Host. A `version-spread:` row makes no release.
+  machine the row names in `extra.installed_on` (a list, or names separated
+  by commas), and a machine only that list names becomes a Host. A name
+  holding a space is refused. A row with no `installed_on` may name its
+  machines in `extra.hosts` as a list of names; a `hosts` string, such as a
+  count of machines or names joined by spaces, is not read. The software
+  inventory's rows carry `installed_on` beside their `hosts`. A
+  `version-spread:` row makes no release. (This was first written to read
+  `extra.hosts` in any shape; that was never released, so the rename costs
+  no user anything.)
 - **Software inventory**: the scope row names every product the export lists,
   cryptographic or not, in `extra.software_products`, and the configuration
   register makes a Software Product for each. A product outside the
@@ -97,7 +104,8 @@ command line or a file format, and its entry says how.
   that names a port is read as a probe of the machine answering DNS there,
   so it makes a Network Service on that machine. Before, it made a DNS Name
   with the machine's name and no service. A DNS or DNSSEC reading with no
-  port is still a DNS Name.
+  port is still a DNS Name, and a discovery or mail-authentication row stays
+  a name row even when it names a port.
 - **Configuration register**: `contains` is drawn once per machine and
   Network Service, keeping the strongest evidence among the rows that name
   the service, then the most recent. Before, every row naming the service
