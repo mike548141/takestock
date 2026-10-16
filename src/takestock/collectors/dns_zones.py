@@ -14,7 +14,9 @@ stamp) and reports:
 * **undelegated zones**: a zone held for a sub-domain whose parent zone has
   no NS record pointing to it, so none of its records is ever served;
 * **names nobody measured**: published names no other row of the run
-  covers, and, if supplied, no endpoint's resolved-name export mentions;
+  covers, and, if supplied, no endpoint's resolved-name export mentions.
+  The same row lists every published name in ``extra["dns_names"]``, so a
+  reader such as the configuration register can hold each one;
 * **outside services**: services named by ownership-proof TXT records or as
   the target of a pointer, mapped to their operator where the target profile
   or ``data/vendor-domains.csv`` knows it;
@@ -445,7 +447,8 @@ def collect(target: Mapping, root: Path | None, population: Iterable[CryptoAsset
                "being unused or unsafe."),
         extra={"published_names": len(names), "unmeasured": [
             {"name": n, "record": names[n]} for n in unmeasured],
-            "resolved_by_endpoints_only": resolved_only}))
+            "resolved_by_endpoints_only": resolved_only,
+            "dns_names": sorted(names)}))
 
     vendor_table = load_vendor_domains()
     declared = declared_vendor_domains(target)

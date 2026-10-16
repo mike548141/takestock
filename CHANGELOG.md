@@ -9,6 +9,9 @@ command line or a file format, and its entry says how.
 
 ### Added
 
+- **DNS zone files**: the "names nobody measured" row lists every name the
+  served zones publish in `extra.dns_names`, and the configuration register
+  makes a DNS Name for each. The observation gains no rows.
 - **Configuration register**: a machine with no host type takes its class
   from a network device export's equipment category, so a switch, router,
   firewall, wireless device or VPN gateway is a Network Device rather than an

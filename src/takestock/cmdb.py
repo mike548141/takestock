@@ -54,6 +54,8 @@ host                   machine ``extra.hosts`` names (a list, or names
                        separated by commas), or on nothing when it names none
 ``extra.software_``    a Software Product for each name listed, with no
 ``products``           release: an inventory's list of every product it names
+``extra.dns_names`` on a DNS Name for each name listed, such as a zone
+a name row             file reader's list of every name the zones publish
 =====================  ===================================================
 
 A row flagged ``version-spread:`` counts the versions of a product in
@@ -803,6 +805,14 @@ def _listed_hosts(extra: Mapping[str, Any]) -> list[str]:
     return _names_in(extra.get("hosts"))
 
 
+def _listed_names(asset: Mapping[str, Any]) -> list[str]:
+    """The DNS names a name row lists in ``extra.dns_names``, without a trailing dot."""
+    if not _is_name_row(asset):
+        return []
+    return _names_in([n.rstrip(".")
+                      for n in _names_in((asset.get("extra") or {}).get("dns_names"))])
+
+
 def _named_products(extra: Mapping[str, Any]) -> list[str]:
     """The product names a row lists in ``extra.software_products``."""
     return _names_in(extra.get("software_products"))
@@ -1046,6 +1056,10 @@ class _Builder:
     def classify(self) -> None:
         for asset in self.assets:
             key = self._key_of(asset)
+            for name in _listed_names(asset):
+                listed = self._named_key("estate-name", name, asset)
+                self._set(listed, "DNS Name", name)
+                self._names.setdefault(name, listed)
             if _is_machine_row(asset):
                 self._classify_machine_row(asset, key)
                 continue
@@ -1129,6 +1143,9 @@ class _Builder:
             seen = self._seen_at(asset)
             actor = self._actor(asset)
             strength = _strength_for(asset)
+            for name in _listed_names(asset):
+                self._say(self._named_key("estate-name", name, asset), "name", name,
+                          strength, seen, actor)
             if key is None:
                 if _is_machine_row(asset):
                     self._software_facts(None, asset, strength, seen, actor)

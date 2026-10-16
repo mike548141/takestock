@@ -359,6 +359,21 @@ def test_the_network_device_export_types_its_devices(tmp_path):
     assert classes["ap-02.example.test"] == "Network Device"
 
 
+def test_a_name_row_listing_names_makes_a_dns_name_for_each(tmp_path):
+    rows = [cmdbfake._row(name="zone names", data_state="discovery", protocol="dns",
+                          source="example_zones", source_name="Example zone files",
+                          verdict="n/a",
+                          extra={"dns_names": ["intranet.example.test.", "www.example.test"]}),
+            *cmdbfake.rows()[:1]]
+    register = cmdb.build(cmdbfake.write_observation(tmp_path, assets=rows))
+    names = [i for i in register.items.values() if i.item_class == "DNS Name"]
+    assert sorted(i.label for i in names) == ["intranet.example.test", "www.example.test"]
+    # A name another row also reads is one item carrying both rows' facts.
+    www = _value(register, "www.example.test", "address")
+    assert www.value == "192.0.2.10, 2001:db8::10"
+    assert _value(register, "intranet.example.test", "name").value == "intranet.example.test"
+
+
 def test_disagreeing_sources_are_both_published(built):
     os = _value(built, "app-01.example.test", "os")
     assert os.contested and os.tie

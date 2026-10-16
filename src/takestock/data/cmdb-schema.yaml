@@ -400,7 +400,9 @@ classes:
     family: Network and Naming
     attributes: [name, address, ip_stack, internet_facing, name_servers,
                  dmarc_report_address, lifecycle_state, last_seen]
-    built_from: discovery and mail-authentication rows, and DNS-layer readings of a name
+    built_from: >-
+      discovery and mail-authentication rows, DNS-layer readings of a name, and
+      the names a row lists in extra.dns_names, such as every name a zone file publishes
     answers: What names exist, and what is behind them.
 
   Network Service:

@@ -85,6 +85,7 @@ exist and of which class, then to record what the row says about them.
 | a certificate | a **Certificate**, keyed on its host |
 | key material | a **Credential**, keyed on its name |
 | a discovered name, a mail-authentication record, or a DNS or DNSSEC reading | a **DNS Name** |
+| one of those that lists names in `extra.dns_names`, such as the zone-file reader's list of every published name | a **DNS Name** for each listed name |
 | anything else with a host name or a management agent's id | a **machine** |
 
 A machine's class comes from the row's `extra.host_type`:
@@ -145,7 +146,7 @@ no `rua=` in it. A name nothing read for them shows *not collected*.
 | Deployment | Application, Application Instance | nothing yet |
 | Hardware | Server, Endpoint Device, Domain Controller, Network Device, Virtual Machine, Host | machine rows, by host type |
 | Software | Software Product, Software Release | rows naming software, on a machine or in an inventory |
-| Network and Naming | DNS Name | discovery and mail-authentication rows, and DNS-layer readings of a name |
+| Network and Naming | DNS Name | discovery and mail-authentication rows, DNS-layer readings of a name, and names a zone file publishes |
 | Network and Naming | Network Service | rows naming a listening port on a machine |
 | Network and Naming | Certificate | certificate rows |
 | Network and Naming | Network Range | nothing yet |

@@ -363,7 +363,10 @@ resolvers. It reports:
   `takeover_namespaces`;
 - **undelegated zones**: a zone held for a sub-domain whose parent has no NS
   record pointing to it, so none of its records is ever served;
-- **names nobody measured**: published names no other row of the run covers;
+- **names nobody measured**: published names no other row of the run covers.
+  The same row lists every published name (an address or alias record in a
+  served zone) in `extra.dns_names`, so the configuration register holds one
+  DNS Name for each without a row per name;
 - **outside services**: services named by ownership-proof TXT records or as
   the target of a pointer, mapped to their operator where the profile or
   `data/vendor-domains.csv` knows it (the proof token itself is never kept);

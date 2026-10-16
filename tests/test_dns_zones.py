@@ -96,6 +96,25 @@ def test_names_measured_elsewhere_and_by_endpoints(tmp_path):
     assert row.extra["resolved_by_endpoints_only"] == ["mail.example.com"]
     assert [u["name"] for u in row.extra["unmeasured"]] == [
         "old.example.com", "shop.example.com", "stale.example.com"]
+    assert row.extra["dns_names"] == ["mail.example.com", "old.example.com",
+                                      "shop.example.com", "stale.example.com",
+                                      "www.example.com"]
+
+
+def test_every_published_name_reaches_the_register(tmp_path):
+    import cmdbfake
+
+    from takestock import cmdb
+    from takestock.model import dump_assets
+    _inbox(tmp_path)
+    assets, _ = _collect(tmp_path)
+    register = cmdb.build(cmdbfake.write_observation(tmp_path / "obs",
+                                                     assets=dump_assets(assets)))
+    names = sorted(i.label for i in register.items.values() if i.item_class == "DNS Name")
+    assert names == ["lab.example.com", "mail.example.com", "old.example.com",
+                     "shop.example.com", "stale.example.com", "www.example.com"]
+    # The names come from the list on one row, not from a row per name.
+    assert not [a for a in assets if a.host in ("mail.example.com", "shop.example.com")]
 
 
 def test_outside_services_and_the_scope_row(tmp_path):
