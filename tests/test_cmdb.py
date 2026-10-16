@@ -323,6 +323,42 @@ def test_a_listed_product_is_a_product_with_no_release(tmp_path):
     assert register.edges == []
 
 
+def test_a_declared_equipment_category_types_the_machine(tmp_path):
+    def device(host, category, **extra):
+        return cmdbfake._row(name=f"{host} management", host=host, protocol="ssh",
+                             source="example_netdev", source_name="Example device export",
+                             extra={"netdev_device_class": category, **extra})
+    rows = [device("core-sw-02.example.test", "switch"),
+            device("edge-fw-02.example.test", "Firewall"),
+            device("ap-02.example.test", "wireless"),
+            device("bmc-02.example.test", "out-of-band"),
+            device("odd-02.example.test", "other"),
+            # A host type, where a row gives one, still decides.
+            device("mgmt-02.example.test", "router", host_type="server")]
+    register = cmdb.build(cmdbfake.write_observation(tmp_path, assets=rows))
+    classes = {i.label: i.item_class for i in register.items.values()}
+    assert classes == {"core-sw-02.example.test": "Network Device",
+                       "edge-fw-02.example.test": "Network Device",
+                       "ap-02.example.test": "Network Device",
+                       "bmc-02.example.test": "Host",
+                       "odd-02.example.test": "Host",
+                       "mgmt-02.example.test": "Server"}
+
+
+def test_the_network_device_export_types_its_devices(tmp_path):
+    from takestock.collectors import netdev
+    from takestock.model import dump_assets
+    export = tmp_path / "netdev.csv"
+    export.write_text("device,control,device_class,state\n"
+                      "core-sw-02.example.test,ssh-mgmt,switch,enabled\n"
+                      "ap-02.example.test,wifi,wireless,enabled\n")
+    assets, _gaps = netdev.collect({"netdev_inbox": {"devices": str(export)}})
+    register = cmdb.build(cmdbfake.write_observation(tmp_path, assets=dump_assets(assets)))
+    classes = {i.label: i.item_class for i in register.items.values()}
+    assert classes["core-sw-02.example.test"] == "Network Device"
+    assert classes["ap-02.example.test"] == "Network Device"
+
+
 def test_disagreeing_sources_are_both_published(built):
     os = _value(built, "app-01.example.test", "os")
     assert os.contested and os.tie

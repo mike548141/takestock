@@ -44,7 +44,8 @@ row                    becomes
 ``email-auth``, or a
 DNS-layer protocol
 anything else with a   a machine, keyed on host name and ``extra.agent_id``;
-host or agent id       its class from ``extra.host_type``. A port
+host or agent id       its class from ``extra.host_type``, else from
+                       ``extra.netdev_device_class``. A port
                        (``extra.service`` as ``443/tcp``, or ``port``) adds a
                        Network Service; ``software`` adds a Software Product
                        and Release installed on it
@@ -731,6 +732,17 @@ _HOST_TYPE_CLASS: dict[str, str] = {
     "firewall": "Network Device",
     "virtual machine": "Virtual Machine",
 }
+# Equipment categories a network device export declares
+# (``extra.netdev_device_class``), read when no host type is given. A link,
+# a management processor, storage or "other" says nothing more about the
+# machine, so it stays a Host.
+_DEVICE_CLASS_CLASS: dict[str, str] = {
+    "switch": "Network Device",
+    "router": "Network Device",
+    "firewall": "Network Device",
+    "wireless": "Network Device",
+    "vpn-gateway": "Network Device",
+}
 _UNTYPED_CLASS = "Host"
 _DECLARED_CLASS = "Declared Asset Class"
 
@@ -848,8 +860,12 @@ def _service(asset: Mapping[str, Any]) -> str:
 
 
 def _host_class(extra: Mapping[str, Any]) -> str:
-    return _HOST_TYPE_CLASS.get(" ".join(str(extra.get("host_type") or "").lower().split()),
-                                _UNTYPED_CLASS)
+    """A machine's class from ``extra.host_type``, else ``extra.netdev_device_class``."""
+    typed = _HOST_TYPE_CLASS.get(" ".join(str(extra.get("host_type") or "").lower().split()))
+    if typed:
+        return typed
+    return _DEVICE_CLASS_CLASS.get(str(extra.get("netdev_device_class") or "").strip().lower(),
+                                   _UNTYPED_CLASS)
 
 
 _CURVE_BITS = {"P-256": 256, "P-384": 384, "P-521": 521}

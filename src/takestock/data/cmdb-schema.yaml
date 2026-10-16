@@ -359,7 +359,9 @@ classes:
   Network Device:
     family: Hardware
     attributes: [hostname, address, vendor_name, host_type, lifecycle_state, last_seen]
-    built_from: machine rows whose host type is a router, switch, firewall or network device
+    built_from: >-
+      machine rows whose host type is a router, switch, firewall or network device,
+      or whose network device export category is one of those, wireless or a VPN gateway
 
   Virtual Machine:
     family: Hardware

@@ -9,6 +9,10 @@ command line or a file format, and its entry says how.
 
 ### Added
 
+- **Configuration register**: a machine with no host type takes its class
+  from a network device export's equipment category, so a switch, router,
+  firewall, wireless device or VPN gateway is a Network Device rather than an
+  untyped Host.
 - **Configuration register**: a row that names software and no machine, such
   as a software inventory's row for one product at one version, now makes its
   Software Product and Software Release. The release is installed on each

@@ -98,6 +98,12 @@ A machine's class comes from the row's `extra.host_type`:
 | `virtual machine` | Virtual Machine |
 | missing or anything else | **Host** |
 
+Where a row gives no host type, a network device export's equipment category
+(`extra.netdev_device_class`) is read instead: `switch`, `router`,
+`firewall`, `wireless` and `vpn-gateway` make a **Network Device**. A
+`wan-link`, `out-of-band` management processor, `storage` or `other` says
+nothing more about the machine, so it stays a Host.
+
 `Host` is a class of its own, not a guess: "nothing said what this machine
 is" is a finding someone can act on. A later row that does type the machine
 moves it to the matching class.
