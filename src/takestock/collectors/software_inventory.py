@@ -54,7 +54,10 @@ listed both ways is counted once.
 The **scope row** names every product the export lists, cryptographic or not,
 in ``extra["software_products"]``: a provider by its register name, any other
 product as the export first spells it. Only the name of a product outside the
-register is kept, not its versions or machines.
+register is kept, not its versions or machines. A machine name with a space in
+it cannot be one host name, so it is left out of every row's ``installed_on``
+(still counted in ``hosts_count``), and the scope row's
+``extra["installed_on_skipped"]`` gives how many machines were left out and why.
 
 **Lifecycle.** Each product and version is passed to
 :func:`takestock.lifecycle.derive_census_support`, as a library and as an
@@ -291,6 +294,16 @@ def machine_name(raw: str, names: Mapping[str, str]) -> str:
     return host
 
 
+def _one_name(host: str) -> bool:
+    """True for a machine name with no space in it, which can be one host name."""
+    return len(host.split()) == 1
+
+
+INSTALLED_ON_SKIPPED_REASON = (
+    "the export gives these machine names with a space in them, which cannot be one host "
+    "name, so they are counted in hosts_count and left out of installed_on")
+
+
 def _role(provides: str) -> str:
     return (f"Installed software that provides {_PROVIDES.get(provides, 'cryptography')} "
             "to the machines carrying it")
@@ -302,7 +315,7 @@ def _version_row(g: _Group, register: list[dict], baseline_tls: Mapping, floor: 
     flags: list[str] = []
     verdict = "unknown"
     extra: dict = {"provides": g.entry.get("provides", ""), "hosts": ", ".join(sorted(g.hosts.values())),
-                   "installed_on": sorted(g.hosts.values()),
+                   "installed_on": [h for h in sorted(g.hosts.values()) if _one_name(h)],
                    "inventory_rows": g.rows, "spellings": ", ".join(sorted(g.spellings)),
                    "vendors": ", ".join(sorted(g.vendors)), "paths": ", ".join(sorted(g.paths))}
     line = release_line(register, g.product, g.version) if g.version else None
@@ -386,7 +399,15 @@ def _scope_row(shown: str, source_name: str, mtime: str, rows: int, machines: in
                matched_rows: int, products: list[str], unmatched_rows: int,
                unmatched_products: int, source: str = SOURCE,
                scope_name: str = SCOPE_NAME,
-               every_product: list[str] | None = None) -> CryptoAsset:
+               every_product: list[str] | None = None,
+               skipped: int = 0) -> CryptoAsset:
+    extra: dict = {"rows": rows, "machines": machines, "matched_rows": matched_rows,
+                   "providers": products, "unmatched_rows": unmatched_rows,
+                   "unmatched_products": unmatched_products,
+                   "software_products": list(every_product or products)}
+    if skipped:
+        extra["installed_on_skipped"] = {"machines": skipped,
+                                         "reason": INSTALLED_ON_SKIPPED_REASON}
     return CryptoAsset(
         name=scope_name, data_state=DATA_STATE, role=SCOPE_ROLE, source=source,
         source_class="private", source_name=source_name, collected_at=mtime, verdict=NA_VERDICT,
@@ -397,11 +418,11 @@ def _scope_row(shown: str, source_name: str, mtime: str, rows: int, machines: in
                "product list and not graded: the register's list is the limit of what is "
                "graded. Nothing here says "
                "how many machines the organisation runs, so this is a count of what was "
-               "exported, not a share of the estate."),
-        extra={"rows": rows, "machines": machines, "matched_rows": matched_rows,
-               "providers": products, "unmatched_rows": unmatched_rows,
-               "unmatched_products": unmatched_products,
-               "software_products": list(every_product or products)})
+               "exported, not a share of the estate."
+               + (f" {skipped} machine name(s) carrying a provider hold a space, so they "
+                  "cannot be one host name: they are counted and left out of each row's "
+                  "installed_on." if skipped else "")),
+        extra=extra)
 
 
 def collect(target: Mapping, root: Path | None = None) -> tuple[list[CryptoAsset], list]:
@@ -518,7 +539,8 @@ def assess(target: Mapping, records: list[dict], *, shown: str, source_name: str
             harvest="A re-export with the version column filled.",
             nature=coverage.LOW_FIDELITY))
     every_product = sorted({*by_product, *unmatched.values()}, key=str.casefold)
+    skipped = len({k for g in groups.values() for k, h in g.hosts.items() if not _one_name(h)})
     assets.append(_scope_row(shown, source_name, mtime, len(rows), len(machines), matched,
                              sorted(by_product), unmatched_rows, len(unmatched), source,
-                             scope_name, every_product))
+                             scope_name, every_product, skipped))
     return assets, gaps

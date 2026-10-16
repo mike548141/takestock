@@ -447,7 +447,8 @@ def test_a_hosts_count_or_a_space_joined_list_names_no_machine(tmp_path):
                           extra={"hosts": hosts})
             for version, hosts in (("41.7.3", "3"),
                                    ("41.9.0", "app-04.example.test app-05.example.test"),
-                                   ("42.0.1", ["app-04.example.test app-05.example.test"]))]
+                                   ("42.0.1", ["app-04.example.test app-05.example.test"]),
+                                   ("42.1.0", [3]))]
     register = cmdb.build(cmdbfake.write_observation(tmp_path, assets=rows))
     assert not [i for i in register.items.values() if i.family == "Hardware"]
     assert _installed_on(register) == set()
@@ -481,6 +482,18 @@ def test_the_software_inventory_rows_reach_the_register(tmp_path):
     products = sorted(i.label for i in register.items.values()
                       if i.item_class == "Software Product")
     assert products == ["Example Drawing Tool", "OpenSSL"]
+
+
+def test_a_machine_name_with_a_space_in_an_inventory_export_does_not_stop_the_build(tmp_path):
+    from takestock.collectors import software_inventory
+    from takestock.model import dump_assets
+    export = tmp_path / "software.csv"
+    export.write_text("host,product,version\n"
+                      "app-02.example.test,OpenSSL,3.0.13\n"
+                      "app 02 (old),OpenSSL,3.0.13\n")
+    assets, _gaps = software_inventory.collect({"software_inbox": {"export": str(export)}})
+    register = cmdb.build(cmdbfake.write_observation(tmp_path, assets=dump_assets(assets)))
+    assert _installed_on(register) == {("OpenSSL 3.0.13", "app-02.example.test")}
 
 
 def _release_list(*entries, **kw):

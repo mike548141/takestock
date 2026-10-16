@@ -44,7 +44,12 @@ robust to the readers that write it:
   became one machine whose name was the whole string. A `hosts` string is
   now not read at all.
 - The software inventory's rows carry `installed_on`, a list, beside their
-  `hosts`, which is unchanged.
+  `hosts`, which is unchanged. A machine name with a space in an export is
+  counted in the row's `hosts_count` and left out of `installed_on`, and the
+  scope row gives how many machines were left out, and why, in
+  `extra.installed_on_skipped`. One bad name in an export therefore never
+  stops the register build; the refusal is for a plug-in that writes a bad
+  `installed_on` itself.
 
 The installed-on list had not been released, so the rename changes nothing
 for any user; the changelog says so.
@@ -57,7 +62,12 @@ for any user; the changelog says so.
 - Two more for the installed-on list: a `hosts` count, a space-joined
   `hosts` string and a `hosts` list holding a space-joined entry make no
   machine; an `installed_on` that is space-joined, holds an entry with a
-  space, or is a number is refused. The inventory test checks the new list.
+  space, or is a number is refused; a `hosts` list holding a number itself
+  makes no machine. The inventory test checks the new list.
+- Two for the inventory: a machine name with a space is counted, left out of
+  `installed_on` and counted on the scope row, which has no
+  `installed_on_skipped` when nothing was left out; and a register built
+  from such an export installs the release on the other machine only.
 - Each rule was taken out in turn, with the compiled-file cache cleared, and
   a new test went red each time: reading every `dns` row as a name; never
   reading one as a name; keying names as host names; reading no `port`;
@@ -67,7 +77,8 @@ for any user; the changelog says so.
   time: reading `hosts` in any shape; reading a `hosts` list whatever its
   entries hold; accepting an entry with a space; accepting a value that is
   neither a list nor a string; ignoring `installed_on`; the inventory not
-  writing it.
+  writing it; the inventory keeping a name with a space; the scope row not
+  counting it; reading a `hosts` list holding a number.
 - `make check` (guard, ruff, mypy, tests) passed.
 
 ## What is left
@@ -77,6 +88,7 @@ for any user; the changelog says so.
   alias kind fits it better, but changing it would give those items new keys
   for anyone holding a `keys.jsonl` from an earlier build, so it is left for
   a decision.
-- A `hosts` list whose entries hold no space is read as names, so a list
-  holding a bare number still makes a machine of it. A reader that means a count
-  should not put it in a list.
+- A `hosts` list whose entries are all text with no space is read as names,
+  so a list holding a number written as text, such as `["3"]`, still makes a
+  machine of it; a list holding a number itself, such as `[3]`, is not
+  read. A reader that means a count should not put it in a list.

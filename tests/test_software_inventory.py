@@ -50,6 +50,21 @@ def test_products_match_the_register_and_others_are_listed_not_graded(tmp_path):
     assert scope.extra["unmatched_rows"] == 1 and scope.extra["unmatched_products"] == 1
     assert "Example Office Suite" not in scope.notes
     assert scope.extra["software_products"] == ["Example Office Suite", "GnuTLS", "OpenSSL"]
+    assert "installed_on_skipped" not in scope.extra
+
+
+def test_a_machine_name_with_a_space_is_counted_and_left_out_of_installed_on(tmp_path):
+    assets, gaps = export(tmp_path, "app-01.example.test,OpenSSL,3.0.0,,",
+                          "app 01 (old),OpenSSL,3.0.0,,", "app 01 (old),GnuTLS,3.0.0,,")
+    rows = by_name(assets)
+    row = rows["OpenSSL 3.0.0"]
+    assert row.hosts_count == 2
+    assert row.extra["installed_on"] == ["app-01.example.test"]
+    assert rows["GnuTLS 3.0.0"].extra["installed_on"] == []
+    scope = rows[si.SCOPE_NAME]
+    assert scope.extra["installed_on_skipped"] == {
+        "machines": 1, "reason": si.INSTALLED_ON_SKIPPED_REASON}
+    assert "1 machine name(s) carrying a provider hold a space" in scope.notes
 
 
 def test_header_spellings_are_matched_ignoring_case_and_separators(tmp_path):

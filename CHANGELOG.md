@@ -47,7 +47,10 @@ command line or a file format, and its entry says how.
   holding a space is refused. A row with no `installed_on` may name its
   machines in `extra.hosts` as a list of names; a `hosts` string, such as a
   count of machines or names joined by spaces, is not read. The software
-  inventory's rows carry `installed_on` beside their `hosts`. A
+  inventory's rows carry `installed_on` beside their `hosts`; a machine
+  name with a space in the export is counted in `hosts_count` and left out
+  of `installed_on`, and the scope row gives how many in
+  `extra.installed_on_skipped`, so one bad name never stops the build. A
   `version-spread:` row makes no release. (This was first written to read
   `extra.hosts` in any shape; that was never released, so the rename costs
   no user anything.)

@@ -835,9 +835,9 @@ def _listed_hosts(asset: Mapping[str, Any]) -> list[str]:
     ``extra.installed_on`` holds them: a list of names, or names separated by
     commas. A name with a space in it cannot be one host name, so it is
     refused. ``extra.hosts`` is read only when there is no
-    ``installed_on`` and it is a list of names: readers also use ``hosts``
-    for a count of machines or a list joined by spaces, and reading either as
-    a name would make a machine of it.
+    ``installed_on`` and it is a list of names: a plug-in reader may use
+    ``hosts`` for a count of machines or a list joined by spaces, and reading
+    either as a name would make a machine of it.
     """
     extra = asset.get("extra") or {}
     raw = extra.get("installed_on")

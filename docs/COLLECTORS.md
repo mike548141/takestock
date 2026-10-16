@@ -893,8 +893,10 @@ that line can negotiate, and its `citation` is the public source for it.
 **Rows.** One per provider and version, named `<provider> <version>`, with
 the number of machines that carry it in `hosts_count` and their names in
 `extra.hosts`, and again as a list in `extra.installed_on`, which the
-configuration register reads. The row has no `host` of its own, because it describes every
-machine on the list. Machines are named by the one rule above: an address
+configuration register reads. A machine name with a space in it cannot be one
+host name, so it is counted in `hosts_count` and left out of `installed_on`.
+The row has no `host` of its own, because it describes every machine on the
+list. Machines are named by the one rule above: an address
 that `scan_targets` pairs with a host name is reported by that name, so a
 machine listed once by name and once by address is counted once.
 
@@ -930,7 +932,8 @@ gap, and so are provider rows with no version (each kept as
 many rows named a provider, without claiming a share of the estate. It
 names every product the export lists, cryptographic or not, in
 `extra.software_products`: a provider by its register name, any other
-product as the export first spells it.
+product as the export first spells it. When machine names were left out of
+`installed_on`, `extra.installed_on_skipped` gives how many machines and why.
 
 **Cannot see.** A provider the register does not list; a library compiled
 into another program, since an inventory lists installed packages, not what

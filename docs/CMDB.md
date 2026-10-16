@@ -160,13 +160,20 @@ leaves the release installed on nothing.
 
 - A name in `installed_on` that holds a space cannot be one host name, so
   the build stops on it, naming the row's source. It stops too on an
-  `installed_on` that is neither a list nor a string.
+  `installed_on` that is neither a list nor a string. That refusal is for a
+  plug-in that writes a bad `installed_on` itself.
+- takestock's software inventory never writes such a name. A machine name
+  with a space in the export is counted in the row's `hosts_count` and left
+  out of its `installed_on`, and the scope row says how many machines were
+  left out, and why, in `extra.installed_on_skipped`. One bad name in an
+  export therefore never stops the build.
 - A row with no `installed_on` may name its machines in `extra.hosts`
   instead, but only as a list of names, such as
   `["app-02.example.test", "build-02.example.test"]`. A `hosts` value of
-  any other shape is not read: readers also use `hosts` for a count of
-  machines (`"12"`) or for names joined by spaces, and reading either as a
-  name would make a machine called `12`.
+  any other shape is not read: a plug-in reader may use `hosts` for a count
+  of machines (`"12"`) or for names joined by spaces, and reading either as
+  a name would make a machine called `12`. A list holding a number itself,
+  such as `[3]`, is not read either.
 
 A row flagged `version-spread:`
 counts how many versions of a product are in service; it is not an install
