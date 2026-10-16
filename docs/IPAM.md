@@ -135,7 +135,7 @@ subnets:
 | `site` | yes | A declared site id |
 | `purpose`, `environment`, `confidence`, `notes` | no | Free text, shown and written to the CSV |
 | `vlan` | no | A number. Two subnets of the same IP version on one VLAN at one site are flagged |
-| `addressing` | no | `dynamic`, `pool` or `overlay` mark a subnet whose addresses change hands, so two machine names on one address are expected rather than a conflict |
+| `addressing` | no | `dynamic`, `pool` or `overlay` mark a subnet whose addresses change hands, so two machine names on one address are expected rather than a conflict; `static` (the default) marks fixed addresses. Any other value is listed under [Checks](#checks) and treated as `static` |
 | `scope` | no | `public` or `private`; worked out from the address when absent |
 | `evidence` | no | Source ids that vouch for the subnet itself, usually a document |
 | `only_sources` | no | Only these sources may place addresses here; others are set aside |
@@ -182,6 +182,7 @@ sources:
 | `roams` | `true` for a source that reports addresses a machine held anywhere: home networks, hotspots, its own container bridges |
 | `authoritative_for` | Site ids for which this source is the reference |
 | `supersedes` | Source ids this one replaces |
+| `cannot_see` | For a source that `supersedes` another: sighting-detail values it would never list, as `{key: [values]}` (for example `{device_kind: [Printer]}` for a newer register that lists only computers). Compared ignoring case |
 | `columns`, `delimiter` | For `csv` sources (see [Readers](#readers)) |
 
 Three of these change how sightings are placed:
@@ -194,7 +195,9 @@ Three of these change how sightings are placed:
   An address another source places there that the authoritative source does
   not list is flagged.
 - **A superseding source** marks names only the older source gave as
-  previous names, and flags addresses that only the older source reports.
+  previous names, and flags addresses that only the older source reports,
+  except where the older source's sighting carries a value the newer one's
+  `cannot_see` names: the newer source would not have listed it anyway.
 
 ### Documented addresses
 
@@ -439,10 +442,12 @@ The plan lists what a reviewer should look at, each found in the data:
 | Missing from the site's authoritative source | The authoritative source does not list an address inside its site |
 | Seen only in a source a newer one replaced | The machine may have gone or moved |
 | Subnets with no addresses found | Either unused, or used by machines no source covers |
-| Subnets known only from documents | Nothing read from the network confirms they exist |
+| Subnets known only from documents | Nothing read from the network confirms they exist. A `record` source counts as a document |
+| Unknown addressing values | A subnet's `addressing` is not `static`, `dynamic`, `pool` or `overlay`, so it is treated as `static`: usually a typing slip |
 
-The sample is built to trigger every check once. For example, its asset
-register gives `192.0.2.130` to both `print-01` and `print-02` in the fixed
+The sample is built to trigger every check once, except an unknown
+addressing value, which a finished plan file should not have. For example,
+its asset register gives `192.0.2.130` to both `print-01` and `print-02` in the fixed
 printer subnet, and its laptop check-in log reports a loopback address, an
 address inside the container-bridge range, and an address outside every
 subnet, each of which is set aside with its reason.

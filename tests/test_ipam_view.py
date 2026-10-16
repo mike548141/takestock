@@ -148,3 +148,11 @@ def test_the_page_shows_the_audience_segment_meanings_and_exposure_chains():
     assert ("public" in [i for i, _l, _n in sections(page).panels]
             and "as Bench inventory describes it, 2030-01-01" in page
             and "<code>192.0.2.1</code> (bench-01)" in page)
+
+
+def test_an_unknown_addressing_value_is_shown_as_read_as_static():
+    plan = tiny_plan()
+    plan["checks"]["unknown_addressing"] = [{"subnet": "192.0.2.0/25", "addressing": "dyanmic"}]
+    page = ipam_view.render(plan)
+    assert "Unknown addressing values" in page
+    assert "<code>dyanmic</code></td><td>treated as static" in page

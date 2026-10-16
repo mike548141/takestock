@@ -52,6 +52,10 @@ CHECKS: dict[str, tuple[str, str]] = {
     "documented_only": (
         "Subnets known only from documents",
         "Nothing read from the network confirms these subnets exist."),
+    "unknown_addressing": (
+        "Unknown addressing values",
+        "The subnet's addressing is not static, dynamic, pool or overlay, so it is treated as "
+        "static: two machine names on one address count as a conflict. Usually a typing slip."),
 }
 
 _EXTRA_CSS = """
@@ -502,6 +506,10 @@ class _View:
                         + "<td>" + ", ".join(self.subnet_link(c) for c in i["subnets"]) + "</td></tr>"
                         for i in items]
                 out.append(_table(["Site", "VLAN", "Subnets"], rows, num=frozenset({1})))
+            elif key == "unknown_addressing":
+                rows = [f"<tr><td>{self.subnet_link(i['subnet'])}</td>" + _td(i["addressing"], code=True)
+                        + _td("treated as static") + "</tr>" for i in items]
+                out.append(_table(["Subnet", "Addressing", "Read as"], rows))
             elif key in ("no_addresses_found", "documented_only"):
                 out.append("<p>" + ", ".join(self.subnet_link(c) for c in items) + "</p>"
                            if items else '<p class="muted">None found.</p>')

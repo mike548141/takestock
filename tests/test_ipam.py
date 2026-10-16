@@ -520,3 +520,41 @@ def test_an_exposure_chain_names_a_declared_source_and_real_addresses(tmp_path):
         doc["exposure_chains"] = [bad]
         with pytest.raises(IpamError, match=why):
             ipam.build_plan(write_plan(tmp_path, doc, {"inv.csv": "ip,host\n"}), tmp_path / "exports")
+
+
+def test_an_unknown_addressing_value_is_listed_and_read_as_static(tmp_path):
+    doc = minimal()
+    doc["subnets"][0]["addressing"] = "dyanmic"
+    text = "ip,host\n192.0.2.1,a\n192.0.2.1,b\n"
+    plan = ipam.build_plan(write_plan(tmp_path, doc, {"inv.csv": text}), tmp_path / "exports")
+    assert plan["checks"]["unknown_addressing"] == [{"subnet": "192.0.2.0/25", "addressing": "dyanmic"}]
+    assert [i["ip"] for i in plan["checks"]["name_conflicts"]] == ["192.0.2.1"]
+    doc["subnets"][0]["addressing"] = "static"
+    plan = ipam.build_plan(write_plan(tmp_path, doc, {"inv.csv": text}), tmp_path / "exports")
+    assert plan["checks"]["unknown_addressing"] == []
+
+
+def test_a_newer_source_is_not_blamed_for_what_it_cannot_see(tmp_path):
+    doc = minimal()
+    doc["sources"] = [
+        {"id": "inv", "kind": "csv", "label": "Inventory", "path": "inv.csv", "as_of": "2030-02-01",
+         "columns": {"ip": "ip", "name": "host"}, "supersedes": ["inv-old"],
+         "cannot_see": {"device_kind": ["Printer"]}},
+        {"id": "inv-old", "kind": "csv", "label": "Inventory (old)", "path": "old.csv",
+         "as_of": "2030-01-01", "columns": {"ip": "ip", "name": "host", "kind": "type"}}]
+    files = {"inv.csv": "ip,host\n192.0.2.9,pc-09\n",
+             "old.csv": "ip,host,type\n192.0.2.7,print-07,printer\n192.0.2.8,pc-08,Computer\n"}
+    plan = ipam.build_plan(write_plan(tmp_path, doc, files), tmp_path / "exports")
+    assert [i["ip"] for i in plan["checks"]["only_in_superseded"]] == ["192.0.2.8"]
+    del doc["sources"][0]["supersedes"]
+    with pytest.raises(IpamError, match="cannot_see needs supersedes"):
+        ipam.build_plan(write_plan(tmp_path, doc, files), tmp_path / "exports")
+
+
+def test_a_subnet_only_a_record_vouches_for_is_documented_only(tmp_path):
+    doc = minimal()
+    doc["sources"].append({"id": "ticket", "kind": "record", "label": "Change record",
+                           "as_of": "2030-01-05"})
+    doc["subnets"].append({"cidr": "192.0.2.128/26", "site": "lab", "evidence": ["ticket"]})
+    plan = ipam.build_plan(write_plan(tmp_path, doc, {"inv.csv": "ip,host\n"}), tmp_path / "exports")
+    assert "192.0.2.128/26" in plan["checks"]["documented_only"]

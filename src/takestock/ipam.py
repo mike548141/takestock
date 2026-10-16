@@ -86,6 +86,10 @@ EVIDENCE_CLASSES = ("observed", "named", "documented")
 #: machine names on one address are expected rather than a conflict.
 SHARED_ADDRESSING = frozenset({"dynamic", "pool", "overlay"})
 
+#: Every ``addressing`` value the plan knows. Any other is listed as a check
+#: and treated as ``static``.
+ADDRESSING = SHARED_ADDRESSING | {"static"}
+
 #: Site id given to a subnet an export declared that no site's ranges hold.
 NO_SITE = "unassigned"
 
@@ -587,7 +591,20 @@ def _sources(cfg: dict) -> dict[str, dict]:
         for other in list(s.get("supersedes") or []):
             if other not in out:
                 raise IpamError(f"source {sid}: supersedes unknown source {other!r}")
+        blind = s.get("cannot_see")
+        if blind is not None:
+            if not s.get("supersedes"):
+                raise IpamError(f"source {sid}: cannot_see needs supersedes")
+            if not isinstance(blind, dict) or not all(isinstance(v, list) for v in blind.values()):
+                raise IpamError(f"source {sid}: cannot_see must map a detail key to a list of values")
+            s["cannot_see"] = {str(k): sorted({str(v).lower() for v in vs}) for k, vs in blind.items()}
     return out
+
+
+def _unseen_by_newer(sg: Sighting, newer: dict) -> bool:
+    """Whether the newer source says it cannot see sightings like ``sg``."""
+    return any(str(sg.detail.get(key, "")).lower() in values
+               for key, values in (newer.get("cannot_see") or {}).items())
 
 
 def _evidence_class(src: dict) -> str:
@@ -1010,7 +1027,9 @@ def _addresses(sightings: list[Sighting], sub: dict, sources: dict, sites: dict,
         if auth and auth not in here and not sub.get("only_sources"):
             entry["not_in_authoritative_source"] = sources[auth]["label"]
         observed = {s for s in here if classes.get(s) == "observed"}
-        if observed and all(s in newer_of for s in observed):
+        unseen = any(_unseen_by_newer(sg, sources[newer_of[sg.source]])
+                     for sg in sgs if sg.source in observed and sg.source in newer_of)
+        if observed and all(s in newer_of for s in observed) and not unseen:
             entry["only_in_superseded"] = sources[newer_of[sorted(observed)[0]]]["label"]
         stated = sorted({str(sg.detail["site_stated"]) for sg in sgs if sg.detail.get("site_stated")})
         known = {str(sub["site"]).lower(), str(site.get("name") or "").lower()}
@@ -1058,6 +1077,9 @@ def _checks(subnets: dict[str, dict], segments: list[dict], sources: dict) -> di
 
     name_conflicts = [r for r in every("name_conflict")
                       if subnets[r["subnet"]].get("addressing") not in SHARED_ADDRESSING]
+    unknown_addressing = [{"subnet": c, "addressing": str(s["addressing"])}
+                          for c, s in subnets.items()
+                          if s.get("addressing") not in (None, "", *ADDRESSING)]
     # One IPv4 and one IPv6 subnet on a VLAN is ordinary dual-stack; two of
     # the same version is the conflict.
     on_vlan: dict[tuple[str, int, int], set[str]] = defaultdict(set)
@@ -1079,7 +1101,8 @@ def _checks(subnets: dict[str, dict], segments: list[dict], sources: dict) -> di
             "site_disagreements": every("site_stated"),
             "not_in_authoritative_source": every("not_in_authoritative_source"),
             "only_in_superseded": every("only_in_superseded"),
-            "no_addresses_found": empty, "documented_only": documented_only}
+            "no_addresses_found": empty, "documented_only": documented_only,
+            "unknown_addressing": unknown_addressing}
 
 
 # --- writing -----------------------------------------------------------------

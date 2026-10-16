@@ -21,6 +21,12 @@ command line or a file format, and its entry says how.
   subnet a segment declares takes that as its purpose; `exposure_chains`, the
   hops from the internet to a service as a declared source describes them;
   and `audience`, who the plan is written for.
+- **IP address plan**: a subnet's `addressing` value that the plan does not
+  know is listed as a check and treated as `static`, so a typing slip no
+  longer silently changes which name conflicts are reported; `static` is now
+  a documented value. A superseding source can say with `cannot_see` which
+  sightings it would never list, and an address the older source reports
+  with one of those values is no longer flagged as only in the older source.
 
 ## [0.1.0] — 2026-10-17
 
