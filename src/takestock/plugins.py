@@ -9,13 +9,19 @@ an observation with a :class:`Context` carrying what a built-in ingest
 collector gets, checks what comes back, and turns valid records into graded
 rows.
 
-**Finding a plug-in.** Two ways, which may be mixed:
+**Finding a plug-in.** Three ways, which may be mixed:
 
+* it is one of takestock's own readers (:mod:`takestock.readers`, the readers
+  library), found in the package itself;
 * an installed package names it under the entry-point group
   ``takestock.collectors``;
 * the target profile names a module (``module: package.module``, optionally
   ``package.module:attribute``) or a Python file in the workspace
   (``path: plugins/reader.py``).
+
+A name the profile gives alone is looked up in the first two. When both
+offer a plug-in of that name, or two packages do, it is not run: which one
+was meant is ambiguous, so the profile must name it with ``module:``.
 
 Either way the target profile's ``plugins:`` list decides what runs: an
 installed plug-in the profile does not name never runs, and a named plug-in
@@ -53,7 +59,7 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from importlib import import_module, metadata
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from . import config, coverage, identity, plaintext, plugin_kinds
 from .model import CryptoAsset
@@ -70,6 +76,8 @@ SUMMARY_KEY = "plugins"
 UNDECLARED_KEY = "plugins_installed_not_declared"
 #: The attribute a profile ``module:`` without ``:attribute`` is read from.
 DEFAULT_ATTRIBUTE = "PLUGIN"
+#: The ``origin`` recorded for one of takestock's own readers (:mod:`takestock.readers`).
+LIBRARY_ORIGIN = "library"
 
 _NAME = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 #: The ``extra`` key naming the plug-in that wrote a row.
@@ -320,17 +328,65 @@ def _as_plugins(obj: Any) -> list[Plugin]:
     return out
 
 
-def installed() -> tuple[dict[str, Plugin], dict[str, str]]:
-    """Plug-ins named under the entry-point group: (by name, entry points that failed to load)."""
-    found: dict[str, Plugin] = {}
+def library() -> list[Plugin]:
+    """takestock's own readers (:mod:`takestock.readers`), found in the package itself."""
+    from . import readers
+    return list(readers.PLUGINS)
+
+
+class Offer(NamedTuple):
+    """One plug-in found without a profile's ``module:`` or ``path:``, and where from."""
+
+    plugin: Plugin
+    #: :data:`LIBRARY_ORIGIN` for takestock's own readers, ``entry point`` otherwise.
+    origin: str
+    #: Where it came from, for a reader: the library, or the entry point and its package.
+    where: str
+
+
+def _package_of(ep: Any) -> str:
+    dist = getattr(ep, "dist", None)
+    name = getattr(dist, "name", "") if dist is not None else ""
+    return str(name or "an unnamed package")
+
+
+def offered() -> tuple[dict[str, list[Offer]], dict[str, str]]:
+    """Every plug-in takestock's readers library and the entry-point group offer, by name.
+
+    The same object offered twice is listed once, so a name with two offers is
+    offered by two different plug-ins. The second value maps each entry point
+    (or the library) that failed to load to why.
+    """
+    found: dict[str, list[Offer]] = {}
     broken: dict[str, str] = {}
+
+    def add(offer: Offer) -> None:
+        held = found.setdefault(offer.plugin.name, [])
+        if not any(offer.plugin is o.plugin for o in held):
+            held.append(offer)
+
+    try:
+        for p in library():
+            add(Offer(p, LIBRARY_ORIGIN, "takestock's readers library"))
+    except Exception as exc:  # noqa: BLE001 - a broken library reader must not stop the others
+        broken["takestock.readers"] = f"{type(exc).__name__}: {exc}"
     for ep in metadata.entry_points(group=ENTRY_POINT_GROUP):
         try:
             for p in _as_plugins(ep.load()):
-                found.setdefault(p.name, p)
+                add(Offer(p, "entry point", f"entry point {ep.name} of {_package_of(ep)}"))
         except Exception as exc:  # noqa: BLE001 - a broken package must not stop the others
             broken[ep.name] = f"{type(exc).__name__}: {exc}"
     return found, broken
+
+
+def installed() -> tuple[dict[str, Plugin], dict[str, str]]:
+    """Plug-ins found by name, each offered once: (by name, what failed to load).
+
+    A name offered by two different plug-ins is left out; :func:`resolve`
+    refuses to run it by name.
+    """
+    offers, broken = offered()
+    return {n: held[0].plugin for n, held in offers.items() if len(held) == 1}, broken
 
 
 def _from_module(spec: str) -> list[Plugin]:
@@ -389,7 +445,7 @@ def resolve(target: Mapping) -> tuple[list[Declared], list[str]]:
     decls = declarations(target)
     if not decls:
         return [], []
-    found, broken = installed()
+    offers, broken = offered()
     for d in decls:
         if d.problem:
             continue
@@ -399,8 +455,14 @@ def resolve(target: Mapping) -> tuple[list[Declared], list[str]]:
             elif d.path:
                 candidates, d.origin = _from_path(d.path, d.name), f"path {d.path}"
             else:
-                candidates = [found[d.name]] if d.name in found else []
-                d.origin = "entry point"
+                held = offers.get(d.name, [])
+                if len(held) > 1:
+                    d.problem = ("is offered by more than one plug-in ("
+                                 + "; ".join(o.where for o in held) + "), so it is not run by "
+                                 "name: give the one to run as `module:`")
+                    continue
+                candidates = [o.plugin for o in held]
+                d.origin = held[0].origin if held else "entry point"
         except Exception as exc:  # noqa: BLE001 - a plug-in that cannot load must not stop the run
             d.problem = f"could not be loaded: {type(exc).__name__}: {exc}"
             continue
@@ -415,7 +477,10 @@ def resolve(target: Mapping) -> tuple[list[Declared], list[str]]:
         else:
             d.problem = f"is not installed under the entry-point group {ENTRY_POINT_GROUP}"
     named = {d.name for d in decls}
-    return decls, sorted(n for n in found if n not in named)
+    # takestock's own readers are in every installation, so they are not
+    # listed as installed and undeclared; an installed package's are.
+    return decls, sorted(n for n, held in offers.items()
+                         if n not in named and any(o.origin != LIBRARY_ORIGIN for o in held))
 
 
 # ── running them ──

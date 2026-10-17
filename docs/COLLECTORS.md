@@ -6,7 +6,9 @@ takestock registers: what it reads or probes, what it needs in the target
 profile, which external tools it uses, and what it cannot see.
 
 Installing the external tools, and the authorisation record active probes
-need, are in [`SETUP-SCANNERS.md`](SETUP-SCANNERS.md). A reader for an export
+need, are in [`SETUP-SCANNERS.md`](SETUP-SCANNERS.md). Readers for standard
+formats and named products' exports ship with takestock as its
+[readers library](#the-readers-library). A reader for an export
 takestock has no collector for can be written as a plug-in, in its own
 package, and run in an observation as if it were built in; see
 [`PLUGINS.md`](PLUGINS.md).
@@ -939,3 +941,87 @@ product as the export first spells it. When machine names were left out of
 into another program, since an inventory lists installed packages, not what
 a binary contains; and what any service using an installed provider actually
 negotiates, which is for the probes.
+
+## The readers library
+
+takestock also ships readers for standard formats and for the exports of
+named products, in `takestock.readers`. Each is a plug-in
+([`PLUGINS.md`](PLUGINS.md)) that comes with takestock: a target profile
+runs one by naming it in its `plugins:` list, and never otherwise. Its
+`input:` there says which file or folder it reads, in place of the reader's
+default.
+
+```yaml
+plugins:
+  - name: sbom
+    input: inbox/sbom          # a folder of CycloneDX JSON files, or one file
+```
+
+| Reader | Kind | Reads | Default input |
+|---|---|---|---|
+| `sbom` | `general` | CycloneDX software bills of materials (JSON): the cryptographic, identity and transport components an application declares | `inbox/sbom` |
+
+### `sbom`
+
+**Reads** CycloneDX software bills of materials in JSON
+([the specification](https://cyclonedx.org/specification/overview/), also
+published by Ecma International): one file, or every `*.json` file directly inside a
+folder, in name order. Build tools for most languages can write one. A file
+whose `bomFormat` is not `CycloneDX` is not read.
+
+**Classes.** Each component's name, and its group where the ecosystem has
+one, is split into words at `.`, `-`, `_`, `/`, `@`, `:`, `+` and spaces, and
+the words are looked up in six classes, in this order; the first class with a
+match wins. The words are common package names across ecosystems, listed in
+`takestock/readers/cyclonedx.py` (`CLASSES`).
+
+| Class | Label | Pre-release flagged |
+|---|---|---|
+| `ssh` | secure-shell | yes |
+| `key-management` | key and secret management | yes |
+| `primitives` | cryptographic library | yes |
+| `tokens` | security-token | yes |
+| `identity` | authentication and identity | yes |
+| `transport` | data-transport client (databases, caches, message queues) | no |
+
+Whole words only, so `example-cryptic-names` is not a cryptographic library.
+Components nested inside other components are read too.
+
+**Rows.** For each bill of materials, one row per classified component,
+named `<component> <version>`, then one for the application, named
+`Application <name> <version>` from `metadata.component` (the file's name,
+less its last extension, when the document names none). After every file, one scope row, `Application-layer
+SBOM scope`. All have data state `discovery` and protocol `software`. A
+component row is `unknown` and the others `n/a`: a bill of materials says
+what is present, not how it is used.
+
+| Flag | On |
+|---|---|
+| `sbom-declared-dependency`, `sbom-provides:<class>` | every component row |
+| `sbom-direct-dependency` | a component the application lists itself in the `dependencies` graph |
+| `sbom-prerelease-crypto` | a pre-release version (`-beta.1`, `-rc.2`, `-preview`, `-SNAPSHOT`, `2.0b1`, `.dev3`) of a component in a flagged class |
+| `sbom-app-can-originate:ssh` | an `ssh` component: the application can open SSH connections itself |
+| `sbom-encrypts-by-default` | a library whose documented default is to encrypt its connections, from the version that default began (`ENCRYPTS_BY_DEFAULT`, each entry with its public source). It never improves a verdict, because a connection string can turn it off |
+| `sbom-subject`, `sbom-scope` | the application row, the scope row |
+
+Every flag but `sbom-prerelease-crypto` is informational. A component row's
+`extra` holds `sbom_subject`, `provides`, `purl` and `spec_version`; the
+application row's holds the counts of its components, of those classified,
+of those with an integrity hash and of its direct dependencies; the scope
+row's, the bills of materials read and the components and classified
+components across them.
+
+**Dates.** Each application's rows are dated by its document's
+`metadata.timestamp`, when the bill of materials was made, else by the
+file's modification date. The scope row summarises what was read and is
+undated.
+
+**Coverage gaps.** A file that is not JSON or not CycloneDX; a folder with
+no `.json` file; and, whenever at least one was read, the applications with
+no bill of materials here, because each one describes only the software it
+was made from.
+
+**Cannot see.** What the running application does: a listed library may
+never be called, and a feature may be off. Components no class matches,
+which are counted and not reported. The XML form of CycloneDX, and a
+document's `cryptoProperties`, `services` and `vulnerabilities`.

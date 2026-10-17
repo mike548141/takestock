@@ -9,6 +9,21 @@ command line or a file format, and its entry says how.
 
 ### Added
 
+- **Readers library**: takestock ships plug-ins of its own for standard
+  formats and named products' exports, in `takestock.readers`. A target
+  profile runs one by naming it in `plugins:`, as it names an installed
+  plug-in; it never runs otherwise. Named alone, its record in
+  `summary.json` has origin `library`. Library readers are not listed under
+  `plugins_installed_not_declared`.
+- **`sbom` reader** (readers library): CycloneDX software bills of materials
+  in JSON, one file or a folder of them. Each component of an application
+  whose name marks it as a secure-shell, key management, cryptographic,
+  security-token, identity or data-transport library becomes a row, with
+  flags for a direct dependency, a pre-release build of a cryptographic or
+  identity component, an application that can open SSH connections itself,
+  and a library that encrypts its connections by default. One row for each
+  application and a scope row follow, and the applications with no bill of
+  materials are a coverage gap.
 - **Configuration register**: a row can list software releases in
   `extra.releases`, each with its product, version or vendor version line
   and the versions it covers, support status and dates, and the CVE
@@ -96,6 +111,12 @@ command line or a file format, and its entry says how.
 
 ### Changed
 
+- **Plug-ins**: a name a profile gives alone that two different plug-ins
+  answer to (the readers library and an installed package, or two packages)
+  is no longer run with whichever was found first. It is not run, and its gap
+  names who offers it; the profile chooses one with `module:`.
+- **Roles**: an application component's role reads "An" before a label
+  starting with a vowel ("An authentication and identity component").
 - **Daemon dictionary** (`data/daemon-dictionary.csv`) more than doubles in
   size. The new rows cover the standard services of Linux
   distributions, Windows and Windows Server components, Microsoft server

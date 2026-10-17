@@ -278,7 +278,8 @@ def file_sharing_service(host: str) -> str:
 
 def application_dependency(kind: str) -> str:
     """A component an application declares in its software bill of materials."""
-    return (f"A {kind} component the application declares it is built with — "
+    article = "An" if kind[:1].lower() in "aeiou" else "A"
+    return (f"{article} {kind} component the application declares it is built with — "
             f"a capability of the application, not a measurement of it running")
 
 

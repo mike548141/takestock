@@ -1,0 +1,130 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:00000000-0000-4000-8000-000000000101",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2030-01-15T09:00:00Z",
+    "component": {
+      "type": "application",
+      "bom-ref": "example-orders-api-8.14.3",
+      "name": "example-orders-api",
+      "version": "8.14.3"
+    }
+  },
+  "components": [
+    {
+      "type": "library",
+      "bom-ref": "example-crypto-2.47.9",
+      "name": "example-crypto",
+      "version": "2.47.9",
+      "purl": "pkg:pypi/example-crypto",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "7def88bbf5c859e3a8d5fee1e97dc1e44edbd5e6af6b947c85e4904b50438e4e"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "example-jwt-1.0.0-beta.3",
+      "name": "example-jwt",
+      "version": "1.0.0-beta.3",
+      "purl": "pkg:npm/example-jwt",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "55fd1657bdba0a96e39d94b2d6f9be9f4692dbbb0cd072f9755bdf7cc437beb2"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "example-ssh-client-0.63.7",
+      "name": "example-ssh-client",
+      "version": "0.63.7",
+      "purl": "pkg:pypi/example-ssh-client"
+    },
+    {
+      "type": "library",
+      "bom-ref": "example-redis-client-13.29.0-rc.4",
+      "name": "example-redis-client",
+      "version": "13.29.0-rc.4",
+      "purl": "pkg:npm/example-redis-client"
+    },
+    {
+      "type": "library",
+      "bom-ref": "example-oauth-17.6.21",
+      "name": "example-oauth",
+      "version": "17.6.21",
+      "purl": "pkg:npm/example-oauth",
+      "components": [
+        {
+          "type": "library",
+          "bom-ref": "example-oauth-kms-bridge-17.6.21",
+          "name": "example-oauth-kms-bridge",
+          "version": "17.6.21",
+          "purl": "pkg:npm/example-oauth-kms-bridge"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "example-text-utils-1.38.66",
+      "name": "example-text-utils",
+      "version": "1.38.66",
+      "purl": "pkg:pypi/example-text-utils"
+    },
+    {
+      "type": "library",
+      "bom-ref": "org.example.crypto:example-provider-1.80",
+      "group": "org.example.crypto",
+      "name": "example-provider",
+      "version": "1.80",
+      "purl": "pkg:maven/org.example.crypto/example-provider"
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "example-orders-api-8.14.3",
+      "dependsOn": [
+        "example-crypto-2.47.9",
+        "example-jwt-1.0.0-beta.3",
+        "example-oauth-17.6.21",
+        "example-text-utils-1.38.66"
+      ]
+    },
+    {
+      "ref": "example-oauth-17.6.21",
+      "dependsOn": [
+        "example-oauth-kms-bridge-17.6.21",
+        "example-ssh-client-0.63.7"
+      ]
+    },
+    {
+      "ref": "example-jwt-1.0.0-beta.3",
+      "dependsOn": [
+        "org.example.crypto:example-provider-1.80"
+      ]
+    },
+    {
+      "ref": "example-crypto-2.47.9"
+    },
+    {
+      "ref": "example-ssh-client-0.63.7"
+    },
+    {
+      "ref": "example-redis-client-13.29.0-rc.4"
+    },
+    {
+      "ref": "example-oauth-kms-bridge-17.6.21"
+    },
+    {
+      "ref": "example-text-utils-1.38.66"
+    },
+    {
+      "ref": "org.example.crypto:example-provider-1.80"
+    }
+  ]
+}

@@ -14,6 +14,13 @@ takestock owns the contract: what a plug-in receives, the fields its records
 carry, how those records become rows and how the rows are graded. A plug-in
 translates its export into records and stops there.
 
+takestock also ships plug-ins of its own: the **readers library**
+(`takestock.readers`), readers for standard formats and named products'
+exports, written to this same contract. A profile names one exactly as it
+names an installed plug-in, and like any plug-in it runs only when named.
+They are listed in
+[`COLLECTORS.md`](COLLECTORS.md#the-readers-library).
+
 ## Terms used here
 
 - **Plug-in**: one reader, declared with a `Plugin` object.
@@ -91,8 +98,11 @@ observation does not also report the built-in's export as missing.
 
 ## How takestock finds a plug-in
 
-Two ways, and a profile may mix them:
+Three ways, and a profile may mix them:
 
+- **takestock's readers library** is part of the package, so every
+  installation has it. It is read from the package itself, not from installed
+  package metadata, so a clone and an installed copy find the same readers.
 - **An installed package** names its plug-ins under the entry-point group
   `takestock.collectors`, as the example does in its `pyproject.toml`:
 
@@ -107,6 +117,15 @@ Two ways, and a profile may mix them:
 An entry point may name one `Plugin`, a list of them, or a function taking no
 arguments that returns either. So may `module:` and `path:`.
 
+A name given alone (no `module:` or `path:`) is looked up in the library and
+the installed packages. When two different plug-ins answer to it (one in the
+library and one in a package, or one in each of two packages), it is **not
+run**: running either would be a guess. The gap says who offers the name, and
+the profile chooses with `module:`, for example
+`module: takestock.readers:PLUGINS` for the library's reader, or the
+package's own module for the other. The same plug-in offered twice, such as
+by two entry points of one package, is one offer.
+
 Both exist because they suit different owners. An entry point is the right
 home for a reader several workspaces share: it is installed once, versioned,
 and found without anyone writing a path. A module or file path suits a reader
@@ -115,7 +134,8 @@ that belongs to one workspace and has no package of its own. In both cases
 not name never runs for it, so installing a package never quietly changes
 what another organisation's observation reads. Installed plug-ins a profile
 does not name are listed in `summary.json` under
-`plugins_installed_not_declared`.
+`plugins_installed_not_declared`; the library's readers are not, since every
+installation has them.
 
 ## Writing a plug-in
 
@@ -326,6 +346,7 @@ gap naming the plug-in, and the plug-in's `summary.json` record says
 | Situation | Gap |
 |---|---|
 | declared, and not installed; its module or file will not load; or it defines no plug-in of that name | could not test |
+| declared by name alone, and two different plug-ins answer to the name | could not test |
 | its input does not exist (the step is not called) | not collected |
 | its step raised (the error is quoted) or returned something other than a `StepResult` or a list | could not test |
 
@@ -359,7 +380,7 @@ run, records refused, a summary not written) always name it, and
 | `kind` | The plug-in's kind |
 | `status` | `ran` or `not-run` |
 | `reason` | Why it did not run |
-| `origin` | `entry point`, `module <name>` or `path <file>` |
+| `origin` | `library` (takestock's readers library), `entry point`, `module <name>` or `path <file>` |
 | `input` | The input path as resolved |
 | `records`, `rows`, `invalid` | Records returned, rows written, records refused |
 | `problems` | The first few reasons records were refused |

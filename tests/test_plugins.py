@@ -399,6 +399,57 @@ def test_a_broken_entry_point_is_named_in_the_gap(workspace, monkeypatch):
     assert "missing dependency" in _gaps(result, "not run")[0]
 
 
+def test_a_name_two_packages_offer_is_not_run_by_name(workspace, monkeypatch):
+    _install(monkeypatch, _plugin("disk-a", records=[_disk()]),
+             _plugin("disk-a", records=[_disk(device="laptop-02.example.test")]))
+    result = _observe(_target("disk-a"))
+    assert not _rows(result, "disk-a")
+    gap = _gaps(result, "not run")[0]
+    assert "offered by more than one plug-in" in gap and "`module:`" in gap
+    assert gap.count("entry point disk-a") == 2
+    assert result.summary["plugins"]["disk-a"]["status"] == "not-run"
+
+
+def test_one_plugin_offered_by_two_entry_points_is_one_offer(workspace, monkeypatch):
+    plugin = _plugin("disk-a", records=[_disk()])
+    _install(monkeypatch, plugin, plugin)
+    assert _rows(_observe(_target("disk-a")), "disk-a")
+
+
+def test_the_readers_library_is_found_by_name(workspace):
+    from takestock import readers
+    assert "sbom" in readers.library()
+    assert readers.is_library_reader(readers.library()["sbom"])
+    (workspace / "inbox" / "sbom").mkdir()
+    shutil.copy(ROOT / "tests" / "fixtures" / "cyclonedx" / "example-orders-api.cdx.json",
+                workspace / "inbox" / "sbom")
+    result = _observe(_target("sbom"))
+    assert result.summary["plugins"]["sbom"]["origin"] == plugins.LIBRARY_ORIGIN
+    assert result.summary["plugins"]["sbom"]["status"] == "ran"
+    assert _rows(result, "sbom")
+
+
+def test_library_readers_are_not_listed_as_installed_and_undeclared(workspace, monkeypatch):
+    _install(monkeypatch, _plugin("disk-b", records=[_disk()]))
+    result = _observe(_target("disk-a"))
+    assert result.summary["plugins_installed_not_declared"] == ["disk-b"]
+
+
+def test_a_package_offering_a_library_readers_name_must_be_chosen_by_module(workspace,
+                                                                              monkeypatch):
+    _install(monkeypatch, _plugin("sbom", kind="general"))
+    result = _observe(_target("sbom"))
+    gap = _gaps(result, "not run")[0]
+    assert "takestock's readers library" in gap and "entry point sbom" in gap
+
+
+def test_a_library_reader_can_be_chosen_by_module(workspace, monkeypatch):
+    _install(monkeypatch, _plugin("sbom", kind="general"))
+    chosen = _observe(_target({"name": "sbom", "module": "takestock.readers:PLUGINS",
+                               "input": "inbox/no-such-folder"}))
+    assert "was not supplied" in _gaps(chosen, "not run")[0]
+
+
 # ── the step contract ──
 
 def test_a_step_receives_what_an_ingest_collector_gets(workspace, monkeypatch):

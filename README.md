@@ -41,6 +41,13 @@ The collectors that probe hosts and query DNS drive external programs
 for the quick start below. [`docs/SETUP-SCANNERS.md`](docs/SETUP-SCANNERS.md)
 says which collector needs which, and how to install them.
 
+Exports from named products and standard formats are read by takestock's
+**readers library**: readers that ship with takestock and run when a target
+profile names them, such as `sbom` for CycloneDX software bills of materials
+([`docs/COLLECTORS.md`](docs/COLLECTORS.md#the-readers-library)). A reader for
+an export the library does not cover can be written as a plug-in
+([`docs/PLUGINS.md`](docs/PLUGINS.md)).
+
 ## Quick start on the sample organisation
 
 `examples/example-widgets/` is a complete workspace for **Example Widgets
@@ -204,7 +211,7 @@ Every command follows one contract, so a script can act on the result:
 |---|---|
 | [`docs/TARGET-PROFILE.md`](docs/TARGET-PROFILE.md) | The workspace, the target profile and its overlays, key by key |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | The pipeline, the data model, the registries, and how to add a collector |
-| [`docs/COLLECTORS.md`](docs/COLLECTORS.md) | What each collector reads or probes, and what it cannot see |
+| [`docs/COLLECTORS.md`](docs/COLLECTORS.md) | What each collector and library reader reads or probes, and what it cannot see |
 | [`docs/PLUGINS.md`](docs/PLUGINS.md) | Writing a plug-in collector for an export takestock has no reader for |
 | [`docs/SETUP-SCANNERS.md`](docs/SETUP-SCANNERS.md) | The external tools, and the authorisation record |
 | [`docs/DISPOSITIONS.md`](docs/DISPOSITIONS.md) | What to do about each finding: tracks, rules, decisions and dispensations |
