@@ -34,6 +34,11 @@ command line or a file format, and its entry says how.
   register key, with a reference attribute per kind of relationship) in
   Atlassian's published 2023-10-19 schema-and-mapping format, and
   `data.json`, the items as one data chunk.
+- **Observation archives**: `obsarchive.add_archive_dir(...)` names further
+  folders to look in for an archived observation whose file is not beside
+  its manifest, such as a working copy reading the main copy's archives.
+  Every member read is still checked against the manifest. An archive name
+  that is not a plain file name is never looked for.
 - **Readers library**: takestock ships plug-ins of its own for standard
   formats and named products' exports, in `takestock.readers`. A target
   profile runs one by naming it in `plugins:`, as it names an installed

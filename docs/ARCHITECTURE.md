@@ -291,6 +291,7 @@ a new collector or reader declares itself without editing a central list
 | `depth.register_flags(rung, *flags, convention=False)` | Flags that lift a row to an evidence-depth rung (`key-management`, `key`, `posture`), or record an unanswered question (`unanswered`) | Built-in lists in `depth.py` |
 | `plaintext.register_host_listener_source(source, marker)` | A source whose rows are listening ports seen from the host itself | None |
 | `binding.register_binding(binding, protocols=..., data_states=...)` | Protocols or data states bound to `hardware` or `software` | Built-in tables in `binding.py` |
+| `obsarchive.add_archive_dir(*dirs)` | Further folders to look in for an archived observation's file when it is not beside the manifest (a working copy reading the main copy's archives); every member is still checked against the manifest | None |
 | `cmdb.register_source_strength(source, strength)` | The evidence strength a source's rows carry in the register when a row does not say (for example `reported` for a management system's own records) | None: rows default to `measured` |
 | `config.register_overlay_suffix(*suffixes)` | File suffixes beside a profile that are overlays, never profiles | `.dispositions.yaml`, `.derived-ports.yaml`, `.cmdb-schema-overlay.yaml` and `.ipam.yaml` |
 | `ipam.register_reader(kind, fn, optional=False, evidence="observed", replace=False)`, or the entry-point group `takestock.ipam_readers` | A reader for one kind of IP plan source | `csv`, `dns-zones`, `asn-lookups` |

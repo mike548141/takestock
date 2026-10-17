@@ -193,3 +193,57 @@ def test_a_light_file_is_a_plain_file_name(name, monkeypatch):
     monkeypatch.setattr(obsarchive, "_registered_light", [])
     with pytest.raises(ValueError):
         obsarchive.register_light_file(name)
+
+
+def _manifest_without_archives(main: Path, copy: Path) -> None:
+    # A working copy holds the manifest; the archives stay in the main copy.
+    copy.mkdir()
+    (copy / obsarchive.MANIFEST).write_text((main / obsarchive.MANIFEST).read_text())
+
+
+def test_an_archive_is_found_in_a_named_second_folder(tmp_path, monkeypatch):
+    monkeypatch.setattr(obsarchive, "_archive_dirs", [])
+    main = tmp_path / "main"
+    main.mkdir()
+    _archive_one(main)
+    copy = tmp_path / "copy"
+    _manifest_without_archives(main, copy)
+    entry = obsarchive.read_manifest(copy)["archives"][0]
+    assert obsarchive.archive_file(copy, entry) is None
+    assert [p.name for p in obsarchive.observations(copy)] == []
+
+    obsarchive.add_archive_dir(main, main)
+    assert obsarchive.archive_dirs() == (main,)
+    assert obsarchive.archive_file(copy, entry) == main / "2030-06-01T0000Z.tgz"
+    assert obsarchive.archive_matches(copy, entry) == []
+    (found,) = obsarchive.observations(copy)
+    assert found == copy / obsarchive.UNPACKED / "2030-06-01T0000Z"
+    assert (found / "bom.cdx.json").is_file()
+    assert not (main / obsarchive.UNPACKED).exists()  # unpacked into the copy, not the main
+
+
+def test_an_archive_in_the_second_folder_is_still_checked(tmp_path, monkeypatch):
+    monkeypatch.setattr(obsarchive, "_archive_dirs", [])
+    main = tmp_path / "main"
+    main.mkdir()
+    _archive_one(main)
+    copy = tmp_path / "copy"
+    _manifest_without_archives(main, copy)
+    manifest = obsarchive.read_manifest(copy)
+    entry = manifest["archives"][0]
+    for member in entry["members"]:
+        if member["path"] == "bom.cdx.json":
+            member["sha256"] = "0" * 64
+    obsarchive.write_manifest(copy, manifest)
+    obsarchive.add_archive_dir(main)
+    with pytest.raises(ValueError, match="does not match"):
+        obsarchive.extract(copy, "2030-06-01T0000Z", tmp_path / "out", upto=0)
+    assert obsarchive.observations(copy) == []
+
+
+def test_only_a_plain_archive_name_is_looked_for(tmp_path, monkeypatch):
+    monkeypatch.setattr(obsarchive, "_archive_dirs", [tmp_path / "main"])
+    (tmp_path / "main").mkdir()
+    (tmp_path / "outside.tgz").write_bytes(b"")
+    entry = {"archive": "../outside.tgz"}
+    assert obsarchive.archive_file(tmp_path / "main", entry) is None

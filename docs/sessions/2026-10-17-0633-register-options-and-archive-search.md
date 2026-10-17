@@ -1,4 +1,4 @@
-# 2026-10-17 — Register options, a schema overlay, a Jira Assets import
+# 2026-10-17 — Register options, a schema overlay, a Jira Assets import, archive search
 
 ## What was done
 
@@ -44,6 +44,15 @@
   gains the `cmdb` key and the overlay file; `ARCHITECTURE.md` and the
   changelog follow.
 
+- **Archive search folders.** `obsarchive.add_archive_dir(...)` names
+  further folders to look in for an archived observation whose file is not
+  beside its manifest, such as a working copy that holds the manifest while
+  the archives stay in the main copy's observations folder. They are
+  searched after the manifest's own folder, in the order added. Every member
+  read is still checked against the manifest's hashes, and an archive is
+  unpacked into the working copy. An archive name that is not a plain file
+  name is never looked for.
+
 ## Checks
 
 - The import format was taken from Atlassian's Imports REST API guide, its
@@ -63,6 +72,11 @@
   object types, key, references and absences, and the sample. Each was seen
   to fail with its change switched off (fifteen separate mutations,
   restored one at a time, with the bytecode cache cleared after each).
+- Archive search tests in `tests/test_obsarchive_ctcache.py`: an archive
+  found in a named second folder and unpacked into the working copy, a
+  member whose hash no longer matches the manifest refused, and a name that
+  is not a plain file name never looked for. Each was seen to fail with its
+  change switched off (two mutations).
 - An offline observation of the sample, then `takestock cmdb --target
   example-widgets`, read back: the title, organisation, overlay and
   governance wording in the JSON and on the Read me sheet, and an import of
@@ -71,6 +85,4 @@
 
 ## Left
 
-- Archive search folders, the other half of this session, follow in the
-  next commit.
 - A live submission to an Assets site has not been tried.

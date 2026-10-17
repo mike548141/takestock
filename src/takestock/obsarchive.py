@@ -17,6 +17,12 @@ certificate-transparency answers, then everything else, then the bulky
 evidence and register directories. A tool that runs takestock's collectors
 inside its own observations, and names a finished-run file of its own, adds
 it to the first tier with :func:`register_light_file`.
+
+An archive is looked for beside its manifest first. A caller whose manifest
+travels without its archives (a working copy that holds the manifest, while
+the archives stay in the main copy's observations folder) names further
+folders to look in with :func:`add_archive_dir`. Every member read from an
+archive found there is still checked against this manifest's hashes.
 """
 
 from __future__ import annotations
@@ -44,6 +50,7 @@ _LIGHT_RAW = "raw/ct-"
 _HEAVY = ("evidence/", "cmdb/")
 
 _registered_light: list[str] = []
+_archive_dirs: list[Path] = []
 
 
 def register_light_file(*names: str) -> None:
@@ -145,10 +152,38 @@ def entry_for(manifest: dict, stamp: str) -> dict | None:
     return next((a for a in manifest["archives"] if a["observation"] == stamp), None)
 
 
+def add_archive_dir(*dirs: Path | str) -> None:
+    """Name further folders to look in for an archive that is not beside its manifest.
+
+    They are searched in the order added, after the manifest's own folder.
+    Adding the same folder twice has no further effect.
+    """
+    for d in dirs:
+        p = Path(d).expanduser()
+        if p not in _archive_dirs:
+            _archive_dirs.append(p)
+
+
+def archive_dirs() -> tuple[Path, ...]:
+    """The further folders :func:`archive_file` searches, in order."""
+    return tuple(_archive_dirs)
+
+
 def archive_file(root: Path, entry: dict) -> Path | None:
-    """The archive file an entry names, or None when it is not on this machine."""
-    here = root / entry["archive"]
-    return here if here.is_file() else None
+    """The archive file an entry names, or None when it is not on this machine.
+
+    Looked for beside the manifest under ``root``, then in each folder named
+    with :func:`add_archive_dir`. A name that is not a plain file name is
+    never looked for.
+    """
+    name = entry["archive"]
+    if not name or Path(name).name != name or name in (".", ".."):
+        return None
+    for folder in (root, *_archive_dirs):
+        here = folder / name
+        if here.is_file():
+            return here
+    return None
 
 
 def _members(obs: Path) -> list[tuple[str, Path]]:
