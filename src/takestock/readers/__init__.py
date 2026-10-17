@@ -25,7 +25,7 @@ from importlib import import_module
 from ..plugins import Plugin
 
 #: The library's modules, in the order their readers are listed.
-MODULES: tuple[str, ...] = ("cyclonedx",)
+MODULES: tuple[str, ...] = ("cyclonedx", "oracle_tde", "commvault")
 
 
 def _load() -> list[Plugin]:

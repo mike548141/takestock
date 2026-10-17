@@ -1,0 +1,10 @@
+db_name,db_unique_name,pdb_name,host,wallet_type,wallet_status,wallet_order,wrl_parameter,tablespace_encryption_alg,encrypted_tablespace_count,tablespace_count
+ORDERS,orders_a,,db1.example.test,OKV,OPEN,SINGLE,okv://198.51.100.20,AES256,9,9
+LEDGER,ledger_a,,db2.example.test,FILE,OPEN,SINGLE,/opt/example/keystore/ledger,AES128,2,9
+STOCK,stock_a,,db3.example.test,,,,,,,
+CATALOG,catalog_a,,db4.example.test,FILE,CLOSED,SINGLE,/opt/example/keystore/catalog,AES256,4,4
+WIDGETS,widgets_a,SHOP,db5.example.test,FILE,OPEN,PRIMARY,/opt/example/keystore/widgets,AES256/3DES168,6,6
+HISTORY,history_a,,db6.example.test,FILE,OPEN,SINGLE,/opt/example/keystore/history,,0,7
+REPORTS,,,db7.example.test,FILE,UNDEFINED,SINGLE,/opt/example/keystore/reports,,,
+ARCHIVE,archive_a,,db8.example.test,HSM,OPEN_NO_MASTER_KEY,SINGLE,hsm://198.51.100.21,ARIA256,2,2
+,,,,,,,,,,

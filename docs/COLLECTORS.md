@@ -960,6 +960,13 @@ plugins:
 | Reader | Kind | Reads | Default input |
 |---|---|---|---|
 | `sbom` | `general` | CycloneDX software bills of materials (JSON): the cryptographic, identity and transport components an application declares | `inbox/sbom` |
+| `oracle_tde` | `database-encryption` | An Oracle Database administrator's CSV export of Transparent Data Encryption state: keystore status and type, and encrypted tablespaces | none: name it with `input:` |
+| `commvault` | `backup-encryption` | A CSV of Commvault storage policy copies' software encryption: cipher, key length and key custody | none: name it with `input:` |
+
+A reader with no default input still runs when the profile gives it none,
+and records in its own coverage gap that no export was read. A profile that
+names an input which does not exist gets takestock's general gap for a
+missing input instead.
 
 ### `sbom`
 
@@ -1025,3 +1032,151 @@ was made from.
 never be called, and a feature may be off. Components no class matches,
 which are counted and not reported. The XML form of CycloneDX, and a
 document's `cryptoProperties`, `services` and `vulnerabilities`.
+
+### `oracle_tde`
+
+**Reads** a CSV export of Oracle Database's Transparent Data Encryption
+(TDE) state, one row per database, made by a database administrator from
+the dynamic performance views Oracle Database Reference documents:
+`V$ENCRYPTION_WALLET` (the keystore), `V$ENCRYPTED_TABLESPACES` (each
+encrypted tablespace and its algorithm), `DBA_TABLESPACES` (every
+tablespace), `V$DATABASE` and `V$INSTANCE`. It needs only read access to
+those views (`SELECT_CATALOG_ROLE` should be enough). This query writes the columns
+the reader reads; save its result as CSV with headings, for example with
+SQLcl's `SET SQLFORMAT CSV` or SQL*Plus's `SET MARKUP CSV ON`:
+
+```sql
+SELECT d.name              AS db_name,
+       d.db_unique_name    AS db_unique_name,
+       i.host_name         AS host,
+       w.wallet_type       AS wallet_type,
+       w.status            AS wallet_status,
+       w.wallet_order      AS wallet_order,
+       w.wrl_parameter     AS wrl_parameter,
+       e.algorithms        AS tablespace_encryption_alg,
+       NVL(e.encrypted, 0) AS encrypted_tablespace_count,
+       t.total             AS tablespace_count
+FROM v$database d
+CROSS JOIN v$instance i
+LEFT JOIN v$encryption_wallet w ON 1 = 1
+CROSS JOIN (SELECT LISTAGG(alg, '/') WITHIN GROUP (ORDER BY alg) AS algorithms,
+                   SUM(n) AS encrypted
+            FROM (SELECT encryptionalg AS alg, COUNT(*) AS n
+                  FROM v$encrypted_tablespaces
+                  WHERE encryptedts = 'YES'
+                  GROUP BY encryptionalg)) e
+CROSS JOIN (SELECT COUNT(*) AS total FROM dba_tablespaces) t;
+```
+
+Run it on each database. In a multitenant container database, run it in each
+pluggable database and add a `pdb_name` column holding that database's name,
+so each row is told apart. A database with more than one keystore gives one
+row per keystore. The query was written from Oracle's documentation of the
+views and has not been run here against a database.
+
+| Column | From | Read for |
+|---|---|---|
+| `db_name`, `db_unique_name`, `pdb_name` | `V$DATABASE`, and the pluggable database's name | The row's name: the unique name, else the name, else the host |
+| `host` | `V$INSTANCE.HOST_NAME` | The row's host |
+| `wallet_type` | `V$ENCRYPTION_WALLET.WALLET_TYPE` | Key custody |
+| `wallet_status` | `V$ENCRYPTION_WALLET.STATUS` | Whether the keystore is open |
+| `wallet_order`, `wrl_parameter` | `V$ENCRYPTION_WALLET` | Kept in `extra`; the location is a directory or a key manager's address, never a key |
+| `tablespace_encryption_alg` | `V$ENCRYPTED_TABLESPACES.ENCRYPTIONALG`, joined with `/` | The algorithms graded |
+| `encrypted_tablespace_count`, `tablespace_count` | counts of the two tablespace views | Whether any, and how many, tablespaces are encrypted |
+
+Headings are matched without regard to case, spaces or hyphens, and common
+synonyms are read too (Oracle's own `status`, `encryptionalg`, `con_name`,
+`host_name`; `COLUMNS` in `takestock/readers/oracle_tde.py`).
+
+**Rows.** One per database, named `Oracle TDE <name>` (with `(<pluggable
+database>)` when there is one), data state `at-rest`, protocol `tde`,
+software `Oracle Database`. A row with no values is skipped.
+
+| State | Verdict | Flags |
+|---|---|---|
+| No keystore status, or `NOT_AVAILABLE` | `weak` | `tde-not-enabled` |
+| `CLOSED` | `weak` | `wallet-closed` |
+| Any other status that is not open (`UNDEFINED`, for example) | `weak` | `wallet-status:<status>` |
+| Open, and no tablespace encrypted | `weak` | `tde-not-enabled`, `no-encrypted-tablespaces` |
+| Open, with encrypted tablespaces | each algorithm's grade, the weakest standing | `weak-algorithm:3DES168`, `unrecognised-algorithm:<name>`, `partial-encryption:<n>-of-<m>-tablespaces` |
+
+`OPEN`, `OPEN_NO_MASTER_KEY` and `OPEN_UNKNOWN_MASTER_KEY_STATUS` are open.
+`ENCRYPTIONALG` gives a cipher and key length but not the mode, and Oracle
+documents different tablespace modes in different releases (CFB before
+23ai, XTS by default in later releases), so `AES128`, `AES192` and `AES256` are all graded
+as the baseline's unsized `aes_cbc`, AES without authentication, never as a
+sized at-rest entry. `3DES168` is `3des`. Any other algorithm leaves the
+verdict `unknown`. Key custody is a flag, never a verdict:
+`key-custody:file-local` for a `FILE` keystore (a software keystore, kept as a file),
+`key-custody:hsm` for `HSM` or `OKV`, and `key-custody:<type>` otherwise.
+
+**Dates.** The export carries no date, so each row is dated by the file's
+modification date.
+
+**Coverage gaps.** No input given, a file that cannot be read as CSV, or a
+file with no rows: one gap saying no export was read.
+
+**Cannot see.** Column encryption, which these views do not report; how the
+keystore itself is protected; backups, exports and archived redo kept
+elsewhere; and any database not in the export.
+
+### `commvault`
+
+**Reads** a CSV of the software encryption settings of Commvault storage
+policy (or plan) copies, one row per copy. Commvault sets software
+encryption on each copy: in the copy's properties, an **Encrypt Data** check
+box with a **Cipher** list and a **Key Length** list (Commvault
+documentation, *Configuring Software Encryption on a Primary Copy*, and the
+same for a secondary copy). Commvault publishes no single report whose
+columns are documented to carry these settings for every copy, so the
+backup administrator records them in these columns:
+
+| Column | Holds |
+|---|---|
+| `storage_policy` | The storage policy or plan |
+| `copy_name` | The copy, such as `Primary`; blank for a policy with one copy |
+| `storage_pool` | The storage pool, where it is named apart from the policy (optional) |
+| `encryption_enabled` | `Yes` or `No` |
+| `cipher` | As the Cipher list names it: `AES`, `Blowfish`, `Twofish`, `Serpent`, `GOST` or `3-DES` |
+| `key_length` | `128`, `192` or `256` |
+| `key_management` | Where the keys are held: `CommServe` (the default), `Via Media Password`, or the external key manager's name |
+
+For example:
+
+```csv
+storage_policy,copy_name,encryption_enabled,cipher,key_length,key_management
+Example-Daily,Primary,Yes,AES,256,CommServe
+Example-Daily,Secondary,Yes,AES,128,Via Media Password
+Example-Offsite,Primary,No,,,
+```
+
+Headings are matched without regard to case, spaces or hyphens, and common
+synonyms are read too (`plan`, `algorithm`, `key_size`; `COLUMNS` in
+`takestock/readers/commvault.py`).
+
+**Rows.** One per copy, named `Commvault backup encryption <policy>` (the
+storage pool when no policy is given) with `(<copy>)` when one is named;
+data state `at-rest`, protocol `commvault-backup`, software `Commvault`.
+
+| Setting | Verdict | Flags |
+|---|---|---|
+| Off (`No`, `false`, `disabled`, `none` and the like), or neither a setting nor a cipher recorded | `weak` | `encryption-off` |
+| A setting that is neither on nor off | `weak` | `encryption-status:<value>` |
+| On, or a cipher recorded with no setting | the cipher's grade | `weak-algorithm:<cipher>` when it grades `weak`; `ungraded:symmetric:<name>` when the baseline does not grade it, and `ungraded:symmetric:` with no name when encryption is on and no cipher is recorded |
+
+AES with a 256-bit key is graded as the baseline's `aes256_cbc` and AES with
+another key length as `aes_cbc` (Commvault's *Supported Algorithms for
+Software Encryption* gives AES's mode as CBC); `Rijndael` is AES; Blowfish,
+Twofish, Serpent, GOST and 3-DES are graded by name. Key custody is a flag,
+never a verdict: `key-custody:commserve-db`, `key-custody:media-password`,
+or `key-custody:<name>` for any other value.
+
+**Dates.** The settings carry no date, so each row is dated by the file's
+modification date.
+
+**Coverage gaps.** No input given, a file that cannot be read as CSV, or a
+file with no rows: one gap saying no export was read.
+
+**Cannot see.** Hardware encryption done by a tape drive; encryption of data
+on its way to the backup; whether copies are immutable; and any policy or
+copy missing from the CSV.

@@ -9,6 +9,16 @@ command line or a file format, and its entry says how.
 
 ### Added
 
+- **Readers library**: `oracle_tde` reads an Oracle Database administrator's
+  CSV export of Transparent Data Encryption state (keystore status and type
+  from `V$ENCRYPTION_WALLET`, encrypted tablespaces and their algorithms from
+  `V$ENCRYPTED_TABLESPACES`, and the count of all tablespaces), one row per
+  database, graded `weak` where no keystore is open or nothing is encrypted.
+  `docs/COLLECTORS.md` gives a query that writes its columns.
+- **Readers library**: `commvault` reads a CSV of Commvault storage policy
+  copies' software encryption settings (whether it is on, cipher, key length
+  and where the keys are held), one row per copy.
+- **Roles**: `database_encryption` and `backup_encryption`.
 - **Configuration register**: `takestock cmdb --target <profile>` reads the
   profile's new `cmdb:` block (`title`, `schema_overlay`, `how_to_read`,
   `jira_assets`), its organisation's name and its `branding:` block, when

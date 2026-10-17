@@ -104,3 +104,13 @@ def test_empty_inputs_give_no_role():
     for fn in (roles.ssh_service, roles.remote_desktop_service, roles.file_sharing_service,
                roles.public_endpoint, roles.discovered_endpoint, roles.certificate):
         assert fn("") == ""
+
+
+def test_stored_data_and_backup_encryption_roles():
+    assert roles.database_encryption("orders_a") == (
+        "Encryption of the stored data of the database orders_a — whether its data files "
+        "could be read if they were copied off its server")
+    assert roles.backup_encryption("Example-Daily") == (
+        "Encryption of the backups written under the policy Example-Daily — whether the "
+        "stored copies could be read without its keys")
+    assert roles.database_encryption("") == roles.backup_encryption("") == ""

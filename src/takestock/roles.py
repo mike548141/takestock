@@ -296,6 +296,22 @@ def application_sbom_scope() -> str:
             "and not any running service")
 
 
+def database_encryption(ident: str) -> str:
+    """A database's encryption of its stored data."""
+    if not ident:
+        return ""
+    return (f"Encryption of the stored data of the database {ident} — whether its data "
+            "files could be read if they were copied off its server")
+
+
+def backup_encryption(ident: str) -> str:
+    """The encryption of the backups a backup policy writes."""
+    if not ident:
+        return ""
+    return (f"Encryption of the backups written under the policy {ident} — whether the "
+            "stored copies could be read without its keys")
+
+
 def dns_zone_scope(zones: int) -> str:
     """The scope row for a set of DNS zone files."""
     return (f"Every record configured in the organisation's {zones} DNS zone(s) — what "

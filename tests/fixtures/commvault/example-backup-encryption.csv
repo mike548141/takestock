@@ -1,0 +1,10 @@
+storage_policy,copy_name,storage_pool,encryption_enabled,cipher,key_length,key_management
+Example-Daily,Primary,,Yes,AES,256,CommServe
+Example-Daily,Secondary,,Yes,AES,128,Via Media Password
+Example-Archive,Primary,,Yes,Blowfish,128,Example KMIP server
+Example-Offsite,Primary,,No,,,
+Example-Legacy,Primary,,Yes,3-DES,192,CommServe database
+Example-Lab,Primary,,pending,AES,256,
+Example-Cloud,Primary,,Yes,Example-Cipher,256,
+,,Example-Pool,,Serpent,256,
+Example-Test,,,,,,
