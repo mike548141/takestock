@@ -1,0 +1,17 @@
+# Wording for Example Widgets Ltd's configuration register, merged over the
+# bundled schema by `takestock cmdb --target example-widgets`. An overlay may
+# set only text fields on entries the schema already declares; anything else
+# stops the build. See docs/CMDB.md, "Rewording the schema with an overlay".
+
+attributes:
+  serial_number:
+    note: >-
+      The manufacturer's serial number, as printed on the asset label Example
+      Widgets fixes to each machine.
+
+classes:
+  Server:
+    answers: Which servers does Example Widgets run, and what runs on each?
+
+governance:
+  accountable_owner: Head of Operations

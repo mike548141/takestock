@@ -9,6 +9,31 @@ command line or a file format, and its entry says how.
 
 ### Added
 
+- **Configuration register**: `takestock cmdb --target <profile>` reads the
+  profile's new `cmdb:` block (`title`, `schema_overlay`, `how_to_read`,
+  `jira_assets`), its organisation's name and its `branding:` block, when
+  that sets anything. The title and organisation head the JSON
+  (`register.organisation` is new) and the workbook; `how_to_read` replaces
+  the built-in reading notes in both; `branding` gives the workbook its
+  colours and font. From Python: `build_register(..., title=,
+  organisation=, schema_overlay=, how_to_read=)`, `write_outputs(...,
+  theme=, jira_assets=)` and `cmdb.profile_options(target)`. Without them
+  nothing changes.
+- **Configuration register**: a **schema overlay** rewords the register
+  schema without a copy of it: notes, questions and definitions of the
+  classes, families, attributes, relationships and vocabulary codes it
+  already declares, and who holds each governance role. It never changes the
+  model: an overlay that names something the schema does not declare, or
+  sets any other field, stops the build with every problem listed. The
+  register names the overlay used in `register.schema_overlay`. A file named
+  `<stem>.cmdb-schema-overlay.yaml` beside a profile is never read as a
+  profile.
+- **Configuration register**: with `jira_assets`, the register is also
+  written as an external import for Jira Assets, in `cmdb/jira-assets/`:
+  `schema-and-mapping.json` (one object type per class, matched on the
+  register key, with a reference attribute per kind of relationship) in
+  Atlassian's published 2023-10-19 schema-and-mapping format, and
+  `data.json`, the items as one data chunk.
 - **Readers library**: takestock ships plug-ins of its own for standard
   formats and named products' exports, in `takestock.readers`. A target
   profile runs one by naming it in `plugins:`, as it names an installed

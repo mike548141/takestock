@@ -13,8 +13,9 @@ its overlays can carry. The sample organisation in
 - **Target profile**: a YAML file under the workspace's `targets/` that says
   what to collect for one organisation.
 - **Overlay**: a file beside a profile, named after it, that adds to it:
-  `<stem>.dispositions.yaml`, `<stem>.derived-ports.yaml` and
-  `<stem>.ipam.yaml`. An overlay is never read as a profile.
+  `<stem>.dispositions.yaml`, `<stem>.derived-ports.yaml`,
+  `<stem>.cmdb-schema-overlay.yaml` and `<stem>.ipam.yaml`. An overlay is
+  never read as a profile.
 - **Inbox**: the directory supplied exports are read from.
 - **Observation**: one run's output directory, named by its UTC time stamp.
 
@@ -78,7 +79,9 @@ workspace that is merely the current directory never replaces a data file,
 so a stray `data/` folder wherever a command happens to be run cannot change
 how anything is graded.
 
-A copy replaces the bundled file whole; nothing is merged.
+A copy replaces the bundled file whole; nothing is merged. The register
+schema can instead be reworded by a schema overlay, which the profile's
+`cmdb:` block names (see [`cmdb`](#cmdb)).
 
 ### Observations
 
@@ -138,6 +141,7 @@ collector reads is ignored.
 | `infrastructure` | Infrastructure providers and their domains | `dns_zones` |
 | `lifecycle` | Planned migration and vendor support, per host | every observation |
 | `sge` | Settings for the Secure Government Email reading | the SGE note and the asset marking |
+| `cmdb` | The configuration register's title, schema overlay, reading notes and Jira Assets import | `takestock cmdb --target` |
 
 ### `name` and `organisation`
 
@@ -436,6 +440,30 @@ whose SPF record authorises one of them is annotated as a reason the strict
 DKIM alignment recommendation may not apply, without changing its verdict.
 See [`SGE-NOTE.md`](SGE-NOTE.md).
 
+### `cmdb`
+
+```yaml
+cmdb:
+  title: Example Widgets configuration register
+  schema_overlay: example-widgets.cmdb-schema-overlay.yaml
+  how_to_read:
+    - heading: Start with the servers.
+      body: The Server sheet lists every server an instrument saw.
+  jira_assets: true
+```
+
+Read only by `takestock cmdb --target <profile>` (and
+`takestock.cmdb.profile_options` from Python), never by an observation.
+Every key is optional and any other key stops the build. `title` heads the
+register; `schema_overlay` names a file, relative to the profile, that
+rewords the register schema and may never add a class or relationship;
+`how_to_read` replaces the built-in reading notes, as a list or the path of
+a YAML file holding one; `jira_assets: true` also writes an import for Jira
+Assets. The register takes the organisation's name from `organisation`, and
+its workbook takes the colours and font of `branding` when that block sets
+anything. Each is described in
+[`CMDB.md`](CMDB.md#options-a-profile-sets).
+
 ## Overlays
 
 An overlay sits beside the profile and takes its name from the profile's
@@ -503,6 +531,14 @@ A plan is refused if its budget does not match, a host is claimed by two
 sections, or it would stop probing a pair the profile's own
 `plaintext_ports` authorises. UDP ports are listed but not probed.
 
+### `<stem>.cmdb-schema-overlay.yaml`
+
+Wording for the configuration register's schema, named by the profile's
+`cmdb.schema_overlay`. The suffix is a convention, not a requirement: a file
+with it is never taken for a profile, and one named otherwise is still read
+when the profile names it. What it may hold is in
+[`CMDB.md`](CMDB.md#rewording-the-schema-with-an-overlay).
+
 ### `<stem>.ipam.yaml`
 
 The IP address plan file: sites, subnets, sources, documented addresses,
@@ -527,7 +563,11 @@ keys above:
 - `ssh_inbox.dir`, pointing at the supplied `ssh-audit` files;
 - `software_inbox.export`, pointing at the supplied software inventory;
 - a `lifecycle` block marking the build server for retirement and out of
-  support.
+  support;
+- a `cmdb` block giving the register a title, a schema overlay
+  (`example-widgets.cmdb-schema-overlay.yaml`, which rewords one attribute's
+  note, one class's question and one governance role) and a Jira Assets
+  import.
 
 Its supplied exports, in `examples/example-widgets/exports/`, are two
 `ssh-audit` files, a zone export under `dns-zones/`, a WinRM configuration

@@ -73,13 +73,17 @@ def targets_dir() -> Path:
 
 #: The suffix of an IP address plan file (see :mod:`takestock.ipam`).
 IPAM_PLAN_SUFFIX = ".ipam.yaml"
+#: The suffix a configuration register schema overlay is named with when it
+#: sits beside a profile (see :func:`takestock.cmdb.apply_overlay`).
+CMDB_SCHEMA_OVERLAY_SUFFIX = ".cmdb-schema-overlay.yaml"
 
 # Files beside a target profile that extend it rather than being a profile.
 # The ones the package itself writes about are listed here, so the list does
 # not depend on which modules happen to have been imported. Any other module
 # that reads an overlay of its own registers the suffix with
 # register_overlay_suffix().
-OVERLAY_SUFFIXES: list[str] = [".dispositions.yaml", ".derived-ports.yaml", IPAM_PLAN_SUFFIX]
+OVERLAY_SUFFIXES: list[str] = [".dispositions.yaml", ".derived-ports.yaml", IPAM_PLAN_SUFFIX,
+                               CMDB_SCHEMA_OVERLAY_SUFFIX]
 
 
 def register_overlay_suffix(*suffixes: str) -> None:

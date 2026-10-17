@@ -98,3 +98,12 @@ lifecycle:
   #   retiring_by: ['^files-01\.example\.test$']
   replaced_by: []
   retiring_by: []
+
+# The configuration register's options, read by `takestock cmdb --target`:
+# its title, a schema overlay that rewords the schema (it may never add a
+# class or relationship), and an import for Jira Assets beside the other
+# files. `how_to_read` may replace the built-in reading notes.
+cmdb:
+  title: Example Widgets configuration register
+  schema_overlay: example-widgets.cmdb-schema-overlay.yaml
+  jira_assets: true

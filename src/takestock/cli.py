@@ -100,6 +100,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--ip-plan", type=Path,
                    help="an IP address plan's JSON (from takestock ipam); each machine it names "
                         "at an address becomes an item. Off unless given")
+    p.add_argument("--target", metavar="PROFILE",
+                   help="a target profile (a path, or a name under targets/) whose cmdb:, "
+                        "organisation and branding: blocks set the register's title, "
+                        "schema overlay, reading notes, workbook style and Jira Assets import")
 
     p = sub.add_parser("ipam", parents=[common], help="build an IP address plan",
                        description="Build an IP address plan from a <stem>.ipam.yaml file.")
@@ -177,8 +181,10 @@ def _observe(args: argparse.Namespace) -> int:
 
 def _cmdb(args: argparse.Namespace) -> int:
     from . import cmdb
-    register = cmdb.build_register(args.observation, keys=args.keys, ip_plan=args.ip_plan)
-    for path in cmdb.write_outputs(register, args.out or args.observation / "cmdb"):
+    _register, paths = cmdb.build_and_write(args.observation, args.out or args.observation / "cmdb",
+                                            keys=args.keys, ip_plan=args.ip_plan,
+                                            target=args.target)
+    for path in paths:
         print(path)
     return EXIT_CLEAN
 

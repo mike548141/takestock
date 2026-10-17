@@ -34,7 +34,7 @@ service stops when it stops) until someone supplies that.
 
 ```bash
 takestock cmdb <observation_dir> [<out_dir>] [--keys <keys.jsonl>] [--ip-plan <plan.json>]
-               [--workspace <dir>]
+               [--target <profile>] [--workspace <dir>]
 ```
 
 For the sample organisation, from inside a copy of its workspace (see the
@@ -57,6 +57,11 @@ observations/latest/cmdb/keys.jsonl
   so the machines it names become items too (see
   [Machines from an IP address plan](#machines-from-an-ip-address-plan)). It
   is off unless given.
+- `--target` names a target profile (a path, or a name under `targets/`)
+  whose `cmdb:`, `organisation` and `branding:` blocks set the register's
+  title, schema overlay, reading notes, workbook style and Jira Assets
+  import (see [Options a profile sets](#options-a-profile-sets)). Without
+  it, the register takes the defaults.
 - The recording date is the observation's own date when its directory is
   named by a time stamp, otherwise today. Rebuilding the same observation
   therefore gives the same register.
@@ -76,6 +81,43 @@ problem it finds (see [Changing the schema](#changing-the-schema)).
 From Python, `takestock.cmdb.build_register(observation_dir, keys=...,
 ip_plan=...)` returns the whole register as one dictionary, and `write_outputs(register,
 out_dir)` writes it.
+
+## Options a profile sets
+
+A target profile may hold a `cmdb:` block. Every key in it is optional, and
+any other key stops the build:
+
+```yaml
+organisation:
+  name: Example Widgets Ltd
+
+branding:
+  font: "Example Sans, sans-serif"
+  palette:
+    accent: "#7a1f4d"
+
+cmdb:
+  title: Example Widgets configuration register
+  schema_overlay: example-widgets.cmdb-schema-overlay.yaml
+  how_to_read:
+    - heading: Start with the servers.
+      body: The Server sheet lists every server an instrument saw.
+  jira_assets: true
+```
+
+| Key | Sets |
+|---|---|
+| `cmdb.title` | The register's title, at the head of the JSON and the workbook (default *Configuration register*) |
+| `organisation` | The organisation's name, under the title, in `register.organisation` and in the Jira Assets object schema's description |
+| `cmdb.schema_overlay` | A schema overlay file, relative to the profile, whose wording is merged over the schema (see [Rewording the schema with an overlay](#rewording-the-schema-with-an-overlay)) |
+| `cmdb.how_to_read` | Reading notes that replace the built-in ones in the JSON's `how_to_read` and on the workbook's Read me sheet: a list of `heading` and `body` entries, or the path of a YAML file holding that list |
+| `branding` | When the profile's `branding:` block sets anything, the workbook takes its light colours and font: headers in `text` on `surface`, the title, headings and contested values in `accent`, absences in `muted`, and the first font named in `font` (a generic family such as `sans-serif` names none). Without it, or with an empty block, the workbook keeps its plain style |
+| `cmdb.jira_assets` | `true` also writes an import for Jira Assets (see [An import for Jira Assets](#an-import-for-jira-assets)) |
+
+From Python, the same options are keyword arguments:
+`build_register(..., title=, organisation=, schema_overlay=, how_to_read=)`
+and `write_outputs(register, out_dir, theme=, jira_assets=)`.
+`cmdb.profile_options(target)` reads them from a loaded profile.
 
 ## How rows become items
 
@@ -492,6 +534,8 @@ To keep keys stable across builds, pass the previous `keys.jsonl` with
 | `csv/relationships.csv` | Every drawn edge: from, type, to, both names, count, unit, strength, date, qualifier. |
 | `cmdb.xlsx` | The same register as a workbook (sheets below). |
 | `keys.jsonl` | The key ledger: every key with its aliases, and every redirect. Feed it to the next build. |
+| `jira-assets/schema-and-mapping.json` | Only when asked for: the object schema and import mapping for Jira Assets |
+| `jira-assets/data.json` | Only when asked for: the register's items as one data chunk for that import |
 
 A missing value is written as its reason in brackets, such as
 `[not measured]`, never as an empty cell.
@@ -510,6 +554,51 @@ The workbook's sheets:
 | Facts | Every assertion with its strength, dates, source and artefact |
 | Data dictionary | Every attribute: expected strength, refresh interval, which classes carry it |
 
+## An import for Jira Assets
+
+Jira Assets is Atlassian's asset and configuration database. With
+`jira_assets` set, takestock writes the register in the form Assets' external
+imports take, as Atlassian's developer documentation for Assets describes
+them in two pages: *Imports REST API Guide* and *External Imports - Schema
+and mapping*.
+
+- `schema-and-mapping.json` follows Atlassian's published JSON schema, the
+  *Imports Schema and Mapping definition*, version 2023-10-19. It names no
+  `$schema`: the schema and mapping page says a document that uses external
+  ids is read against that version, and every object type and attribute here
+  has one. It is the document the guide's workflow submits to the import's
+  `mapping` link.
+- `data.json` is one data chunk: a `data` object holding a list of records
+  for each object type's selector, and `completed: true`. It is the body the
+  workflow posts to the execution's `submitResults` link.
+
+How the register maps onto Assets:
+
+| Register | Assets |
+|---|---|
+| Each declared class, empty ones included | One object type, its description the class's question; external id `takestock/<class>` |
+| The key (`CI-000001`) | The *Register key* attribute, marked unique, and the only part of the external id, so an import matches objects on it. Every Assets object has a key of its own, so the register's key takes this name |
+| The item's name | *Name*, the object's label |
+| Lifecycle state, identifiers, contested attributes | *Lifecycle state*, *Identifiers* (a text area), *Contested* |
+| Each attribute the class declares | A text attribute of the same name, the schema's note as its description. One whose name is the same as a fixed attribute's (such as `name`), compared without regard to case, gets the suffix ` (attribute)` |
+| A missing value | Its reason in brackets, as in the CSV (`[not measured]`), never an empty value |
+| Each kind of drawn relationship from one class to another | A reference attribute on the class it starts from, named `<relationship> <class>` (such as *installed-on Server*), holding every key it points at. It is resolved with the query `"Register key" IN (${<locator>${0}})`, the form Atlassian's knowledge-base article *How to import Assets object types with attributes referencing existing objects* gives for a reference to several objects |
+
+What it leaves to the person running the import:
+
+- **Keys across imports.** A register key names the same item from one
+  import to the next only when each build is given the previous build's
+  `keys.jsonl` (see [Keys and identity](#keys-and-identity)).
+- **What the import drops.** A reference attribute holds only the objects it
+  points at, so an edge's count, unit, evidence strength, date and qualifier
+  stay in `cmdb.json` and the workbook. So do each value's evidence strength,
+  dates and source, and the disagreements.
+- **Items that are gone.** An item the next build does not list is simply
+  absent from its data; these files never ask for an object to be removed.
+- **Checked against the format, not a live site.** The files are checked
+  against Atlassian's published JSON schema; takestock's tests do not
+  submit them to an Assets site.
+
 ## How to read it
 
 1. **Every value says how strongly it is known.** Strength and date are
@@ -523,6 +612,54 @@ The workbook's sheets:
 4. **Match on the key, never on a name.**
 5. **What is missing is counted.** The Not in here and Absence counted sheets
    are part of the answer, not an appendix to it.
+
+## Rewording the schema with an overlay
+
+An organisation often wants its own wording (a note on an attribute, a
+class's question in its own words, who holds a governance role) without
+taking a copy of the whole schema. A **schema overlay** does that. Name it in
+the profile's `cmdb.schema_overlay`, or pass `schema_overlay=` from Python,
+and its text is merged over the schema before the build checks it:
+
+```yaml
+# A schema overlay, such as targets/example-widgets.cmdb-schema-overlay.yaml
+attributes:
+  serial_number:
+    note: As printed on the asset label Example Widgets fixes to each machine.
+classes:
+  Server:
+    answers: Which servers does Example Widgets run?
+vocabularies:
+  absence_reason:
+    not-collected:
+      definition: Nobody at Example Widgets supplied the input.
+governance:
+  accountable_owner: Head of Operations, Example Widgets
+```
+
+Each field the overlay gives replaces the schema's text. It may set only
+these:
+
+| Section | Fields it may set on a declared entry |
+|---|---|
+| `families` | `answers`, `definition`, `note` |
+| `classes` | `answers`, `built_from`, `note` |
+| `attributes` | `note` |
+| `relationships` | `asserts`, `test`, `wrong_if`, `qualifier`, `note` |
+| `vocabularies` | on a declared code of a declared vocabulary: `definition`, `note`, `source` |
+| `governance` | who holds a declared role (text, or null for unassigned) |
+
+**An overlay rewords the model and never changes it.** The build stops,
+listing every problem at once, when the overlay names a class, relationship,
+attribute, family, vocabulary, code or governance role the schema does not
+declare; sets any other field (a class's `family` or `attributes`, a
+relationship's ends or `built`, an attribute's `expected_strength`); gives a
+value that is not text; or holds any other section. To change the model
+itself, change the schema as below.
+
+The overlay is merged over whichever schema the build reads, the bundled one
+or a workspace copy, and the register names the overlay's file in
+`register.schema_overlay`.
 
 ## Changing the schema
 

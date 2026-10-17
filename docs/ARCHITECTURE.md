@@ -183,7 +183,7 @@ Each output reads a finished observation, never the network:
 
 | Module | Reads | Writes |
 |---|---|---|
-| `cmdb.py`, `cmdb_export.py` | `assets.json`, `summary.json`, `data/cmdb-schema.yaml` | `cmdb/`: JSON, a CSV per class, a workbook and the key ledger |
+| `cmdb.py`, `cmdb_export.py` | `assets.json`, `summary.json`, `data/cmdb-schema.yaml`; with `--target`, the profile's `cmdb:` block and the schema overlay it names | `cmdb/`: JSON, a CSV per class, a workbook and the key ledger; on request, a Jira Assets import in `cmdb/jira-assets/` |
 | `requirements.py` | `assets.json`, the gaps in `summary.json`, `data/requirements-catalogue.yaml` | `requirements/`: Markdown, a workbook and JSON |
 | `comply.py`, over `sge.py` and `sge_note.py` | `assets.json`, `raw/`, `data/secure-government-email.yaml`, the profile | `sge-note.html`, or the report as text |
 | `ipam.py`, `ipam_view.py` | an `<stem>.ipam.yaml` plan file and the exports it names | `<stem>.json`, `.csv` and `.html` |
@@ -292,7 +292,7 @@ a new collector or reader declares itself without editing a central list
 | `plaintext.register_host_listener_source(source, marker)` | A source whose rows are listening ports seen from the host itself | None |
 | `binding.register_binding(binding, protocols=..., data_states=...)` | Protocols or data states bound to `hardware` or `software` | Built-in tables in `binding.py` |
 | `cmdb.register_source_strength(source, strength)` | The evidence strength a source's rows carry in the register when a row does not say (for example `reported` for a management system's own records) | None: rows default to `measured` |
-| `config.register_overlay_suffix(*suffixes)` | File suffixes beside a profile that are overlays, never profiles | `.dispositions.yaml`, `.derived-ports.yaml`, and `.ipam.yaml` (registered by `ipam.py`) |
+| `config.register_overlay_suffix(*suffixes)` | File suffixes beside a profile that are overlays, never profiles | `.dispositions.yaml`, `.derived-ports.yaml`, `.cmdb-schema-overlay.yaml` and `.ipam.yaml` |
 | `ipam.register_reader(kind, fn, optional=False, evidence="observed", replace=False)`, or the entry-point group `takestock.ipam_readers` | A reader for one kind of IP plan source | `csv`, `dns-zones`, `asn-lookups` |
 | `plugins.Plugin(...)`, found in takestock's readers library (`readers/`), through the entry-point group `takestock.collectors`, or by a profile's `module:` or `path:` | A plug-in collector: its name, kind, input and step. It runs only when the profile's `plugins:` list names it (see [`PLUGINS.md`](PLUGINS.md)) | The readers library, listed in `readers/__init__.py` ([`COLLECTORS.md`](COLLECTORS.md#the-readers-library)) |
 | `comply.register(Standard(...))`; `comply.REGISTRY` | A standard `takestock comply` can read an observation against: its id, title, requirement data, and its evaluate, text, HTML and unmet functions (see [Adding a standard](#adding-a-standard)) | `sge`, registered in `comply.py` |

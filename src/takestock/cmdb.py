@@ -155,6 +155,8 @@ class Schema:
         self.vocabularies: dict[str, dict[str, Any]] = {
             name: dict(body) for name, body in (raw.get("vocabularies") or {}).items()
             if isinstance(body, dict)}
+        #: The file name of the schema overlay merged in, or "" for none.
+        self.overlay = ""
 
     def problems(self) -> list[str]:
         """Every way the schema fails to hold together; empty when it is sound."""
@@ -249,11 +251,156 @@ class Schema:
         return frozenset(self.vocabularies.get(str(vocabulary), {})) if vocabulary else None
 
 
-def load_schema() -> Schema:
-    """The schema, checked. Raises :class:`SchemaError` if it does not hold together."""
-    schema = Schema(raw_schema())
+def load_schema(overlay: Path | str | None = None) -> Schema:
+    """The schema, checked. Raises :class:`SchemaError` if it does not hold together.
+
+    ``overlay`` names a schema overlay file (:func:`apply_overlay`), whose
+    wording is merged over the schema before the check.
+    """
+    raw = raw_schema()
+    source = ""
+    if overlay is not None:
+        path = Path(overlay)
+        raw = apply_overlay(raw, read_overlay(path), where=str(path))
+        source = path.name
+    schema = Schema(raw)
+    schema.overlay = source
     schema.check()
     return schema
+
+
+# ── A schema overlay: wording only ─────────────────────────────────────────
+#
+# An overlay rewords the schema for one organisation (an attribute's note, a
+# class's question, a vocabulary code's definition, who holds a governance
+# role) without copying the whole file. It never changes the model: a class,
+# relationship, attribute, family or vocabulary code it names must already be
+# declared, and only the text fields below may be given.
+
+#: For each section, the text fields an overlay may set on an entry.
+OVERLAY_FIELDS: dict[str, tuple[str, ...]] = {
+    "families": ("answers", "definition", "note"),
+    "classes": ("answers", "built_from", "note"),
+    "attributes": ("note",),
+    "relationships": ("asserts", "test", "wrong_if", "qualifier", "note"),
+}
+#: The text fields an overlay may set on one code of a vocabulary.
+OVERLAY_CODE_FIELDS: tuple[str, ...] = ("definition", "note", "source")
+
+
+class OverlayError(SchemaError):
+    """A schema overlay tries to do more than reword the schema."""
+
+
+def read_overlay(path: Path | str) -> dict[str, Any]:
+    """A schema overlay file, parsed. Raises :class:`OverlayError` if it is not a mapping."""
+    p = Path(path)
+    if not p.is_file():
+        raise OverlayError(f"no schema overlay at {p}")
+    loaded = load_yaml_strict(p)
+    if loaded is None:
+        return {}
+    if not isinstance(loaded, dict):
+        raise OverlayError(f"{p}: a schema overlay is a mapping of section to entries")
+    return loaded
+
+
+def apply_overlay(raw: Mapping[str, Any], overlay: Mapping[str, Any], *,
+                  where: str = "the overlay") -> dict[str, Any]:
+    """``raw`` with the overlay's wording merged over it; ``raw`` is left unchanged.
+
+    Each text field the overlay gives replaces the schema's. Sections and
+    fields are those in :data:`OVERLAY_FIELDS`, plus ``vocabularies``
+    (``<vocabulary>: {<code>: {definition, note, source}}``) and
+    ``governance`` (``<role>: <who holds it>``). Anything else is refused
+    with :class:`OverlayError`, which lists every refused entry at once: an
+    entry naming something the schema does not declare (a class,
+    relationship, attribute, family, vocabulary code or governance role),
+    and a field that would change the model rather than its wording.
+    """
+    import copy
+
+    out: dict[str, Any] = copy.deepcopy(dict(raw))
+    problems: list[str] = []
+
+    def text(value: Any, at: str) -> bool:
+        if isinstance(value, str):
+            return True
+        problems.append(f"{at} must be text, not {type(value).__name__}")
+        return False
+
+    def entries(section: str) -> dict[str, Any]:
+        body = overlay.get(section)
+        if body is None:
+            return {}
+        if not isinstance(body, dict):
+            problems.append(f"{section} must be a mapping of name to fields")
+            return {}
+        return body
+
+    for section, fields in OVERLAY_FIELDS.items():
+        declared = out.get(section) or {}
+        for name, body in entries(section).items():
+            at = f"{section}.{name}"
+            if name not in declared:
+                problems.append(f"{at} is not declared in the schema; an overlay may "
+                                f"reword it, never add it")
+                continue
+            if not isinstance(body, dict):
+                problems.append(f"{at} must be a mapping of field to text")
+                continue
+            for key, value in body.items():
+                if key not in fields:
+                    problems.append(f"{at}.{key} is not a wording field; an overlay may "
+                                    f"set only {', '.join(fields)}")
+                elif text(value, f"{at}.{key}"):
+                    declared[name][key] = value
+
+    vocabularies = out.get("vocabularies") or {}
+    for vocab, codes in entries("vocabularies").items():
+        if vocab not in vocabularies:
+            problems.append(f"vocabularies.{vocab} is not declared in the schema; an overlay "
+                            "may reword a vocabulary, never add one")
+            continue
+        if not isinstance(codes, dict):
+            problems.append(f"vocabularies.{vocab} must be a mapping of code to fields")
+            continue
+        for code, body in codes.items():
+            at = f"vocabularies.{vocab}.{code}"
+            if code not in vocabularies[vocab]:
+                problems.append(f"{at} is not a declared code; an overlay may reword a "
+                                "code, never add one")
+                continue
+            held = vocabularies[vocab][code]
+            if not isinstance(held, dict):
+                problems.append(f"{at} has no wording fields to set")
+                continue
+            if not isinstance(body, dict):
+                problems.append(f"{at} must be a mapping of field to text")
+                continue
+            for key, value in body.items():
+                if key not in OVERLAY_CODE_FIELDS:
+                    problems.append(f"{at}.{key} is not a wording field; an overlay may "
+                                    f"set only {', '.join(OVERLAY_CODE_FIELDS)}")
+                elif text(value, f"{at}.{key}"):
+                    held[key] = value
+
+    governance = out.get("governance") or {}
+    for role, value in entries("governance").items():
+        at = f"governance.{role}"
+        if role == "cites" or role not in governance:
+            problems.append(f"{at} is not a declared governance role")
+        elif value is None or text(value, at):
+            governance[role] = value
+
+    for section in sorted(set(overlay) - set(OVERLAY_FIELDS)
+                          - {"vocabularies", "governance"}):
+        problems.append(f"{section} cannot be overlaid; an overlay may hold only "
+                        f"{', '.join([*OVERLAY_FIELDS, 'vocabularies', 'governance'])}")
+    if problems:
+        raise OverlayError(f"{where} would change the configuration register schema, not "
+                           "only its wording, so it is refused:\n  " + "\n  ".join(problems))
+    return out
 
 
 # ── Values, actors and assertions ──────────────────────────────────────────
@@ -1089,9 +1236,9 @@ def _default_recorded_at(observation: Path) -> str:
 
 class _Builder:
     def __init__(self, observation: Path, ledger: KeyLedger | None, recorded_at: str,
-                 ip_plan: Path | None = None) -> None:
+                 ip_plan: Path | None = None, schema: Schema | None = None) -> None:
         self.dir = Path(observation)
-        self.schema = load_schema()
+        self.schema = schema or load_schema()
         self.ledger = ledger or KeyLedger(self.schema)
         self.recorded_at = _check_date(recorded_at or _default_recorded_at(self.dir),
                                        "recorded_at")
@@ -1683,7 +1830,8 @@ class _Builder:
 
 
 def build(observation: Path | str, *, ledger: KeyLedger | None = None,
-          recorded_at: str = "", ip_plan: Path | str | None = None) -> Cmdb:
+          recorded_at: str = "", ip_plan: Path | str | None = None,
+          schema_overlay: Path | str | None = None) -> Cmdb:
     """Build the register for one observation directory.
 
     ``recorded_at`` defaults to the observation's own date when its directory
@@ -1691,10 +1839,12 @@ def build(observation: Path | str, *, ledger: KeyLedger | None = None,
     same register. ``ip_plan`` names an IP address plan's JSON (as
     ``takestock ipam`` writes it); when given, every machine it names at an
     address is an item too (:func:`plan_machines`). It is never read unless
-    named.
+    named. ``schema_overlay`` names a schema overlay whose wording is merged
+    over the schema (:func:`apply_overlay`).
     """
+    schema = load_schema(schema_overlay) if schema_overlay else None
     builder = _Builder(Path(observation), ledger, recorded_at,
-                       Path(ip_plan) if ip_plan else None)
+                       Path(ip_plan) if ip_plan else None, schema)
     builder.classify()
     builder.assert_facts()
     builder.fold()
@@ -1783,8 +1933,34 @@ def _schema_payload(schema: Schema) -> dict[str, Any]:
     }
 
 
-def register_payload(register: Cmdb, *, title: str = "") -> dict[str, Any]:
-    """The whole register as one plain dict: the schema, then the data."""
+def _reading_notes(how_to_read: Sequence[Any] | None) -> list[dict[str, str]]:
+    """``how_to_read`` as heading and body pairs; the built-in notes when it is None."""
+    if how_to_read is None:
+        return [{"heading": h, "body": b} for h, b in HOW_TO_READ]
+    out: list[dict[str, str]] = []
+    for n, entry in enumerate(how_to_read, start=1):
+        if isinstance(entry, Mapping):
+            heading, body = entry.get("heading"), entry.get("body")
+        elif isinstance(entry, Sequence) and not isinstance(entry, str) and len(entry) == 2:
+            heading, body = entry
+        else:
+            heading = body = None
+        if not isinstance(heading, str) or not isinstance(body, str) or not heading.strip():
+            raise ValueError(f"how_to_read entry {n} must give a heading and a body, as text")
+        out.append({"heading": heading, "body": body})
+    return out
+
+
+def register_payload(register: Cmdb, *, title: str = "", organisation: str = "",
+                     how_to_read: Sequence[Any] | None = None) -> dict[str, Any]:
+    """The whole register as one plain dict: the schema, then the data.
+
+    ``title`` and ``organisation`` head the register. ``how_to_read`` replaces
+    the built-in reading notes (:data:`HOW_TO_READ`) with the caller's own:
+    a list of ``{"heading": ..., "body": ...}`` mappings or (heading, body)
+    pairs. It reaches the JSON and the workbook's read-me alike.
+    """
+    notes = _reading_notes(how_to_read)
     schema = register.schema
     resolved = register.resolved()
     items: list[dict[str, Any]] = []
@@ -1845,10 +2021,12 @@ def register_payload(register: Cmdb, *, title: str = "") -> dict[str, Any]:
     return {
         "register": {
             "title": title or "Configuration register",
+            "organisation": organisation,
             "observation": register.observation,
             "recorded_at": register.recorded_at,
             "schema_version": schema.version,
             "schema_maturity": schema.maturity,
+            "schema_overlay": schema.overlay,
             "counts": {
                 "configuration_items": len(register.items),
                 "recorded_facts": len(register.assertions),
@@ -1862,7 +2040,7 @@ def register_payload(register: Cmdb, *, title: str = "") -> dict[str, Any]:
             "governance": {**{k: v for k, v in schema.governance.items() if k != "cites"},
                            "unassigned": schema.unassigned_roles()},
         },
-        "how_to_read": [{"heading": h, "body": b} for h, b in HOW_TO_READ],
+        "how_to_read": notes,
         "schema": _schema_payload(schema),
         "census": census,
         "items": items,
@@ -1887,21 +2065,126 @@ def read_keys(path: Path | str) -> KeyLedger:
 
 def build_register(observation_dir: Path | str, *, keys: Path | str | None = None,
                    recorded_at: str = "", title: str = "",
-                   ip_plan: Path | str | None = None) -> dict[str, Any]:
+                   ip_plan: Path | str | None = None,
+                   schema_overlay: Path | str | None = None, organisation: str = "",
+                   how_to_read: Sequence[Any] | None = None) -> dict[str, Any]:
     """Build the register for ``observation_dir`` and return it as one dict.
 
     ``keys`` names an earlier build's ``keys.jsonl`` so items keep their keys;
-    ``ip_plan`` an IP address plan's JSON whose named machines become items.
+    ``ip_plan`` an IP address plan's JSON whose named machines become items;
+    ``schema_overlay`` a schema overlay (:func:`apply_overlay`). ``title``,
+    ``organisation`` and ``how_to_read`` are as for :func:`register_payload`.
     """
     ledger = read_keys(keys) if keys else None
     return register_payload(build(observation_dir, ledger=ledger, recorded_at=recorded_at,
-                                  ip_plan=ip_plan), title=title)
+                                  ip_plan=ip_plan, schema_overlay=schema_overlay),
+                            title=title, organisation=organisation, how_to_read=how_to_read)
 
 
-def write_outputs(register: Mapping[str, Any], out_dir: Path | str) -> list[Path]:
-    """Write ``register`` as JSON, CSV per class, a workbook and the key ledger."""
+def write_outputs(register: Mapping[str, Any], out_dir: Path | str, *,
+                  theme: Any = None, jira_assets: bool = False) -> list[Path]:
+    """Write ``register`` as JSON, CSV per class, a workbook and the key ledger.
+
+    ``theme`` (a :class:`takestock.htmlpage.Theme`) styles the workbook;
+    ``jira_assets`` also writes an import for Jira Assets (see
+    :func:`takestock.cmdb_export.write_jira_assets`).
+    """
     from . import cmdb_export
-    return cmdb_export.write_all(register, Path(out_dir))
+    return cmdb_export.write_all(register, Path(out_dir), theme=theme, jira_assets=jira_assets)
+
+
+# ── Options a target profile sets ──────────────────────────────────────────
+
+#: The keys a profile's ``cmdb:`` block may hold.
+PROFILE_KEYS: tuple[str, ...] = ("title", "schema_overlay", "how_to_read", "jira_assets")
+
+
+@dataclass(frozen=True)
+class ProfileOptions:
+    """What a target profile asks of the register, read by :func:`profile_options`."""
+
+    title: str = ""
+    organisation: str = ""
+    schema_overlay: Path | None = None
+    how_to_read: tuple[dict[str, str], ...] | None = None
+    theme: Any = None
+    jira_assets: bool = False
+
+    def build_kwargs(self) -> dict[str, Any]:
+        """Keyword arguments for :func:`build_register`."""
+        return {"title": self.title, "organisation": self.organisation,
+                "schema_overlay": self.schema_overlay, "how_to_read": self.how_to_read}
+
+    def write_kwargs(self) -> dict[str, Any]:
+        """Keyword arguments for :func:`write_outputs`."""
+        return {"theme": self.theme, "jira_assets": self.jira_assets}
+
+
+def profile_options(target: Mapping[str, Any]) -> ProfileOptions:
+    """The register options a loaded target profile sets.
+
+    Read from the profile's ``cmdb:`` block (``title``, ``schema_overlay``,
+    ``how_to_read``, ``jira_assets``), its organisation's name, and its
+    ``branding:`` block, which styles the workbook only when it sets
+    anything. A relative path is read from the directory holding the profile;
+    ``how_to_read`` is a list of ``{heading, body}`` entries, or the path of a
+    YAML file holding that list. An unknown key in ``cmdb:`` is refused.
+    """
+    from . import htmlpage
+
+    block = target.get("cmdb") or {}
+    if not isinstance(block, Mapping):
+        raise ValueError("cmdb: must be a mapping")
+    unknown = sorted(set(block) - set(PROFILE_KEYS))
+    if unknown:
+        raise ValueError(f"cmdb: does not take {', '.join(unknown)}; "
+                         f"it takes {', '.join(PROFILE_KEYS)}")
+    tpath = target.get("_path")
+    base = Path(tpath).parent if tpath else Path()
+
+    def path(value: Any, key: str) -> Path:
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"cmdb.{key} must name a file")
+        p = Path(value).expanduser()
+        return p if p.is_absolute() else base / p
+
+    overlay = path(block["schema_overlay"], "schema_overlay") if block.get("schema_overlay") else None
+    notes: tuple[dict[str, str], ...] | None = None
+    raw_notes = block.get("how_to_read")
+    if isinstance(raw_notes, str):
+        raw_notes = load_yaml_strict(path(raw_notes, "how_to_read"))
+    if raw_notes is not None:
+        if not isinstance(raw_notes, list):
+            raise ValueError("cmdb.how_to_read must be a list of {heading, body} entries")
+        notes = tuple(_reading_notes(raw_notes))
+    title = block.get("title") or ""
+    if not isinstance(title, str):
+        raise ValueError("cmdb.title must be text")
+    jira = block.get("jira_assets", False)
+    if not isinstance(jira, bool):
+        raise ValueError("cmdb.jira_assets must be true or false")
+    has_org = any(target.get(k) for k in ("organisation", "org"))
+    theme = htmlpage.theme_from_target(dict(target)) if target.get("branding") else None
+    return ProfileOptions(
+        title=title,
+        organisation=htmlpage.organisation_name(dict(target)) if has_org else "",
+        schema_overlay=overlay, how_to_read=notes, theme=theme, jira_assets=jira)
+
+
+def build_and_write(observation: Path | str, out_dir: Path | str, *,
+                    keys: Path | str | None = None, ip_plan: Path | str | None = None,
+                    target: str | None = None) -> tuple[dict[str, Any], list[Path]]:
+    """Build the register and write every view, with a named target profile's options.
+
+    Returns the register and the paths written.
+    """
+    options = ProfileOptions()
+    if target:
+        from . import config
+        options = profile_options(config.load_target(target))
+    register = build_register(observation, keys=keys, ip_plan=ip_plan,
+                              **options.build_kwargs())
+    return register, write_outputs(register, out_dir, **options.write_kwargs())
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -1924,10 +2207,14 @@ def _main(argv: Sequence[str] | None) -> int:
                         help="an earlier build's keys.jsonl, so items keep their keys")
     parser.add_argument("--ip-plan", type=Path,
                         help="an IP address plan's JSON; each machine it names becomes an item")
+    parser.add_argument("--target", metavar="PROFILE",
+                        help="a target profile whose cmdb:, organisation and branding: "
+                             "blocks set the register's options")
     args = parser.parse_args(argv)
     out = args.out or args.observation / "cmdb"
-    register = build_register(args.observation, keys=args.keys, ip_plan=args.ip_plan)
-    for path in write_outputs(register, out):
+    register, paths = build_and_write(args.observation, out, keys=args.keys,
+                                      ip_plan=args.ip_plan, target=args.target)
+    for path in paths:
         print(path)
     counts = register["register"]["counts"]
     print(f"{counts['configuration_items']} items, {counts['recorded_facts']} facts, "
