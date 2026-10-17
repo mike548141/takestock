@@ -1,0 +1,32 @@
+[
+    {
+        "AntiPhishPolicy": "Finance anti-phishing",
+        "Name": "Finance anti-phishing",
+        "Identity": "Finance anti-phishing",
+        "State": "Enabled",
+        "Priority": 0,
+        "SentTo": null,
+        "SentToMemberOf": [
+            "finance@example.test"
+        ],
+        "RecipientDomainIs": null,
+        "ExceptIfSentTo": null,
+        "ExceptIfSentToMemberOf": null,
+        "ExceptIfRecipientDomainIs": null
+    },
+    {
+        "AntiPhishPolicy": "Finance anti-phishing",
+        "Name": "Lab anti-phishing",
+        "Identity": "Lab anti-phishing",
+        "State": "Disabled",
+        "Priority": 1,
+        "SentTo": null,
+        "SentToMemberOf": null,
+        "RecipientDomainIs": [
+            "widgets.example.test"
+        ],
+        "ExceptIfSentTo": null,
+        "ExceptIfSentToMemberOf": null,
+        "ExceptIfRecipientDomainIs": null
+    }
+]

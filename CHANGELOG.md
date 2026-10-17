@@ -9,6 +9,27 @@ command line or a file format, and its entry says how.
 
 ### Added
 
+- **Readers library**: `exchange_online` reads an export of Exchange Online
+  settings (accepted domains, DKIM signing, anti-phishing policies and
+  rules, preset security policy rules, inbound and outbound connectors,
+  quarantine policies), a folder or a zip, one `n/a` row per object and a
+  scope row. A PowerShell script in `docs/EXCHANGE-ONLINE-EXPORT.md` writes
+  the export; it runs only `Get-*` cmdlets. Its `-IncludeDlp` switch also
+  exports mail flow rules and Microsoft Purview data loss prevention
+  settings, which nothing reads yet.
+- **Secure Government Email**: SGE-DMARC-02 (inbound mail checked for DMARC
+  and acted on), SGE-DMARC-R04 (mail failing DMARC kept in a quarantine
+  only an administrator releases from) and SGE-DKIM-01 (outbound mail DKIM
+  signed) are graded per domain from that export when an observation holds
+  one, and stay `no-instrument` when it does not. SGE-DMARC-02 reads the
+  anti-phishing policy that governs each domain's recipients and whether
+  the route the mail arrives by lets the platform honour DMARC: behind a
+  non-Microsoft MX, only with Enhanced Filtering on the receiving connector.
+  The requirement set's `measurable` field takes a new value,
+  `inside-export`, for these three.
+- **Grading**: rows with protocol `mail-policy` carry no cryptography, like
+  the DNS mail policy records.
+
 - **Readers library**: `oracle_tde` reads an Oracle Database administrator's
   CSV export of Transparent Data Encryption state (keystore status and type
   from `V$ENCRYPTION_WALLET`, encrypted tablespaces and their algorithms from

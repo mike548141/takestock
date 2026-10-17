@@ -1,0 +1,14 @@
+[
+    {
+        "Name": "example.test",
+        "Domain": "example.test",
+        "Enabled": true,
+        "Status": "Valid"
+    },
+    {
+        "Name": "widgets.example.test",
+        "Domain": "widgets.example.test",
+        "Enabled": false,
+        "Status": "CnameMissing"
+    }
+]

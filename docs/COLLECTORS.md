@@ -962,6 +962,7 @@ plugins:
 | `sbom` | `general` | CycloneDX software bills of materials (JSON): the cryptographic, identity and transport components an application declares | `inbox/sbom` |
 | `oracle_tde` | `database-encryption` | An Oracle Database administrator's CSV export of Transparent Data Encryption state: keystore status and type, and encrypted tablespaces | none: name it with `input:` |
 | `commvault` | `backup-encryption` | A CSV of Commvault storage policy copies' software encryption: cipher, key length and key custody | none: name it with `input:` |
+| `exchange_online` | `general` | An export of Exchange Online settings (anti-phishing policies and rules, connectors, quarantine policies, DKIM signing), read for three Secure Government Email requirements | none: name it with `input:` |
 
 A reader with no default input still runs when the profile gives it none,
 and records in its own coverage gap that no export was read. A profile that
@@ -1180,3 +1181,134 @@ file with no rows: one gap saying no export was read.
 **Cannot see.** Hardware encryption done by a tape drive; encryption of data
 on its way to the backup; whether copies are immutable; and any policy or
 copy missing from the CSV.
+
+### `exchange_online`
+
+**Reads** the folder, or a zip of it, that
+the script in [`EXCHANGE-ONLINE-EXPORT.md`](EXCHANGE-ONLINE-EXPORT.md)
+writes. The script is read-only: it runs nine Exchange Online PowerShell
+`Get-*` cmdlets and writes each one's objects, whole, to `<cmdlet>.json`, with
+a `manifest.json` recording each cmdlet's count or error. Run it in
+PowerShell with the ExchangeOnlineManagement module, signed in with an
+account that can read Exchange Online configuration.
+The script has not been run by takestock's own tests: the reader's fixture is
+written by hand to the shape the script writes.
+
+```yaml
+plugins:
+  - name: exchange_online
+    input: inbox/exchange-online-settings-2030-01-31T0900Z.zip
+```
+
+| Cmdlet | What is read from it |
+|---|---|
+| `Get-AcceptedDomain` | Each domain, and which one is the tenant's initial domain |
+| `Get-DkimSigningConfig` | Whether DKIM signing is enabled for each domain, and its status |
+| `Get-AntiPhishPolicy` | Each policy's DMARC handling (`HonorDmarcPolicy`, `DmarcRejectAction`, `DmarcQuarantineAction`), its spoof intelligence action (`AuthenticationFailAction`) and quarantine policy (`SpoofQuarantineTag`), and whether it is the default or a preset policy |
+| `Get-AntiPhishRule` | Which custom policy applies to whom (`SentTo`, `SentToMemberOf`, `RecipientDomainIs` and their exceptions), its `Priority` and `State` |
+| `Get-EOPProtectionPolicyRule`, `Get-ATPProtectionPolicyRule` | The same for the Standard and Strict preset security policies |
+| `Get-InboundConnector` | Whether each connector is enabled, and its Enhanced Filtering settings (`EFSkipLastIP`, `EFSkipIPs`, `EFUsers`) and sender certificate name |
+| `Get-OutboundConnector` | Whether each connector is enabled and hands mail to smart hosts, and for which domains or mail flow rule |
+| `Get-QuarantinePolicy` | Whether recipients may release (`PermissionToRelease`) or only request release (`PermissionToRequestRelease`) of mail held under each policy |
+
+The script's `-IncludeDlp` switch also exports the mail flow rules and the
+Microsoft Purview data loss prevention policies and sensitivity labels.
+**takestock does not read those yet.** The Purview half needs
+`Connect-IPPSSession`, which Microsoft says *"isn't available in PowerShell 7
+on Linux clients"* (nor on macOS), so it needs Windows.
+
+**Rows.** One per object read, named `Exchange Online <setting> <name>`
+(for example `Exchange Online inbound connector From the mail gateway`), and
+a scope row, `Exchange Online settings export scope`, recording when the
+export was taken and each cmdlet's count, failure or absence. Every row has
+data state `email-auth`, protocol `mail-policy` and verdict `n/a`: a setting
+carries no cryptographic primitive to grade. `extra` holds `setting` and the
+properties above, in lower case with words joined by `_`. Rows are dated by
+the manifest's `pulled_utc`, else the file's modification date.
+
+**What it settles.** The [Secure Government Email reading](SGE-NOTE.md)
+grades three requirements from these rows, which are otherwise
+`no-instrument`: one row per domain for each.
+
+| Requirement | Met when | Not met when | Left unsettled when |
+|---|---|---|---|
+| SGE-DMARC-02, inbound mail checked for DMARC and acted on (must) | every anti-phishing policy that governs the domain's recipients has `HonorDmarcPolicy` true, with `Reject` or `Quarantine` for a sender's `p=reject` and `Quarantine` or `MoveToJmf` (the Junk Email folder) for `p=quarantine`, **and** the domain's MX records point to Microsoft 365, or to another service whose mail arrives on an enabled inbound connector with Enhanced Filtering on for every recipient | a policy that certainly governs recipients ignores DMARC; or the MX points elsewhere and no enabled connector has Enhanced Filtering, or only for listed recipients | the observation holds no MX reading; an Enhanced Filtering connector is not tied to the MX host (below); a policy that fails governs only recipients a rule names |
+| SGE-DMARC-R04, mail failing DMARC goes to an administrator quarantine (should) | the actions in effect quarantine or reject, and the quarantine policy in effect does not let recipients release | an action in effect is `MoveToJmf` (the Junk Email folder), or the quarantine policy lets recipients release | the quarantine policy is not in the export; the answer turns on an unsettled route |
+| SGE-DKIM-01, all outbound mail DKIM signed (must) | signing is enabled (with status `Valid`, where a status is recorded), or the domain is the tenant's initial domain, and no enabled outbound connector hands mail to smart hosts | signing is off, the domain sends mail, and no enabled outbound connector hands mail to smart hosts | signing is off and the domain sends no mail, or nothing shows whether it does; an enabled outbound connector hands mail to smart hosts, where the service beyond may sign or not |
+
+How each is decided, from Microsoft Learn:
+
+- **Which policy governs whom.** Microsoft's order of precedence is the
+  Strict preset, the Standard preset, custom policies by priority (*"a lower
+  number indicates a higher priority"*), then the default policy, which
+  *"applies to all recipients"* (*Preset security policies*; *Anti-phishing
+  policies*). A preset with no enabled rule applies to no one (*"Until you
+  turn on the profiles and assign users to them, the Standard and Strict
+  preset security policies are assigned to no one"*), and nor does a
+  disabled custom rule. Different types of recipient condition combine with
+  AND, so a rule limited by domain alone takes every recipient of its
+  domains, and the walk stops there. A rule naming users or groups takes
+  some recipients: the export holds no group membership, so a failing policy
+  behind such a rule, or after one, leaves the row unsettled rather than
+  failed.
+- **The route.** *"If the MX record for the Microsoft 365 domain points to a
+  non-Microsoft service or device that sits in front of Microsoft 365, the
+  Honor DMARC policy setting is applied only if Enhanced Filtering for
+  Connectors is enabled for the connector that receives inbound messages"*
+  (*Anti-phishing policies*). Microsoft 365's own MX hosts end
+  `mail.protection.outlook.com`, `mail.eo.outlook.com`,
+  `mail.protection.outlook.de` or `mx.microsoft` (*How SMTP DNS-based
+  Authentication of Named Entities (DANE) works*).
+  Enhanced Filtering is on when `EFSkipLastIP` is true, or when it is false
+  and `EFSkipIPs` lists addresses; with an empty `EFUsers` it *"is applied to
+  all recipients"*, and with a list it *"is effective only on messages where
+  all recipients are specified here"* (*Enhanced filtering for connectors*).
+  A connector is tied to the MX host when its `TlsSenderCertificateName`
+  covers the host's name. The reader does not resolve addresses, so a
+  connector identified only by its sender addresses leaves the row
+  unsettled.
+- **The actions.** With `HonorDmarcPolicy` true, `DmarcRejectAction` and
+  `DmarcQuarantineAction` act on a sender's `p=reject` and `p=quarantine`;
+  false, *"The AuthenticationFailAction parameter specifies the action to take
+  on the message"* (*Set-AntiPhishPolicy*). Where the route does not apply
+  the setting, the reading takes the false case. *"If you select Quarantine
+  the message as an action, the system uses the quarantine policy selected
+  for spoof intelligence protection"*: `SpoofQuarantineTag`, whose default is
+  `DefaultFullAccessPolicy` or `NotificationEnabledPolicy`, both Full access
+  (*Quarantine policies*).
+- **Request release counts as met.** A quarantine policy that lets
+  recipients only request release leaves the release to an administrator:
+  Microsoft says Limited access lets users do anything *"except release them
+  from quarantine without admin approval"* (*Quarantine policies*), which is
+  the framework's *"release only by administrators"*. Whether the
+  administrator reviews before approving is not in the export.
+- **Signing.** For a custom domain *"Currently, no DKIM signing occurs for
+  outbound mail from custom domains"* until signing is configured, so a
+  domain with no signing configuration is unsigned; the initial domain is
+  signed automatically (*How to use DKIM for email in your custom domain*).
+  Whether a domain sends mail is read from the profile (listed under
+  `discovery.email_domains`, or parked), then its SPF record (senders named,
+  or `v=spf1 -all` alone). With no such evidence, an unsigned domain is
+  unsettled, never passed.
+
+**Coverage gaps.** No input, an input that is neither a folder nor a zip, or
+one holding none of the nine readings: one gap saying no export was read. A
+cmdlet the manifest records as failed is a could-not-test gap quoting its
+error; one with no file is a not-collected gap.
+
+**Cannot see.** Anything outside Exchange Online: a mail gateway in front of
+it (its own DMARC handling and quarantine) or on the outbound path (whether
+it signs again or breaks the signature), and other services that send as the
+organisation's domains. The overrides Microsoft lists for the DMARC setting
+(safe sender lists, the spoof intelligence insight, the Tenant Allow/Block
+List, allowed sender lists in anti-spam policies, mail flow rules) and group
+membership are not exported.
+
+Pages read, on Microsoft Learn (learn.microsoft.com), by title:
+*Anti-phishing policies in Microsoft 365*; *Preset security policies*;
+*Quarantine policies*; *Enhanced filtering for connectors in Exchange Online*;
+*How to use DKIM for email in your custom domain*; *How SMTP DNS-based
+Authentication of Named Entities (DANE) works*; *About the Exchange Online
+PowerShell V3 module*; and the Exchange PowerShell cmdlet pages for each
+cmdlet the script runs and for Set-AntiPhishPolicy, Set-AntiPhishRule,
+Set-InboundConnector and Set-OutboundConnector.

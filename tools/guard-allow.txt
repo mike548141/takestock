@@ -42,3 +42,9 @@ libssh.org
 lysator.liu.se
 # Publisher of the CNSA 2.0 algorithm suite, cited in the baseline policy.
 nsa.gov
+# Host-name endings Microsoft documents for Microsoft 365's own MX records
+# (learn.microsoft.com, "How SMTP DNS-based Authentication of Named Entities
+# (DANE) works"), which the exchange_online
+# reader compares a domain's MX hosts with. They name the vendor's service.
+mail.protection.outlook.com
+mail.eo.outlook.com

@@ -1,0 +1,22 @@
+[
+    {
+        "Name": "DefaultFullAccessPolicy",
+        "EndUserQuarantinePermissions": "[PermissionToBlockSender: False\r\nPermissionToDelete: True\r\nPermissionToDownload: False\r\nPermissionToPreview: True\r\nPermissionToRelease: True\r\nPermissionToRequestRelease: False\r\nPermissionToViewHeader: False\r\nPermissionToAllowSender: True]",
+        "ESNEnabled": false
+    },
+    {
+        "Name": "AdminOnlyAccessPolicy",
+        "EndUserQuarantinePermissions": "[PermissionToBlockSender: False\r\nPermissionToDelete: False\r\nPermissionToDownload: False\r\nPermissionToPreview: False\r\nPermissionToRelease: False\r\nPermissionToRequestRelease: False\r\nPermissionToViewHeader: False\r\nPermissionToAllowSender: False]",
+        "ESNEnabled": false
+    },
+    {
+        "Name": "DefaultFullAccessWithNotificationPolicy",
+        "EndUserQuarantinePermissions": "[PermissionToBlockSender: False\r\nPermissionToDelete: True\r\nPermissionToDownload: False\r\nPermissionToPreview: True\r\nPermissionToRelease: True\r\nPermissionToRequestRelease: False\r\nPermissionToViewHeader: False\r\nPermissionToAllowSender: True]",
+        "ESNEnabled": true
+    },
+    {
+        "Name": "LimitedAccess",
+        "EndUserQuarantinePermissionsValue": 43,
+        "ESNEnabled": true
+    }
+]

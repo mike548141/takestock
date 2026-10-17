@@ -32,6 +32,9 @@
 #   observed       a collector produces the fact
 #   not-collected  measurable from outside, but no collector reads it yet
 #   no-instrument  cannot be seen from outside the organisation at all
+#   inside-export  cannot be seen from outside, but an export of the
+#                  organisation's own mail platform settings settles it; with
+#                  no such export in the observation it reads as no-instrument
 #
 # `partial` is quoted into the evaluator's row: what the reading does not
 # cover, written as a sentence a reader can use. `record`, where present,
@@ -186,7 +189,7 @@ requirements:
       email, DKIM signing must happen at that point."
     source: DKIM Deployment Guide v1.0 §3; framework §8 DKIM requirement
     document: dkim-guide
-    measurable: no-instrument
+    measurable: inside-export
     settled_by: >-
       The signing configuration of every service that sends as the
       organisation, or the DKIM-Signature header of a sample message from each
@@ -222,7 +225,7 @@ requirements:
       on the sending domain's DMARC policy.
     source: framework DMARC requirements; DMARC Deployment Guide v1.0 §3
     document: framework
-    measurable: no-instrument
+    measurable: inside-export
     settled_by: >-
       The receiving mail platform's inbound policy settings, showing that
       DMARC is evaluated and each sender's policy honoured; or the outcome of
@@ -672,7 +675,7 @@ requirements:
       administrators (secops team) after review."
     source: framework §8 "Inbound messages and DMARC"
     document: framework
-    measurable: no-instrument
+    measurable: inside-export
     settled_by: >-
       The receiving mail platform's quarantine and junk-mail settings for
       messages that fail DMARC.

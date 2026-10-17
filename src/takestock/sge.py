@@ -3325,6 +3325,362 @@ _EVALUATORS: dict[str, Callable[..., list[Conformance]]] = {
 }
 
 
+# ── Read from the mail platform's own settings ────────────────────────
+
+#: The ``measurable`` value of a requirement nothing outside the organisation
+#: can see, which an export of its mail platform's settings settles. With no
+#: such export in the observation the row stays ``no-instrument``.
+INSIDE_EXPORT = "inside-export"
+
+_NO_EXPORT = ("; an export of the mail platform's own settings would settle it, and this "
+              "observation holds none (takestock reads Exchange Online's with the "
+              "exchange_online reader)")
+
+_DMARC_LIMITS = (
+    "What this reading cannot see: what any service in front of the platform does with "
+    "DMARC; the overrides Microsoft lists for the setting (safe sender lists, the spoof "
+    "intelligence insight, the Tenant Allow/Block List, allowed sender lists in anti-spam "
+    "policies and mail flow rules), which the export does not hold; and group membership, "
+    "so a rule naming users or groups is read as covering some recipients, never all")
+
+_R04_LIMITS = (
+    "What this reading cannot see: a quarantine kept by any service in front of the "
+    "platform; whether an administrator reviews a message before releasing it; and the "
+    "overrides and group membership described for SGE-DMARC-02")
+
+_DKIM_LIMITS = (
+    "What this reading cannot see: mail sent as the domain by any other service, which "
+    "signs or not on its own platform (SGE-DKIM-02 reads third-party platforms), and "
+    "whether a service on the outbound path signs again or breaks the signature")
+
+#: The quarantine policies Microsoft names as the default for spoof
+#: intelligence (Set-AntiPhishPolicy, SpoofQuarantineTag), both "Full access"
+#: in the quarantine policies page's table of default policies.
+_DEFAULT_SPOOF_TAGS = ("DefaultFullAccessPolicy", "NotificationEnabledPolicy")
+
+
+def _eo() -> Any:
+    from .readers import exchange_online
+    return exchange_online
+
+
+def _platform(assets: list[Any]) -> tuple[Any, Any]:
+    eo = _eo()
+    return eo, eo.settings(assets)
+
+
+def _no_export(req: dict) -> Conformance:
+    return _unmeasured(req, "", NO_INSTRUMENT,
+                       str(req.get("note") or "not observable from outside the organisation")
+                       .strip().rstrip(".") + _NO_EXPORT)
+
+
+def _platform_domains(s: Any, domains: list[str]) -> list[str]:
+    if domains:
+        return [d.lower() for d in domains]
+    return sorted({str(d.get("domain")) for d in s.of("accepted-domain")
+                   if str(d.get("domain_type") or "").lower() != "externalrelay"})
+
+
+def _accepted(s: Any) -> set[str]:
+    return {str(d.get("domain")) for d in s.of("accepted-domain")}
+
+
+def _not_accepted(req: dict, d: str, what: str) -> Conformance:
+    return _unmeasured(req, d, INCONCLUSIVE,
+                       f"{d} is not an accepted domain of the mail platform this export reads, "
+                       f"so {what} is handled elsewhere and is not in this reading")
+
+
+def _platform_row(req: dict, d: str, status: str, observed: str, reason: str,
+                  evidence: list[str]) -> Conformance:
+    if status == NOT_MEASURED:
+        # An unmeasured row carries its explanation where every other one does.
+        row = _unmeasured(req, d, INCONCLUSIVE, reason)
+        row.observed = observed
+        return row
+    return Conformance(req["id"], req["title"], req["level"], req["scope"], d, status,
+                       observed=observed, reason=reason,
+                       evidence=EVIDENCE_SEPARATOR.join(dict.fromkeys(evidence)),
+                       source=req["source"])
+
+
+def _governed(results: list[tuple[Any, str | None, str]]) -> tuple[str, list[str]]:
+    """Combine each governing policy's own answer into one status for the domain.
+
+    ``results`` holds (the :class:`~takestock.readers.exchange_online.Governing`
+    entry, ``"ok"``, ``"bad"`` or None for unknown, the sentence). A policy
+    that fails is a failure for the domain only when it certainly governs
+    some of its recipients: it takes every recipient no earlier entry takes,
+    and no earlier entry names users or groups. Otherwise it may govern no
+    one, and the domain is unsettled.
+    """
+    words = [why for _, _, why in results]
+    if any(ans == "bad" and g.whole and g.certain for g, ans, _ in results):
+        return FAIL, words
+    if all(ans == "ok" for _, ans, _ in results):
+        return PASS, words
+    return NOT_MEASURED, words
+
+
+def _who(g: Any) -> str:
+    scope = ("every recipient" if g.whole and g.certain else
+             "the remaining recipients" if g.whole else "the recipients its rule names")
+    return f"{g.via} ({g.name or 'a policy the export does not hold'}), for {scope}"
+
+
+def _honours_dmarc(policy: dict) -> tuple[str | None, str]:
+    honour = policy.get("honor_dmarc")
+    qa = str(policy.get("dmarc_quarantine_action") or "")
+    ra = str(policy.get("dmarc_reject_action") or "")
+    if honour is False:
+        return "bad", ("HonorDmarcPolicy is false, so the sender's DMARC policy is ignored "
+                       "and the spoof intelligence action applies instead")
+    if honour is not True:
+        return None, "HonorDmarcPolicy is not recorded"
+    eo = _eo()
+    if qa in eo.QUARANTINE_ACTIONS and ra in eo.REJECT_ACTIONS:
+        return "ok", (f"HonorDmarcPolicy is true: a sender's p=reject is met with {ra} and "
+                      f"p=quarantine with {qa}")
+    return None, (f"HonorDmarcPolicy is true with actions this reading does not recognise "
+                  f"(p=reject: {ra or 'none'}, p=quarantine: {qa or 'none'})")
+
+
+def _eval_inbound_dmarc(req: dict, assets: list[Any], domains: list[str]) -> list[Conformance]:
+    """SGE-DMARC-02: the platform honours each sender's DMARC policy on inbound mail."""
+    eo, s = _platform(assets)
+    if s is None:
+        return [_no_export(req)]
+    accepted = _accepted(s)
+    rows = []
+    for d in _platform_domains(s, domains):
+        if accepted and d not in accepted:
+            rows.append(_not_accepted(req, d, "its inbound mail"))
+            continue
+        governing = eo.policies_for(s, d)
+        results: list[tuple[Any, str | None, str]] = []
+        evidence = []
+        for g in governing:
+            if g.policy is None:
+                results.append((g, None, f"{_who(g)}: the export holds no such policy"))
+                continue
+            ans, why = _honours_dmarc(g.policy)
+            results.append((g, ans, f"{_who(g)}: {why}"))
+            evidence.append(eo.row_name(g.policy))
+        policy_status, words = _governed(results)
+        route = eo.route_for(s, _mx_hosts(assets, d))
+        evidence += [eo.row_name({"setting": "inbound-connector", "connector": c})
+                     for c in route.connectors]
+        if policy_status == FAIL:
+            status, verdict = FAIL, "not met: a policy that governs its recipients ignores DMARC"
+        elif route.honours is False:
+            status, verdict = FAIL, ("not met at the mail platform: the policy is not applied "
+                                     "on the route the mail arrives by")
+        elif policy_status == PASS and route.honours is True:
+            status, verdict = PASS, "met at the mail platform"
+        else:
+            status, verdict = NOT_MEASURED, "unsettled"
+        reason = (f"{verdict}. Policies: {'; '.join(words)}. Route: {route.reason}. "
+                  f"Read from {eo.taken(s)}. {_DMARC_LIMITS}.")
+        observed = ("policy: " + {PASS: "honours DMARC", FAIL: "ignores DMARC",
+                                  NOT_MEASURED: "unsettled"}[policy_status]
+                    + "; route: " + {True: "applies it", False: "does not apply it",
+                                     None: "unsettled"}[route.honours])
+        rows.append(_platform_row(req, d, status, observed, reason, evidence))
+    return rows
+
+
+def _quarantine_rights(s: Any, policy: dict) -> tuple[str | None, str]:
+    eo = _eo()
+    tag = str(policy.get("spoof_quarantine_tag") or "")
+    if not tag:
+        return "bad", ("no quarantine policy is recorded for spoof intelligence, and "
+                       f"Microsoft's default is {' or '.join(_DEFAULT_SPOOF_TAGS)}, both "
+                       "of which give recipients Full access, release included")
+    q = eo.quarantine_policy(s, tag)
+    if q is None:
+        return None, f"its quarantine policy {tag} is not in the export"
+    if q.get("release") is True:
+        return "bad", (f"its quarantine policy {tag} lets recipients release their own "
+                       "quarantined mail (PermissionToRelease)")
+    if q.get("release") is False:
+        if q.get("request_release") is True:
+            return "ok", (f"its quarantine policy {tag} lets recipients only request release "
+                          "(PermissionToRequestRelease), so an administrator still releases")
+        return "ok", f"its quarantine policy {tag} does not let recipients release"
+    return None, f"the release permissions of its quarantine policy {tag} were not read"
+
+
+def _r04_one(s: Any, policy: dict, route_honours: bool) -> tuple[str | None, str]:
+    eo = _eo()
+    h = eo.handling(policy, route_honours)
+    actions = {h.quarantine_action, h.reject_action}
+    junk = "MoveToJmf" in actions
+    unknown = actions - {"Quarantine", "Reject", "MoveToJmf"}
+    acts = (f"p=quarantine goes to {h.quarantine_action or 'an unrecorded action'} and "
+            f"p=reject to {h.reject_action or 'an unrecorded action'} ({h.basis})")
+    if junk:
+        return "bad", f"{acts}: MoveToJmf delivers it to the recipient's Junk Email folder"
+    if unknown:
+        return None, f"{acts}: an action this reading does not recognise"
+    if "Quarantine" not in actions:
+        return "ok", f"{acts}: rejected, never delivered"
+    ans, why = _quarantine_rights(s, policy)
+    return ans, f"{acts}; {why}"
+
+
+def _eval_dmarc_quarantine(req: dict, assets: list[Any],
+                           domains: list[str]) -> list[Conformance]:
+    """SGE-DMARC-R04: mail failing DMARC is quarantined, and only an administrator releases it."""
+    eo, s = _platform(assets)
+    if s is None:
+        return [_no_export(req)]
+    accepted = _accepted(s)
+    rows = []
+    for d in _platform_domains(s, domains):
+        if accepted and d not in accepted:
+            rows.append(_not_accepted(req, d, "its inbound mail"))
+            continue
+        route = eo.route_for(s, _mx_hosts(assets, d))
+        results: list[tuple[Any, str | None, str]] = []
+        evidence = []
+        for g in eo.policies_for(s, d):
+            if g.policy is None:
+                results.append((g, None, f"{_who(g)}: the export holds no such policy"))
+                continue
+            evidence.append(eo.row_name(g.policy))
+            if route.honours is None:
+                both = {_r04_one(s, g.policy, True), _r04_one(s, g.policy, False)}
+                if len({a for a, _ in both}) == 1:
+                    ans = next(iter(both))[0]
+                    why = " Whether or not the route honours DMARC: " + " / ".join(
+                        w for _, w in sorted(both, key=lambda x: x[1]))
+                else:
+                    ans, why = None, (" The answer turns on whether the route honours DMARC, "
+                                      "which is unsettled: " + " / ".join(
+                                          w for _, w in sorted(both, key=lambda x: x[1])))
+                results.append((g, ans, f"{_who(g)}:{why}"))
+            else:
+                ans, why = _r04_one(s, g.policy, route.honours)
+                results.append((g, ans, f"{_who(g)}: {why}"))
+        status, words = _governed(results)
+        verdict = {PASS: "met at the mail platform", FAIL: "not met",
+                   NOT_MEASURED: "unsettled"}[status]
+        reason = (f"{verdict}. Policies: {'; '.join(words)}. Route: {route.reason}. "
+                  f"Read from {eo.taken(s)}. {_R04_LIMITS}.")
+        observed = {PASS: "administrator-only quarantine",
+                    FAIL: "failing mail can reach a recipient",
+                    NOT_MEASURED: "unsettled"}[status]
+        rows.append(_platform_row(req, d, status, observed, reason, evidence))
+    return rows
+
+
+def _spf_record(assets: list[Any], d: str) -> str | None:
+    for a in _by(assets, "spf", d):
+        if _absent(a):
+            return None
+        rec = str((_get(a, "extra") or {}).get("record") or "").strip()
+        if rec:
+            return rec
+    return None
+
+
+def _sends_mail(assets: list[Any], d: str, domains: list[str],
+                parked: list[str]) -> tuple[bool | None, str]:
+    """Whether ``d`` sends mail, on the evidence the observation holds."""
+    if d in (x.lower() for x in domains):
+        return True, "the profile lists it under discovery.email_domains, as a domain that sends mail"
+    if d in (x.lower() for x in parked):
+        return False, "the profile lists it as a parked domain, which sends no mail"
+    rec = _spf_record(assets, d)
+    if rec is not None:
+        terms = [t for t in rec.lower().split()[1:] if not re.fullmatch(r"[-~?+]?all", t)]
+        if not terms and re.search(r"(^|\s)-all\b", rec.lower()):
+            return False, f"its SPF record ({rec}) declares that it sends no mail"
+        if terms:
+            return True, f"its SPF record ({rec}) authorises senders for it"
+    return None, ("nothing in this observation shows whether it sends mail: the profile "
+                  "does not list it, and no SPF record naming senders or denying all was read")
+
+
+def _eval_dkim_signing(req: dict, assets: list[Any], domains: list[str],
+                       parked: list[str] | None = None) -> list[Conformance]:
+    """SGE-DKIM-01: the platform signs the mail of every accepted domain that sends."""
+    eo, s = _platform(assets)
+    if s is None:
+        return [_no_export(req)]
+    parked = list(parked or [])
+    accepted = s.of("accepted-domain") or [
+        {"setting": "accepted-domain", "domain": c.get("domain")} for c in s.of("dkim-signing")]
+    gateways = eo.outbound_gateways(s)
+    gw_names = [eo.row_name(c) for c in gateways]
+    rows = []
+    for dom in sorted(accepted, key=lambda x: str(x.get("domain"))):
+        d = str(dom.get("domain") or "")
+        sig = eo.signing_for(s, dom)
+        config = next((c for c in s.of("dkim-signing") if c.get("domain") == d), None)
+        evidence = [eo.row_name(dom)] + ([eo.row_name(config)] if config else [])
+        tail = f" Read from {eo.taken(s)}. {_DKIM_LIMITS}."
+        if sig.signs is True and gateways:
+            rows.append(_platform_row(
+                req, d, NOT_MEASURED, "signed by the platform; outbound gateway",
+                f"the platform signs: {sig.reason}. But outbound mail can leave through "
+                "another service: "
+                + "; ".join(f"the connector {c.get('connector')} hands "
+                            f"{eo.gateway_scope(c)} to {', '.join(c.get('smart_hosts') or [])}"
+                            for c in gateways)
+                + ". The DKIM guide asks that \"If you use an external email security "
+                "provider to process your outbound email, DKIM signing must happen at that "
+                "point\", and what that service does with the signature is not in this "
+                "reading." + tail, evidence + gw_names))
+        elif sig.signs is True:
+            rows.append(_platform_row(req, d, PASS, "signed by the platform",
+                                      f"the platform signs: {sig.reason}." + tail, evidence))
+        elif sig.signs is False:
+            sends, basis = _sends_mail(assets, d, domains, parked)
+            if sends and gateways:
+                rows.append(_platform_row(
+                    req, d, NOT_MEASURED, "not signed by the platform; outbound gateway",
+                    f"{sig.reason}, and the domain sends mail: {basis}. But outbound mail can "
+                    "leave through another service: "
+                    + "; ".join(f"the connector {c.get('connector')} hands "
+                                f"{eo.gateway_scope(c)} to "
+                                f"{', '.join(c.get('smart_hosts') or [])}" for c in gateways)
+                    + ". The DKIM guide asks that \"If you use an external email security "
+                    "provider to process your outbound email, DKIM signing must happen at "
+                    "that point\", so that service may sign this domain's mail, and whether "
+                    "it does is not in this reading." + tail, evidence + gw_names))
+            elif sends:
+                rows.append(_platform_row(req, d, FAIL, "not signed by the platform",
+                                          f"{sig.reason}, and the domain sends mail: "
+                                          f"{basis}." + tail, evidence))
+            elif sends is False:
+                rows.append(_platform_row(
+                    req, d, NOT_MEASURED, "not signed; sends no mail",
+                    f"{sig.reason}, and {basis}, so there is no outbound mail from it for "
+                    "the requirement to read; mail sent as it anyway would go unsigned."
+                    + tail, evidence))
+            else:
+                rows.append(_platform_row(req, d, NOT_MEASURED, "not signed; sending unknown",
+                                          f"{sig.reason}; {basis}." + tail, evidence))
+        else:
+            rows.append(_platform_row(req, d, NOT_MEASURED, "signing unsettled",
+                                      f"{sig.reason}." + tail, evidence))
+    names = {str(x.get("domain")) for x in accepted}
+    for d in (x.lower() for x in domains):
+        if d not in names:
+            rows.append(_not_accepted(req, d, "the mail it sends"))
+    return rows
+
+
+#: The evaluator for each requirement read from the mail platform's settings.
+_INSIDE_EVALUATORS: dict[str, Callable[..., list[Conformance]]] = {
+    "SGE-DKIM-01": _eval_dkim_signing,
+    "SGE-DMARC-02": _eval_inbound_dmarc,
+    "SGE-DMARC-R04": _eval_dmarc_quarantine,
+}
+
+
 def _awaiting(req: dict, assets: list[Any], domains: list[str]) -> str:
     return str(req.get("awaiting") or "no collector produces this fact yet").strip()
 
@@ -3382,6 +3738,17 @@ def evaluate(assets: list[Any], domains: list[str], standard: dict | None = None
                 rows.extend(_unmeasured(req, d, NOT_COLLECTED, detail) for d in domains)
             else:
                 rows.append(_unmeasured(req, "", NOT_COLLECTED, detail))
+            continue
+        if measurable == INSIDE_EXPORT:
+            inside = _INSIDE_EVALUATORS.get(req["id"])
+            if inside is None:
+                rows.append(_unmeasured(req, "", NO_INSTRUMENT,
+                                        "read from the mail platform's settings, but no "
+                                        "evaluator is wired for it"))
+            elif inside is _eval_dkim_signing:
+                rows.extend(inside(req, assets, domains, parked))
+            else:
+                rows.extend(inside(req, assets, domains))
             continue
         fn = _EVALUATORS.get(req["id"])
         if fn is None:

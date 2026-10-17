@@ -1,0 +1,70 @@
+{
+    "pulled_utc": "2030-01-31T0900Z",
+    "script": "export-exchange-online-settings.ps1",
+    "powershell": "Core",
+    "readings": [
+        {
+            "part": "exchange",
+            "command": "Get-AcceptedDomain",
+            "ok": true,
+            "count": 4,
+            "file": "Get-AcceptedDomain.json"
+        },
+        {
+            "part": "exchange",
+            "command": "Get-DkimSigningConfig",
+            "ok": true,
+            "count": 2,
+            "file": "Get-DkimSigningConfig.json"
+        },
+        {
+            "part": "exchange",
+            "command": "Get-AntiPhishPolicy",
+            "ok": true,
+            "count": 4,
+            "file": "Get-AntiPhishPolicy.json"
+        },
+        {
+            "part": "exchange",
+            "command": "Get-AntiPhishRule",
+            "ok": true,
+            "count": 2,
+            "file": "Get-AntiPhishRule.json"
+        },
+        {
+            "part": "exchange",
+            "command": "Get-EOPProtectionPolicyRule",
+            "ok": true,
+            "count": 1,
+            "file": "Get-EOPProtectionPolicyRule.json"
+        },
+        {
+            "part": "exchange",
+            "command": "Get-ATPProtectionPolicyRule",
+            "ok": true,
+            "count": 0,
+            "file": "Get-ATPProtectionPolicyRule.json"
+        },
+        {
+            "part": "exchange",
+            "command": "Get-InboundConnector",
+            "ok": true,
+            "count": 3,
+            "file": "Get-InboundConnector.json"
+        },
+        {
+            "part": "exchange",
+            "command": "Get-OutboundConnector",
+            "ok": true,
+            "count": 1,
+            "file": "Get-OutboundConnector.json"
+        },
+        {
+            "part": "exchange",
+            "command": "Get-QuarantinePolicy",
+            "ok": true,
+            "count": 4,
+            "file": "Get-QuarantinePolicy.json"
+        }
+    ]
+}

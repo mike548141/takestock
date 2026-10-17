@@ -388,19 +388,40 @@ names a port. The `implicit_tls` collector's rows (ports 465, 993 and 995) are
 not read here: they show RFC 8314 Implicit TLS for mail submission and mailbox
 access, which RFC 8314 §1 says does not cover relay between mail servers.
 
+### Read from the mail platform's own settings
+
+Three requirements cannot be seen from outside, but an export of the mail
+platform's settings settles them. Their `measurable` value is
+`inside-export`. With no such export in the observation each stays *not
+measured* with the reason `no-instrument`, like the list below, and says
+that an export would settle it. With one, each gets a row per domain:
+
+- SGE-DMARC-02 inbound mail checked for DMARC and acted on: met where every
+  policy governing the domain's recipients honours the sender's DMARC policy
+  and the route the mail arrives by lets it, which behind a mail service in
+  front of the platform needs Enhanced Filtering on the receiving connector;
+- SGE-DMARC-R04 failed mail to an administrator quarantine, not a junk
+  folder: met where the actions in effect quarantine or reject, and
+  recipients cannot release from the quarantine policy in effect;
+- SGE-DKIM-01 all outbound mail DKIM signed: met where the platform signs
+  the domain's mail and hands none of it to another service; not met where
+  it does not sign a domain that sends mail and hands none of it on.
+
+takestock reads Exchange Online's settings with the `exchange_online` reader.
+How each row is decided, and what it cannot see (a mail service in front of
+or behind the platform, other services sending as the domain), is in
+[`COLLECTORS.md`](COLLECTORS.md#exchange_online). Every row says when the
+export was taken.
+
 ### Not observable from outside
 
 These are listed so the note covers every requirement. Each carries
 *not measured* with the reason `no-instrument`, and the evidence that would
 settle it:
 
-- SGE-DKIM-01 all outbound mail DKIM signed (a published key shows signing is
-  possible, not that every service signs);
 - SGE-DKIM-02 third-party platforms sign with the organisation's domain;
-- SGE-DMARC-02 inbound mail checked for DMARC and acted on;
 - SGE-DMARC-03 DMARC reports reviewed regularly;
 - SGE-DLP-01 and SGE-DLP-02 data loss prevention and keyword blocking;
-- SGE-DMARC-R04 failed mail to an administrator quarantine, not a junk folder;
 - SGE-MTASTS-R01 the policy host secure and highly available;
 - SGE-DLP-R01 the minimum keyword list blocked;
 - SGE-TLS-R01 unencrypted mail monitored;
@@ -432,7 +453,7 @@ when the workspace is named with `--workspace` or `TAKESTOCK_HOME`. Each require
 | `level_basis` | `quote` (the deciding sentence, verbatim), `where` it was read, and `judgement` when the level needed one |
 | `scope` | `email-domain`, `non-email-domain`, `mail-path` or `organisation` |
 | `text`, `source`, `document` | The requirement's wording and where it came from; `document` names an entry under `documents:` so the note can cite its version, date, index and digest |
-| `measurable` | `observed`, `not-collected` or `no-instrument` |
+| `measurable` | `observed`, `not-collected`, `no-instrument` or `inside-export` (read from an export of the mail platform's settings when one is supplied) |
 | `settled_by` | The evidence that would settle it, printed in the note |
 | `note`, `partial`, `awaiting` | Explanations; `partial` says what a reading does not cover and is quoted into the row; `awaiting` says what a `not-collected` row is waiting for |
 

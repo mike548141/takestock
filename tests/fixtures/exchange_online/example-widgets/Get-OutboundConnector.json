@@ -1,0 +1,16 @@
+[
+    {
+        "Name": "To the mail gateway",
+        "Enabled": true,
+        "ConnectorType": "Partner",
+        "UseMXRecord": false,
+        "SmartHosts": [
+            "smtp.gateway.example.net"
+        ],
+        "RecipientDomains": [
+            "*"
+        ],
+        "IsTransportRuleScoped": false,
+        "TlsSettings": "DomainValidation"
+    }
+]

@@ -1,0 +1,30 @@
+﻿[
+    {
+        "Name": "example.test",
+        "DomainName": "example.test",
+        "DomainType": "Authoritative",
+        "Default": true,
+        "InitialDomain": false
+    },
+    {
+        "Name": "widgets.example.test",
+        "DomainName": "widgets.example.test",
+        "DomainType": "Authoritative",
+        "Default": false,
+        "InitialDomain": false
+    },
+    {
+        "Name": "parked.example.test",
+        "DomainName": "parked.example.test",
+        "DomainType": "Authoritative",
+        "Default": false,
+        "InitialDomain": false
+    },
+    {
+        "Name": "examplewidgets.example.com",
+        "DomainName": "examplewidgets.example.com",
+        "DomainType": "Authoritative",
+        "Default": false,
+        "InitialDomain": true
+    }
+]

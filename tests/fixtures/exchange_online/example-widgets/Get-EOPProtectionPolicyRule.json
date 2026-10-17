@@ -1,0 +1,16 @@
+[
+    {
+        "Name": "Standard Preset Security Policy",
+        "Identity": "Standard Preset Security Policy",
+        "State": "Disabled",
+        "Priority": 1,
+        "SentTo": null,
+        "SentToMemberOf": null,
+        "RecipientDomainIs": [
+            "example.test"
+        ],
+        "ExceptIfSentTo": null,
+        "ExceptIfSentToMemberOf": null,
+        "ExceptIfRecipientDomainIs": null
+    }
+]

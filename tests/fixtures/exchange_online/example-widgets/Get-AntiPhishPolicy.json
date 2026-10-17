@@ -1,0 +1,58 @@
+[
+    {
+        "Name": "Default anti-phishing policy",
+        "Identity": "Default anti-phishing policy",
+        "Enabled": true,
+        "IsDefault": true,
+        "RecommendedPolicyType": "Custom",
+        "EnableSpoofIntelligence": true,
+        "HonorDmarcPolicy": true,
+        "DmarcRejectAction": "Reject",
+        "DmarcQuarantineAction": "Quarantine",
+        "AuthenticationFailAction": "Quarantine",
+        "SpoofQuarantineTag": "DefaultFullAccessPolicy",
+        "PhishThresholdLevel": 1
+    },
+    {
+        "Name": "Standard Preset Security Policy",
+        "Identity": "Standard Preset Security Policy",
+        "Enabled": true,
+        "IsDefault": false,
+        "RecommendedPolicyType": "Standard",
+        "EnableSpoofIntelligence": true,
+        "HonorDmarcPolicy": true,
+        "DmarcRejectAction": "Reject",
+        "DmarcQuarantineAction": "Quarantine",
+        "AuthenticationFailAction": "MoveToJmf",
+        "SpoofQuarantineTag": "DefaultFullAccessPolicy",
+        "PhishThresholdLevel": 1
+    },
+    {
+        "Name": "Strict Preset Security Policy",
+        "Identity": "Strict Preset Security Policy",
+        "Enabled": true,
+        "IsDefault": false,
+        "RecommendedPolicyType": "Strict",
+        "EnableSpoofIntelligence": true,
+        "HonorDmarcPolicy": true,
+        "DmarcRejectAction": "Reject",
+        "DmarcQuarantineAction": "Quarantine",
+        "AuthenticationFailAction": "Quarantine",
+        "SpoofQuarantineTag": "DefaultFullAccessWithNotificationPolicy",
+        "PhishThresholdLevel": 1
+    },
+    {
+        "Name": "Finance anti-phishing",
+        "Identity": "Finance anti-phishing",
+        "Enabled": true,
+        "IsDefault": false,
+        "RecommendedPolicyType": "Custom",
+        "EnableSpoofIntelligence": true,
+        "HonorDmarcPolicy": false,
+        "DmarcRejectAction": "Reject",
+        "DmarcQuarantineAction": "Quarantine",
+        "AuthenticationFailAction": "MoveToJmf",
+        "SpoofQuarantineTag": "DefaultFullAccessPolicy",
+        "PhishThresholdLevel": 1
+    }
+]

@@ -1,0 +1,43 @@
+[
+    {
+        "Name": "From the mail gateway",
+        "Enabled": true,
+        "ConnectorType": "Partner",
+        "SenderIPAddresses": [
+            "198.51.100.10",
+            "198.51.100.11"
+        ],
+        "TlsSenderCertificateName": "*.gateway.example.net",
+        "RestrictDomainsToCertificate": true,
+        "EFSkipLastIP": false,
+        "EFSkipIPs": [],
+        "EFUsers": [],
+        "EFTestMode": false
+    },
+    {
+        "Name": "From the mail gateway (previous)",
+        "Enabled": false,
+        "ConnectorType": "Partner",
+        "SenderIPAddresses": [],
+        "TlsSenderCertificateName": null,
+        "EFSkipLastIP": false,
+        "EFSkipIPs": [
+            "198.51.100.0/24"
+        ],
+        "EFUsers": [],
+        "EFTestMode": false
+    },
+    {
+        "Name": "Office printers",
+        "Enabled": true,
+        "ConnectorType": "OnPremises",
+        "SenderIPAddresses": [
+            "192.0.2.25"
+        ],
+        "TlsSenderCertificateName": null,
+        "EFSkipLastIP": false,
+        "EFSkipIPs": [],
+        "EFUsers": [],
+        "EFTestMode": false
+    }
+]

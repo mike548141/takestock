@@ -65,10 +65,14 @@ def test_every_observed_requirement_has_an_evaluator():
     ids = {r["id"] for r in STD["requirements"]}
     assert len(ids) == len(STD["requirements"])
     for r in STD["requirements"]:
-        assert r["measurable"] in ("observed", "not-collected", "no-instrument"), r["id"]
+        assert r["measurable"] in ("observed", "not-collected", "no-instrument",
+                                   sge.INSIDE_EXPORT), r["id"]
         if r["measurable"] == "observed":
             assert r["id"] in sge._EVALUATORS, r["id"]
+        if r["measurable"] == sge.INSIDE_EXPORT:
+            assert r["id"] in sge._INSIDE_EVALUATORS, r["id"]
     assert set(sge._EVALUATORS) <= ids
+    assert set(sge._INSIDE_EVALUATORS) <= ids
 
 
 def test_the_floor_and_the_forbidden_list_agree():
@@ -90,7 +94,7 @@ def test_unobservable_requirements_are_unmeasured_never_passed():
     report = sge.evaluate([], [D], STD)
     assert {r.requirement for r in report.rows} == set(REQS)
     for r in report.rows:
-        if REQS[r.requirement]["measurable"] == "no-instrument":
+        if REQS[r.requirement]["measurable"] in ("no-instrument", sge.INSIDE_EXPORT):
             assert r.status == sge.NOT_MEASURED and r.reason == sge.NO_INSTRUMENT
     counts = report.counts()
     assert counts[sge.PASS] == 0 and sum(counts.values()) == len(report.rows)

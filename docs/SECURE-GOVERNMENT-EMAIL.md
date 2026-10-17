@@ -455,6 +455,20 @@ Limits that every report should carry:
   quarantined, TLS monitoring, and whether the policy host is highly
   available cannot be observed from outside. takestock lists them with the
   reason, so the conformance table shows every requirement.
+- **An inside export settles three of them.** Whether outbound mail is DKIM
+  signed (SGE-DKIM-01), whether inbound mail is checked for DMARC and acted
+  on (SGE-DMARC-02) and where mail failing DMARC goes (SGE-DMARC-R04) are
+  settings of the receiving and sending mail platform. Given an export of
+  them, takestock grades each per domain from the platform's own
+  configuration; for Exchange Online, with the `exchange_online` reader
+  ([`COLLECTORS.md`](COLLECTORS.md#exchange_online)) and the read-only export
+  script in [`EXCHANGE-ONLINE-EXPORT.md`](EXCHANGE-ONLINE-EXPORT.md).
+  The reading stops at the platform's edge: a mail service in front of it,
+  which may do its own DMARC handling and quarantine, and other services
+  that send as the organisation, stay outside it. Behind such a service,
+  Exchange Online honours a sender's DMARC policy only with Enhanced
+  Filtering on the connector that receives the mail, so a tenant configured
+  to honour DMARC can still not do so.
 
 ### SPF's two lookup limits
 
