@@ -152,6 +152,30 @@ def test_the_page_shows_the_audience_segment_meanings_and_exposure_chains():
             and "workers: any address in the network <code>192.0.2.64/27</code>" in page)
 
 
+def test_the_page_shows_a_segments_mode_location_and_where_its_vlan_came_from():
+    plan = tiny_plan(segments=[
+        {"site": "lab", "name": "cl2.users", "vlan": 20, "subnet": None, "switch": "sw-01",
+         "source": "inv", "vlan_source": "old", "meaning": ["Staff devices"],
+         "location": "cl2", "location_meaning": "the second cluster"},
+        {"site": "lab", "name": "uplink", "vlan": None, "subnet": None, "switch": "sw-01",
+         "source": "inv", "mode": "trunk", "trunk_vlans": "10,20,30-39"}])
+    plan["sources"].append({"id": "old", "label": "Old switch list", "kind": "csv",
+                            "as_of": "2029-12-01", "as_of_basis": "exported",
+                            "evidence_class": "observed", "notes": []})
+    page = ipam_view.render(plan)
+    assert "cl2.users (Staff devices); defined in cl2 (the second cluster)" in page
+    assert "VLAN as stated by Old switch list, 2029-12-01" in page
+    assert "<td>trunk 10,20,30-39</td>" in page
+
+
+def test_a_summary_heading_is_shown_above_its_paragraph():
+    plan = tiny_plan(summary=[{"heading": "What this covers", "text": "The bench network."},
+                              "A plain paragraph."])
+    page = ipam_view.render(plan)
+    assert "<h3>What this covers</h3><p>The bench network.</p><p>A plain paragraph.</p>" in page
+    assert "{&#x27;heading&#x27;" not in page and "{'heading'" not in page
+
+
 def test_an_unknown_addressing_value_is_shown_as_read_as_static():
     plan = tiny_plan()
     plan["checks"]["unknown_addressing"] = [{"subnet": "192.0.2.0/25", "addressing": "dyanmic"}]

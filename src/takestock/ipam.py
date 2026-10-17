@@ -93,6 +93,9 @@ ADDRESSING = SHARED_ADDRESSING | {"static"}
 #: Site id given to a subnet an export declared that no site's ranges hold.
 NO_SITE = "unassigned"
 
+#: How a segment can be attached (:attr:`Segment.mode`); "" means not stated.
+SEGMENT_MODES = ("access", "trunk")
+
 ENTRY_POINT_GROUP = "takestock.ipam_readers"
 
 
@@ -125,6 +128,13 @@ class Segment:
     #: Anything else the source says about it; a newer source's ``cannot_see``
     #: is compared with these values as it is with a sighting's.
     detail: dict[str, Any] = field(default_factory=dict)
+    #: How the segment is attached: ``access`` (one VLAN), ``trunk`` (carries
+    #: many VLANs, so ``vlan`` is at most its native VLAN), or "" when the
+    #: source does not say.
+    mode: str = ""
+    #: For a trunk, the VLANs it carries as the source writes them
+    #: (``"10,20,30-39"``), or "" when not stated.
+    trunk_vlans: str = ""
 
 
 @dataclass
@@ -739,6 +749,41 @@ def _segment_codes(cfg: dict) -> dict[str, dict[str, str]]:
     return out
 
 
+def _segment_location(cfg: dict) -> tuple[str, dict[str, str]]:
+    """The plan file's ``segment_location``: its separator ("" when there is
+    none) and what each location is, keyed in lower case."""
+    raw = cfg.get("segment_location")
+    if raw is None:
+        return "", {}
+    if not isinstance(raw, dict):
+        raise IpamError("segment_location must be a mapping with a `separator:`")
+    unknown = sorted(set(raw) - {"separator", "names"})
+    if unknown:
+        raise IpamError(f"segment_location: unknown keys {', '.join(unknown)}")
+    sep = raw.get("separator")
+    if not isinstance(sep, str) or not sep:
+        raise IpamError("segment_location: `separator` must be some text, such as \".\"")
+    names = raw.get("names") or {}
+    if not isinstance(names, dict) or not all(isinstance(v, str) for v in names.values()):
+        raise IpamError("segment_location: `names` must map each location to what it is")
+    return sep, {str(k).lower(): v for k, v in names.items()}
+
+
+def split_location(name: str, separator: str) -> tuple[str, str]:
+    """A segment name as ``(location, rest)``, split at the first ``separator``.
+
+    Some naming conventions begin a segment's name with where it is defined
+    (a cluster, a switch stack, a site) and then say what it carries, as in
+    ``CL1.web-prd``. The text before the first separator is the location;
+    the rest is what the name says about the segment. A name without the
+    separator, or one that starts with it, has no location.
+    """
+    if not separator:
+        return "", name
+    head, sep, rest = str(name or "").partition(separator)
+    return (head, rest) if sep and head else ("", name)
+
+
 _SEGMENT_TOKEN = re.compile(r"[-_.\s]+")
 
 
@@ -823,6 +868,33 @@ def _exposure_chains(cfg: dict, sources: dict) -> list[dict]:
     return out
 
 
+def _summary(cfg: dict) -> list[str | dict[str, str]]:
+    """The plan file's ``summary``: each item a paragraph, or ``{heading, text}``."""
+    out: list[str | dict[str, str]] = []
+    for n, item in enumerate(cfg.get("summary") or [], 1):
+        if isinstance(item, dict):
+            unknown = sorted(set(item) - {"heading", "text"})
+            if unknown:
+                raise IpamError(f"summary item {n}: unknown keys {', '.join(map(str, unknown))}")
+            if not isinstance(item.get("text"), str) or not item["text"].strip():
+                raise IpamError(f"summary item {n}: needs `text:`")
+            out.append({"heading": str(item.get("heading") or ""), "text": item["text"]})
+        elif isinstance(item, list):
+            raise IpamError(f"summary item {n}: must be a paragraph or {{heading, text}}")
+        else:
+            out.append(str(item))
+    return out
+
+
+def _check_segment(seg: Segment) -> None:
+    if seg.mode not in ("", *SEGMENT_MODES):
+        raise IpamError(f"source {seg.source}: segment {seg.name!r} has mode {seg.mode!r}; "
+                        f"known: {', '.join(SEGMENT_MODES)}")
+    if seg.trunk_vlans and seg.mode != "trunk":
+        raise IpamError(f"source {seg.source}: segment {seg.name!r} lists trunk VLANs "
+                        "but its mode is not trunk")
+
+
 def build(cfg: dict, h: Harvest, *, plan_sha256: str = "", built_on: str = "",
           stem: str = "", organisation: str = "") -> dict:
     """The whole plan: sites, subnets with their addresses, segments, mirrors and checks."""
@@ -830,6 +902,8 @@ def build(cfg: dict, h: Harvest, *, plan_sha256: str = "", built_on: str = "",
     sites = _sites(cfg)
     subnets = _curated_subnets(cfg, sites, sources)
     codes = _segment_codes(cfg)
+    location_sep, location_names = _segment_location(cfg)
+    summary = _summary(cfg)
     chains = _exposure_chains(cfg, sources)
 
     def site_for(net: ipaddress.IPv4Network | ipaddress.IPv6Network, stated: Any = "") -> str:
@@ -885,6 +959,7 @@ def build(cfg: dict, h: Harvest, *, plan_sha256: str = "", built_on: str = "",
 
     by_name: dict[tuple[str, str], list[Segment]] = defaultdict(list)
     for seg in h.segments:
+        _check_segment(seg)
         by_name[(seg.site, seg.name)].append(seg)
     segments: list[dict] = []
     by_subnet_seg: dict[str, list[dict]] = defaultdict(list)
@@ -892,11 +967,30 @@ def build(cfg: dict, h: Harvest, *, plan_sha256: str = "", built_on: str = "",
         group.sort(key=lambda g: as_of(g.source), reverse=True)
         seg = group[0]
         subnet = str(_net(seg.subnet)) if seg.subnet else None
-        row: dict[str, Any] = {"site": seg.site, "name": seg.name, "vlan": seg.vlan,
+        # A newest source that states no VLAN for a segment that is not a
+        # trunk leaves the VLAN the newest older source stated, marked with it.
+        vlan, vlan_source = seg.vlan, ""
+        if vlan is None and seg.mode != "trunk":
+            stated = next((g for g in group[1:] if g.source != seg.source
+                           and g.vlan is not None and g.mode != "trunk"), None)
+            if stated is not None:
+                vlan, vlan_source = stated.vlan, stated.source
+        row: dict[str, Any] = {"site": seg.site, "name": seg.name, "vlan": vlan,
                                "subnet": subnet, "switch": seg.switch, "source": seg.source}
-        meanings, env, matched = segment_meaning(seg.name, codes) if codes else ([], "", False)
+        if vlan_source:
+            row["vlan_source"] = vlan_source
+        if seg.mode:
+            row["mode"] = seg.mode
+        if seg.trunk_vlans:
+            row["trunk_vlans"] = seg.trunk_vlans
+        location, rest = split_location(seg.name, location_sep)
+        meanings, env, matched = segment_meaning(rest, codes) if codes else ([], "", False)
         if codes:
             row["meaning"] = meanings
+        if location:
+            row["location"] = location
+            if location_names.get(location.lower()):
+                row["location_meaning"] = location_names[location.lower()]
         if env:
             row["environment"] = env
         older = sorted({g.source for g in group[1:]} - {seg.source})
@@ -1015,7 +1109,7 @@ def build(cfg: dict, h: Harvest, *, plan_sha256: str = "", built_on: str = "",
         "audience": str(cfg.get("audience") or ""),
         "part": str(cfg.get("part") or ""),
         "author": str(cfg.get("author") or ""),
-        "summary": [str(p) for p in cfg.get("summary") or []],
+        "summary": summary,
         "built_on": built_on or date.today().isoformat(),
         "plan_sha256": plan_sha256,
         "sources": source_rows,

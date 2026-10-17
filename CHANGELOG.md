@@ -9,6 +9,22 @@ command line or a file format, and its entry says how.
 
 ### Added
 
+- **IP address plan**: a segment carries how it is attached (`mode`:
+  `access` or `trunk`) and, for a trunk, the VLANs it carries
+  (`trunk_vlans`), when its reader says. Where the newest source reporting
+  a segment gives it no VLAN and it is not a trunk, the segment keeps the
+  VLAN an older source stated, with `vlan_source` naming that source.
+- **IP address plan**: `segment_location` in the plan file names a
+  separator (such as `.`) after which a segment's name says what it
+  carries. The text before it is recorded as the segment's `location`, with
+  what that location is from `names`, and is not read with the segment
+  codes, so a cluster prefix is never read as a purpose.
+- **IP address plan**: a `summary` item may be `{heading, text}`, written to
+  the JSON as given and shown on the page under its heading. Before, such
+  an item was written as the text of the mapping.
+- **IP address plan page**: the VLANs and segments table has a *Mode and
+  notes* column, and a segment's name shows its location.
+
 - **Readers library**: `exchange_online` reads an export of Exchange Online
   settings (accepted domains, DKIM signing, anti-phishing policies and
   rules, preset security policy rules, inbound and outbound connectors,

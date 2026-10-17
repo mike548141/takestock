@@ -319,7 +319,14 @@ class _View:
 
     def overview(self) -> str:
         c = self.counts
-        parts = [f"<p>{esc(p)}</p>" for p in self.plan.get("summary") or []]
+        parts = []
+        for p in self.plan.get("summary") or []:
+            if isinstance(p, dict):
+                if p.get("heading"):
+                    parts.append(f"<h3>{esc(p['heading'])}</h3>")
+                parts.append(f"<p>{esc(p.get('text') or '')}</p>")
+            else:
+                parts.append(f"<p>{esc(p)}</p>")
         if self.plan.get("audience"):
             parts.insert(0, f'<p class="audience">Written for {esc(self.plan["audience"])}.</p>')
         kinds = c.get("sites_by_kind") or {}
@@ -469,24 +476,37 @@ class _View:
             name = seg["name"]
             if seg.get("meaning"):
                 name += " (" + ", ".join(seg["meaning"]) + ")"
+            if seg.get("location"):
+                where = seg["location"]
+                if seg.get("location_meaning"):
+                    where += f" ({seg['location_meaning']})"
+                name += f"; defined in {where}"
             if seg.get("superseded_by"):
                 name += f"; no longer listed by {seg['superseded_by']}"
+            notes = []
+            if seg.get("mode"):
+                notes.append(seg["mode"] + (f" {seg['trunk_vlans']}" if seg.get("trunk_vlans")
+                                            else ""))
+            if seg.get("vlan_source"):
+                src = self.sources.get(seg["vlan_source"], {})
+                notes.append(f"VLAN as stated by {self.label(seg['vlan_source'])}"
+                             + (f", {src['as_of']}" if src.get("as_of") else ""))
             rows.append((seg["site"], seg.get("vlan"), seg.get("subnet") or "", name,
-                         seg.get("switch") or "", self.label(seg["source"])))
+                         seg.get("switch") or "", self.label(seg["source"]), "; ".join(notes)))
         for s in self.subnets:
             if s.get("vlan") is not None:
                 rows.append((s["site"], s["vlan"], s["cidr"], s.get("purpose") or "", "",
-                             "plan file"))
+                             "plan file", ""))
         return sorted(rows, key=lambda r: (self.site_name(r[0]), r[1] if r[1] is not None else -1,
                                            r[2]))
 
     def vlans_section(self, rows: list[tuple]) -> str:
         body = ["<tr>" + _td(self.site_name(site)) + _td(vlan, num=True)
                 + (f"<td>{self.subnet_link(cidr)}</td>" if cidr else "<td></td>")
-                + _td(name) + _td(switch) + _td(src) + "</tr>"
-                for site, vlan, cidr, name, switch, src in rows]
-        return _table(["Site", "VLAN", "Subnet", "Name or purpose", "Switch", "Stated by"], body,
-                      num=frozenset({1}))
+                + _td(name) + _td(switch) + _td(src) + _td(note) + "</tr>"
+                for site, vlan, cidr, name, switch, src, note in rows]
+        return _table(["Site", "VLAN", "Subnet", "Name or purpose", "Switch", "Stated by",
+                       "Mode and notes"], body, num=frozenset({1}))
 
     def mirrors_section(self) -> str:
         cidrs = {s["cidr"]: s for s in self.subnets}

@@ -585,6 +585,130 @@ def test_without_segment_codes_a_segment_carries_no_meaning(tmp_path, clean_regi
     assert subnet(plan, "192.0.2.128/26")["purpose"] == "Network segment users"
 
 
+def _switch_lists(rows_by_file: dict[str, list[Segment]]):
+    """A reader that hands back the segments listed for the file a source names."""
+    def read(src: dict, paths: list[Path], h: Harvest) -> None:
+        for seg in rows_by_file[paths[0].name]:
+            h.segments.append(Segment(src["id"], seg.site, seg.name, seg.vlan, seg.subnet,
+                                      seg.switch, dict(seg.detail), seg.mode, seg.trunk_vlans))
+    return read
+
+
+def _two_switch_lists(tmp_path: Path, old: list[Segment], new: list[Segment], **extra) -> dict:
+    ipam.register_reader("switch-list", _switch_lists({"old.txt": old, "new.txt": new}),
+                         replace=True)
+    sources = [{"id": "old", "kind": "switch-list", "label": "Old switch list",
+                "path": "old.txt", "as_of": "2030-01-01"},
+               {"id": "new", "kind": "switch-list", "label": "New switch list",
+                "path": "new.txt", "as_of": "2030-02-01"}]
+    doc = minimal(sources=sources, **extra)
+    return ipam.build_plan(write_plan(tmp_path, doc, {"old.txt": "", "new.txt": ""}),
+                           tmp_path / "exports")
+
+
+def test_a_segment_the_newest_source_gives_no_vlan_keeps_an_older_stated_one(tmp_path,
+                                                                             clean_registry):
+    old = [Segment("", "lab", "users", 20, "192.0.2.128/26", "sw-01"),
+           Segment("", "lab", "voice", 30, None, "sw-01"),
+           Segment("", "lab", "uplink", 40, None, "sw-01"),
+           Segment("", "lab", "spare", 60, None, "sw-01", mode="trunk")]
+    new = [Segment("", "lab", "users", None, "192.0.2.128/26", "sw-02"),
+           Segment("", "lab", "voice", 31, None, "sw-02"),
+           Segment("", "lab", "uplink", None, None, "sw-02", mode="trunk"),
+           Segment("", "lab", "spare", None, None, "sw-02")]
+    plan = _two_switch_lists(tmp_path, old, new)
+    rows = {s["name"]: s for s in plan["segments"]}
+    # The newest list names the segment but states no VLAN: the older statement stands, marked.
+    assert (rows["users"]["vlan"], rows["users"]["vlan_source"]) == (20, "old")
+    assert rows["users"]["source"] == "new" and rows["users"]["switch"] == "sw-02"
+    assert subnet(plan, "192.0.2.128/26")["vlans"] == ["lab:20"]
+    # A VLAN the newest list states is never replaced.
+    assert rows["voice"]["vlan"] == 31 and "vlan_source" not in rows["voice"]
+    # A trunk carries many VLANs, so an older single VLAN is not given to it.
+    assert rows["uplink"]["vlan"] is None and "vlan_source" not in rows["uplink"]
+    # Nor is the VLAN an older source gave a trunk (its native VLAN at most) kept.
+    assert rows["spare"]["vlan"] is None and "vlan_source" not in rows["spare"]
+    assert plan["counts"]["vlans"] == 2
+
+
+def test_a_segment_carries_its_access_or_trunk_mode(tmp_path, clean_registry):
+    new = [Segment("", "lab", "users", 20, None, "sw-01", mode="access"),
+           Segment("", "lab", "uplink", None, None, "sw-01", mode="trunk", trunk_vlans="10,20,30-39"),
+           Segment("", "lab", "spare", 50, None, "sw-01")]
+    plan = _two_switch_lists(tmp_path, [], new)
+    rows = {s["name"]: s for s in plan["segments"]}
+    assert rows["users"]["mode"] == "access" and "trunk_vlans" not in rows["users"]
+    assert (rows["uplink"]["mode"], rows["uplink"]["trunk_vlans"]) == ("trunk", "10,20,30-39")
+    assert "mode" not in rows["spare"]
+    for bad, why in ((Segment("", "lab", "odd", 20, None, "sw-01", mode="hybrid"), "mode 'hybrid'"),
+                     (Segment("", "lab", "odd", 20, None, "sw-01", trunk_vlans="10-19"),
+                      "mode is not trunk")):
+        with pytest.raises(IpamError, match=why):
+            _two_switch_lists(tmp_path, [], [bad])
+
+
+def test_a_name_prefix_can_be_read_as_where_a_segment_is_defined(tmp_path, clean_registry):
+    # Here a cluster named "ops" shares its name with a purpose code.
+    codes = {"ops": "operations", "tools": "tooling",
+             "prd": {"meaning": "production", "environment": "production"}}
+    new = [Segment("", "lab", "ops.ops-tools-prd", 20, "192.0.2.128/26", "sw-01"),
+           Segment("", "lab", "CL2.web-prd", 30, None, "sw-01"),
+           Segment("", "lab", "users-50", 50, None, "sw-01")]
+    # Read without the option, the leading cluster name is read as a purpose.
+    plan = _two_switch_lists(tmp_path, [], new, segment_codes=codes)
+    rows = {s["name"]: s for s in plan["segments"]}
+    assert rows["ops.ops-tools-prd"]["meaning"] == ["operations", "operations", "tooling",
+                                                    "production"]
+
+    location = {"separator": ".", "names": {"Cl2": "the second cluster"}}
+    plan = _two_switch_lists(tmp_path, [], new, segment_codes=codes, segment_location=location)
+    rows = {s["name"]: s for s in plan["segments"]}
+    first = rows["ops.ops-tools-prd"]
+    assert first["meaning"] == ["operations", "tooling", "production"]
+    assert first["location"] == "ops" and "location_meaning" not in first
+    assert first["environment"] == "production"
+    second = rows["CL2.web-prd"]
+    assert (second["location"], second["location_meaning"], second["meaning"]) == (
+        "CL2", "the second cluster", ["web", "production"])
+    assert "location" not in rows["users-50"] and rows["users-50"]["meaning"] == ["users"]
+    assert subnet(plan, "192.0.2.128/26")["purpose"] == (
+        "Network segment ops.ops-tools-prd: operations, tooling, production")
+
+    # Without codes the location is still recorded.
+    plan = _two_switch_lists(tmp_path, [], new, segment_location={"separator": "."})
+    rows = {s["name"]: s for s in plan["segments"]}
+    assert rows["CL2.web-prd"]["location"] == "CL2"
+    assert "location_meaning" not in rows["CL2.web-prd"] and "meaning" not in rows["CL2.web-prd"]
+
+    for bad, why in (({"separator": ""}, "must be some text"), ({"sep": "."}, "unknown keys sep"),
+                     (".", "must be a mapping"),
+                     ({"separator": ".", "names": ["cl2"]}, "must map each location")):
+        with pytest.raises(IpamError, match=why):
+            _two_switch_lists(tmp_path, [], new, segment_location=bad)
+
+
+def test_split_location_needs_text_before_the_separator():
+    assert ipam.split_location("cl2.web-prd", ".") == ("cl2", "web-prd")
+    assert ipam.split_location(".web-prd", ".") == ("", ".web-prd")
+    assert ipam.split_location("web-prd", ".") == ("", "web-prd")
+    assert ipam.split_location("cl2.web-prd", "") == ("", "cl2.web-prd")
+
+
+def test_a_summary_item_may_carry_a_heading(tmp_path):
+    files = {"inv.csv": "ip,host\n"}
+    doc = minimal(summary=[{"heading": "What this covers", "text": "The bench network."},
+                           {"text": "Read the checks first."}, "A plain paragraph."])
+    plan = ipam.build_plan(write_plan(tmp_path, doc, files), tmp_path / "exports")
+    assert plan["summary"] == [{"heading": "What this covers", "text": "The bench network."},
+                               {"heading": "", "text": "Read the checks first."},
+                               "A plain paragraph."]
+    for bad, why in (([{"heading": "No text"}], "summary item 1: needs `text:`"),
+                     (["fine", {"text": "x", "colour": "red"}], "summary item 2: unknown keys colour"),
+                     ([["a", "b"]], "summary item 1: must be a paragraph")):
+        with pytest.raises(IpamError, match=why):
+            ipam.build_plan(write_plan(tmp_path, minimal(summary=bad), files), tmp_path / "exports")
+
+
 def test_an_exposure_chain_names_a_declared_source_and_real_addresses(tmp_path):
     chain = {"name": "Public web service", "source": "design",
              "hops": [{"label": "public address", "address": "203.0.113.5"},

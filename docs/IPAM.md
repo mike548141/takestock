@@ -79,7 +79,7 @@ workspace's `targets/` beside the target profile. Top-level keys:
 | Key | Holds |
 |---|---|
 | `organisation` | `{name: ...}`, used when no target profile sits beside the file |
-| `title`, `subtitle`, `summary` | The page's heading, lead line and opening paragraphs |
+| `title`, `subtitle`, `summary` | The page's heading, lead line and opening paragraphs. Each `summary` item is a paragraph, or `{heading, text}` for a paragraph under its own heading (`text` required, no other keys) |
 | `audience` | Who the plan is written for, shown under the heading |
 | `part`, `author` | A short label shown above the page's title (the part of a larger set the page belongs to, say) and a line shown under it (who prepared it) |
 | `sites` | Every site, with its address ranges |
@@ -89,6 +89,7 @@ workspace's `targets/` beside the target profile. Top-level keys:
 | `documented_addresses` | Addresses known only from a dated document |
 | `mirrors` | Pairs of sites laid out alike, to compare |
 | `segment_codes` | What the parts of segment names mean |
+| `segment_location` | Where in a segment's name its location is written, and what each location is |
 | `exposure_chains` | The path a request takes from the internet to a service |
 | `actions` | Follow-up items tied to subnets |
 | `asn_lookup` | Settings for internet-registry lookups |
@@ -267,6 +268,27 @@ With the codes above, a segment named `lab-app-db-prd-110` reads as
 any code is declared, every segment carries `meaning`, and a subnet a segment
 declares takes that reading as its purpose and the environment as its own.
 
+### Segment locations
+
+```yaml
+segment_location:
+  separator: "."
+  names:
+    CL2: the second server cluster
+```
+
+Some naming conventions start a segment's name with where it is defined (a
+server cluster, a switch stack, a site) and then say what it carries, as in
+`CL2.web-prd`. With `separator` set, the text before the first separator
+is that segment's `location`, and only the rest of the name is read with the
+segment codes. So a location is never read as a purpose, even when it shares
+its letters with a code. With the codes above and one more, `ops:
+operations`, the name `ops.ops-web-prd` reads *operations, web, production*
+in location `ops`, where without `segment_location` it would read
+*operations, operations, web, production*. `names` says what each location
+is, ignoring case, and is shown as the segment's `location_meaning`. A name without the
+separator, or one that begins with it, has no location.
+
 ### Exposure chains
 
 ```yaml
@@ -414,7 +436,11 @@ A reader is a function `fn(source, paths, harvest)`:
   - `harvest.segments.append(Segment(source["id"], site, name, vlan, subnet, switch, detail))`
     for a layer-2 network (a VLAN or switch port group) the source reports;
     `detail` is optional, and a newer source's `cannot_see` is compared with
-    it;
+    it. Two more fields are optional too: `mode`, how the segment is
+    attached (`access`, `trunk`, or empty when the source does not say),
+    and `trunk_vlans`, the VLANs a trunk carries as the source writes them
+    (`"10,20,30-39"`). Any other mode, or trunk VLANs on a segment that is
+    not a trunk, stops the build;
   - `harvest.declared[cidr] = {"source": source["id"], "name": ..., "site": ...}`
     for a subnet the source states exists;
   - `harvest.notes[source["id"]].append("...")` for a line shown beside the
@@ -442,6 +468,14 @@ switch-export = "mypackage.readers:read_switch_export"
 
 A reader loaded this way takes the defaults (required input, class
 `observed`); a source can still set `evidence:`.
+
+When several sources report one segment (the same name at the same site),
+its row comes from the newest of them. Where the newest gives it no VLAN and
+it is not a trunk, the row keeps the VLAN the newest older source stated, and
+`vlan_source` names that source, so the page can show how old the statement
+is. A VLAN the newest source states is never replaced, a trunk, which
+carries many VLANs, is never given an older single one, and a VLAN an older
+source gave a trunk is never kept.
 
 Segments and declared subnets only arrive through plugged-in readers. A
 subnet a source declares that the plan file lacks is added with
@@ -523,7 +557,9 @@ JSON and CSV beside it. Its sections:
 - **Sites**, **Subnets** (with a filter), **Addresses** (per subnet, with
   every source and flag);
 - **VLANs and segments**, **Mirrored sites**, **Public ranges** and
-  **Actions**, each drawn only when there is something to show;
+  **Actions**, each drawn only when there is something to show. A segment's
+  row shows its location, its access or trunk mode, and, for a VLAN kept
+  from an older source, which source stated it and that source's date;
 - **To look at**: every check;
 - **Set aside**: every sighting not placed, by source and reason;
 - **Sources**: each source's kind, evidence class, date and notes.
