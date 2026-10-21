@@ -9,6 +9,16 @@ command line or a file format, and its entry says how.
 
 ### Added
 
+- **Configuration register**: `cmdb: installed_on_from: [<source or plug-in>, ...]`
+  in a target profile (or `installed_on_from=` to `build` and
+  `build_register`) names the rows whose lists of hosts draw *installed on*,
+  by the row's `source` or its `extra.plugin`. Another row's list is left
+  unread, so it makes no machine and no edge; its product and release are
+  kept, and a row's own host still carries its software. Without the key,
+  every row's list is read, as before. When set, the register's JSON records
+  it as `register.installed_on_from`. The profile takes a list of non-blank
+  names, and `build` and `build_register` a list or a tuple of them; an
+  empty list reads none, and anything else is refused.
 - **`takestock rerun`**: derive a new observation from an earlier one,
   reading only the named plug-ins again (`--from <observation> --plugin
   <name>`, repeatable). Every other row is written exactly as it was stored,

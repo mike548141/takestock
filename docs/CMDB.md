@@ -116,6 +116,7 @@ cmdb:
     - heading: Start with the servers.
       body: The Server sheet lists every server an instrument saw.
   jira_assets: true
+  installed_on_from: [software_inventory]
 ```
 
 | Key | Sets |
@@ -126,9 +127,11 @@ cmdb:
 | `cmdb.how_to_read` | Reading notes that replace the built-in ones in the JSON's `how_to_read` and on the workbook's Read me sheet: a list of `heading` and `body` entries, or the path of a YAML file holding that list |
 | `branding` | When the profile's `branding:` block sets anything, the workbook takes its light colours and font: headers in `text` on `surface`, the title, headings and contested values in `accent`, absences in `muted`, and the first font named in `font` (a generic family such as `sans-serif` names none). Without it, or with an empty block, the workbook keeps its plain style |
 | `cmdb.jira_assets` | `true` also writes an import for Jira Assets (see [An import for Jira Assets](#an-import-for-jira-assets)) |
+| `cmdb.installed_on_from` | The row sources or plug-ins whose lists of hosts draw *installed on*: a row's `source` or its `extra.plugin`. A list of hosts (`extra.installed_on`, or a list in `extra.hosts`) on any other row is left unread, as if the row held none, so it makes no machine and no edge; the row's own product and release are kept, and a row's own host still carries its software. Without the key every row's list is read. When set, the register's JSON records it as `register.installed_on_from`. In a profile it must be a list of non-blank names; `build` and `build_register` take a list or a tuple of them. An empty list reads no row's list. Anything else (a single string, a mapping, a set, a number, a blank or non-text name) is refused |
 
 From Python, the same options are keyword arguments:
-`build_register(..., title=, organisation=, schema_overlay=, how_to_read=)`
+`build_register(..., title=, organisation=, schema_overlay=, how_to_read=,
+installed_on_from=)`
 and `write_outputs(register, out_dir, theme=, jira_assets=)`.
 `cmdb.profile_options(target)` reads them from a loaded profile.
 

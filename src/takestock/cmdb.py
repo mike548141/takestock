@@ -824,6 +824,8 @@ class Cmdb:
     ledger: KeyLedger
     observation: str = ""
     recorded_at: str = ""
+    #: The row sources and plug-ins whose host lists drew installed-on; None for every row.
+    installed_on_from: tuple[str, ...] | None = None
 
     def resolved(self) -> dict[str, dict[str, Resolution]]:
         """The published value of every asserted attribute, per item."""
@@ -1225,6 +1227,21 @@ def plan_machines(plan: Mapping[str, Any]) -> list[dict[str, Any]]:
     return [out[k] for k in sorted(out)]
 
 
+def _source_names(names: Sequence[str] | None) -> tuple[str, ...] | None:
+    """``installed_on_from`` checked: None, or a list or tuple of non-blank names.
+
+    Anything else (a string, a mapping, a set, a number, a blank or non-text
+    name) is refused with :class:`ValueError`.
+    """
+    if names is None:
+        return None
+    if not isinstance(names, (list, tuple)) or not all(
+            isinstance(n, str) and n.strip() for n in names):
+        raise ValueError("installed_on_from must be a list or tuple of non-blank row "
+                         "sources or plug-in names")
+    return tuple(n.strip() for n in names)
+
+
 def _default_recorded_at(observation: Path) -> str:
     if obsarchive.is_stamp(observation.name):
         return observation.name[:10]
@@ -1283,9 +1300,11 @@ def read_dates(summary: Mapping[str, Any], stamp: str) -> ReadDates | None:
 
 class _Builder:
     def __init__(self, observation: Path, ledger: KeyLedger | None, recorded_at: str,
-                 ip_plan: Path | None = None, schema: Schema | None = None) -> None:
+                 ip_plan: Path | None = None, schema: Schema | None = None,
+                 installed_on_from: Sequence[str] | None = None) -> None:
         self.dir = Path(observation)
         self.schema = schema or load_schema()
+        self.installed_on_from = _source_names(installed_on_from)
         self.ledger = ledger or KeyLedger(self.schema)
         raw = (self.dir / "assets.json").read_bytes()
         rows = json.loads(raw)
@@ -1400,9 +1419,22 @@ class _Builder:
             return self._named_key("estate-name", host, asset) if host else None
         return self._machine_key(asset)
 
+    def _lists_hosts(self, asset: Mapping[str, Any]) -> bool:
+        """Whether a row's host list may draw installed-on: always, unless
+        ``installed_on_from`` names sources and the row's ``source`` and
+        ``extra.plugin`` are neither of them."""
+        if self.installed_on_from is None:
+            return True
+        plugin = str((asset.get("extra") or {}).get("plugin") or "")
+        return bool({str(asset.get("source") or ""), plugin} & set(self.installed_on_from))
+
     def _listed_machines(self, asset: Mapping[str, Any]) -> list[tuple[str, str]]:
-        """(name, key) for each machine an inventory row says carries its software."""
-        if _installed_software(asset) is None:
+        """(name, key) for each machine an inventory row says carries its software.
+
+        Only a row from a named source draws these when ``installed_on_from``
+        names any: another row's host list is left unread, as if it held none.
+        """
+        if _installed_software(asset) is None or not self._lists_hosts(asset):
             return []
         return [(name, self.ledger.key_for(
                     [("hostname", name)], source=str(asset.get("source") or ""),
@@ -1918,12 +1950,14 @@ class _Builder:
                 aliases=self.ledger.aliases(key), label=self._label.get(key, ""))
         return Cmdb(schema=self.schema, items=items, assertions=self.assertions,
                     edges=self.edges, populations=self.populations, ledger=self.ledger,
-                    observation=self.dir.name, recorded_at=self.recorded_at)
+                    observation=self.dir.name, recorded_at=self.recorded_at,
+                    installed_on_from=self.installed_on_from)
 
 
 def build(observation: Path | str, *, ledger: KeyLedger | None = None,
           recorded_at: str = "", ip_plan: Path | str | None = None,
-          schema_overlay: Path | str | None = None) -> Cmdb:
+          schema_overlay: Path | str | None = None,
+          installed_on_from: Sequence[str] | None = None) -> Cmdb:
     """Build the register for one observation directory.
 
     ``recorded_at`` defaults to the observation's own date when its directory
@@ -1936,11 +1970,15 @@ def build(observation: Path | str, *, ledger: KeyLedger | None = None,
     ``takestock ipam`` writes it); when given, every machine it names at an
     address is an item too (:func:`plan_machines`). It is never read unless
     named. ``schema_overlay`` names a schema overlay whose wording is merged
-    over the schema (:func:`apply_overlay`).
+    over the schema (:func:`apply_overlay`). ``installed_on_from`` names the
+    row sources or plug-ins (a row's ``source`` or ``extra.plugin``) whose
+    lists of hosts (``extra.installed_on``, or a list in ``extra.hosts``) draw
+    installed-on; any other row's list is left unread, as if it held none.
+    None, the default, reads every row's list.
     """
     schema = load_schema(schema_overlay) if schema_overlay else None
     builder = _Builder(Path(observation), ledger, recorded_at,
-                       Path(ip_plan) if ip_plan else None, schema)
+                       Path(ip_plan) if ip_plan else None, schema, installed_on_from)
     builder.classify()
     builder.assert_facts()
     builder.fold()
@@ -2135,6 +2173,8 @@ def register_payload(register: Cmdb, *, title: str = "", organisation: str = "",
             },
             "governance": {**{k: v for k, v in schema.governance.items() if k != "cites"},
                            "unassigned": schema.unassigned_roles()},
+            **({"installed_on_from": list(register.installed_on_from)}
+               if register.installed_on_from is not None else {}),
         },
         "how_to_read": notes,
         "schema": _schema_payload(schema),
@@ -2163,17 +2203,20 @@ def build_register(observation_dir: Path | str, *, keys: Path | str | None = Non
                    recorded_at: str = "", title: str = "",
                    ip_plan: Path | str | None = None,
                    schema_overlay: Path | str | None = None, organisation: str = "",
-                   how_to_read: Sequence[Any] | None = None) -> dict[str, Any]:
+                   how_to_read: Sequence[Any] | None = None,
+                   installed_on_from: Sequence[str] | None = None) -> dict[str, Any]:
     """Build the register for ``observation_dir`` and return it as one dict.
 
     ``keys`` names an earlier build's ``keys.jsonl`` so items keep their keys;
     ``ip_plan`` an IP address plan's JSON whose named machines become items;
     ``schema_overlay`` a schema overlay (:func:`apply_overlay`). ``title``,
-    ``organisation`` and ``how_to_read`` are as for :func:`register_payload`.
+    ``organisation`` and ``how_to_read`` are as for :func:`register_payload`;
+    ``installed_on_from`` as for :func:`build`.
     """
     ledger = read_keys(keys) if keys else None
     return register_payload(build(observation_dir, ledger=ledger, recorded_at=recorded_at,
-                                  ip_plan=ip_plan, schema_overlay=schema_overlay),
+                                  ip_plan=ip_plan, schema_overlay=schema_overlay,
+                                  installed_on_from=installed_on_from),
                             title=title, organisation=organisation, how_to_read=how_to_read)
 
 
@@ -2192,7 +2235,8 @@ def write_outputs(register: Mapping[str, Any], out_dir: Path | str, *,
 # ── Options a target profile sets ──────────────────────────────────────────
 
 #: The keys a profile's ``cmdb:`` block may hold.
-PROFILE_KEYS: tuple[str, ...] = ("title", "schema_overlay", "how_to_read", "jira_assets")
+PROFILE_KEYS: tuple[str, ...] = ("title", "schema_overlay", "how_to_read", "jira_assets",
+                                 "installed_on_from")
 
 
 @dataclass(frozen=True)
@@ -2205,11 +2249,13 @@ class ProfileOptions:
     how_to_read: tuple[dict[str, str], ...] | None = None
     theme: Any = None
     jira_assets: bool = False
+    installed_on_from: tuple[str, ...] | None = None
 
     def build_kwargs(self) -> dict[str, Any]:
         """Keyword arguments for :func:`build_register`."""
         return {"title": self.title, "organisation": self.organisation,
-                "schema_overlay": self.schema_overlay, "how_to_read": self.how_to_read}
+                "schema_overlay": self.schema_overlay, "how_to_read": self.how_to_read,
+                "installed_on_from": self.installed_on_from}
 
     def write_kwargs(self) -> dict[str, Any]:
         """Keyword arguments for :func:`write_outputs`."""
@@ -2220,7 +2266,8 @@ def profile_options(target: Mapping[str, Any]) -> ProfileOptions:
     """The register options a loaded target profile sets.
 
     Read from the profile's ``cmdb:`` block (``title``, ``schema_overlay``,
-    ``how_to_read``, ``jira_assets``), its organisation's name, and its
+    ``how_to_read``, ``jira_assets``, ``installed_on_from``), its
+    organisation's name, and its
     ``branding:`` block, which styles the workbook only when it sets
     anything. A relative path is read from the directory holding the profile;
     ``how_to_read`` is a list of ``{heading, body}`` entries, or the path of a
@@ -2259,12 +2306,21 @@ def profile_options(target: Mapping[str, Any]) -> ProfileOptions:
     jira = block.get("jira_assets", False)
     if not isinstance(jira, bool):
         raise ValueError("cmdb.jira_assets must be true or false")
+    sources = block.get("installed_on_from")
+    if sources is not None and not isinstance(sources, list):
+        raise ValueError("cmdb.installed_on_from must be a list of non-blank row sources "
+                         "or plug-in names")
+    try:
+        installed_on_from = _source_names(sources)
+    except ValueError as exc:
+        raise ValueError(f"cmdb.{exc}") from exc
     has_org = any(target.get(k) for k in ("organisation", "org"))
     theme = htmlpage.theme_from_target(dict(target)) if target.get("branding") else None
     return ProfileOptions(
         title=title,
         organisation=htmlpage.organisation_name(dict(target)) if has_org else "",
-        schema_overlay=overlay, how_to_read=notes, theme=theme, jira_assets=jira)
+        schema_overlay=overlay, how_to_read=notes, theme=theme, jira_assets=jira,
+        installed_on_from=installed_on_from)
 
 
 def build_and_write(observation: Path | str, out_dir: Path | str, *,
