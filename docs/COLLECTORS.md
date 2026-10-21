@@ -963,6 +963,9 @@ plugins:
 | `oracle_tde` | `database-encryption` | An Oracle Database administrator's CSV export of Transparent Data Encryption state: keystore status and type, and encrypted tablespaces | none: name it with `input:` |
 | `commvault` | `backup-encryption` | A CSV of Commvault storage policy copies' software encryption: cipher, key length and key custody | none: name it with `input:` |
 | `exchange_online` | `general` | An export of Exchange Online settings (anti-phishing policies and rules, connectors, quarantine policies, DKIM signing), read for three Secure Government Email requirements | none: name it with `input:` |
+| `vmware` | `general` | A CSV of vSphere VM Encryption and vSAN encryption state, one row per virtual machine or vSAN cluster, written with PowerCLI | none: name it with `input:` |
+| `rvtools` | `general` | RVTools workbooks: virtual machines' firmware and secure boot, configured guest types and ESXi versions (no encryption data) | none: name a workbook or a folder with `input:` |
+| `vsphere_lists` | `general` | The vSphere Client's exported lists of virtual machines, hosts and datastores: VM encryption, virtual TPM, virtualisation-based security, guest types, ESXi versions, host certificate expiry and what backs each datastore | none: name the folder with `input:` |
 
 A reader with no default input still runs when the profile gives it none,
 and records in its own coverage gap that no export was read. A profile that
@@ -1312,3 +1315,214 @@ Authentication of Named Entities (DANE) works*; *About the Exchange Online
 PowerShell V3 module*; and the Exchange PowerShell cmdlet pages for each
 cmdlet the script runs and for Set-AntiPhishPolicy, Set-AntiPhishRule,
 Set-InboundConnector and Set-OutboundConnector.
+
+### `vmware`
+
+**Reads** a CSV of vSphere's two encryption controls for data at rest, one
+row per virtual machine or vSAN cluster: **VM Encryption** (set per machine
+through its storage policy; it encrypts the machine's disks, configuration
+file and core dumps) and **vSAN data-at-rest encryption** (set per cluster;
+it encrypts everything on the cluster's datastore). Both need a key
+provider configured in vCenter, and both use one fixed cipher, XTS-AES-256
+(Broadcom's vSphere 8.0 documentation, *How vSphere Virtual Machine
+Encryption Protects Your Environment* and *How vSAN Data-At-Rest Encryption
+Works*).
+
+| Column | Holds |
+|---|---|
+| `scope` | `vm` for a virtual machine; `vsan-cluster` (or `vsan`, `cluster`) for a vSAN cluster |
+| `name` | The machine or cluster |
+| `encrypted` | `Yes` or `No` (`true`, `enabled` and their opposites are read too) |
+| `key_provider` | The key provider's name in vCenter |
+| `key_provider_type` | `Standard` (a key server reached over KMIP), `Trusted` (vSphere Trust Authority) or `Native Key Provider` |
+| `cipher` | Optional; blank is read as the XTS-AES-256 vSphere uses |
+
+Headings are matched without regard to case, spaces or hyphens, and common
+synonyms are read too (`vm_name`, `kms`, `algorithm`; `COLUMNS` in
+`takestock/readers/vmware.py`). This PowerCLI script writes the columns from
+each machine's `Config.KeyId` (set only on an encrypted machine; its
+`ProviderId.Id` names the key provider) and each vSAN cluster's
+configuration. Fill in `key_provider_type` from vCenter's list of key
+providers. It was written from VMware's API and PowerCLI documentation and
+has not been run here; check the vSAN property names against your PowerCLI
+version.
+
+```powershell
+Connect-VIServer -Server vcenter.example.test
+$rows = foreach ($vm in Get-VM) {
+    $key = $vm.ExtensionData.Config.KeyId
+    [pscustomobject]@{
+        scope = 'vm'; name = $vm.Name
+        encrypted = if ($key) { 'Yes' } else { 'No' }
+        key_provider = if ($key) { $key.ProviderId.Id } else { '' }
+        key_provider_type = ''; cipher = ''
+    }
+}
+$rows += foreach ($cluster in Get-Cluster | Where-Object VsanEnabled) {
+    $config = Get-VsanClusterConfiguration -Cluster $cluster
+    [pscustomobject]@{
+        scope = 'vsan-cluster'; name = $cluster.Name
+        encrypted = if ($config.EncryptionEnabled) { 'Yes' } else { 'No' }
+        key_provider = "$($config.KmsCluster)"
+        key_provider_type = ''; cipher = ''
+    }
+}
+$rows | Export-Csv -NoTypeInformation -Path vmware-encryption.csv
+```
+
+**Rows.** One per line, named `VMware vSphere VM Encryption <name>` (protocol
+`vm-encryption`) or `VMware vSAN <name>` (protocol `vsan-encryption`), data
+state `at-rest`.
+
+| Recorded | Verdict | Flags |
+|---|---|---|
+| A machine with encryption off, or nothing recorded | `n/a` | `vm-encryption-off`: a fact, not a grade, because the storage beneath may encrypt its files |
+| A vSAN cluster with encryption off, or nothing recorded | `weak` | `encryption-off` |
+| A setting that is neither on nor off | `weak` | `encryption-status:<value>` |
+| On, or a key provider or cipher with no setting | the cipher's grade (`aes256_xts` is `strong`) | `ungraded:symmetric:<name>` for a cipher the baseline does not grade, left `unknown` |
+
+Key custody is a flag, never a verdict: `key-custody:native-key-provider`,
+`key-custody:trust-authority`, `key-custody:external-kms`, or
+`key-custody:<name>` when only the key provider's name is recorded.
+
+**Settings.** `vsphere_lists:` names the folder of vSphere Client list
+exports the `vsphere_lists` reader reads. When it holds a virtual-machine
+list, which reports each machine's encryption, a missing export here is not
+a gap.
+
+```yaml
+plugins:
+  - name: vmware
+    input: inbox/vmware-encryption.csv
+    settings: {vsphere_lists: inbox/vsphere}
+```
+
+**Dates.** The export carries no date, so each row is dated by the file's
+modification date.
+
+**Coverage gaps.** No input given, a file that cannot be read as CSV, or a
+file with no rows, unless the named list exports answer it: one gap saying
+no export was read.
+
+**Cannot see.** Encryption done by a storage array or by the disks beneath a
+datastore; whether vMotion traffic or memory is encrypted; how the key
+provider protects its keys; and any machine or cluster not in the export.
+
+### `rvtools`
+
+**Reads** RVTools workbooks. RVTools is a free Windows tool that reads a
+vCenter or ESXi host through the vSphere API and writes a workbook with one
+sheet per subject, named `RVTools_export_all_<date>_<time>.xlsx` by default.
+The input is one workbook or a folder of them (every `.xlsx` directly inside
+it, in name order). With more than one vCenter, put a label before the
+default name (`SiteA_RVTools_export_all_…`): the text before `_RVTools` is the
+row's site, and the date in the name is the export's date.
+
+| Sheet | Columns read |
+|---|---|
+| `vInfo` | `VM`, `Powerstate`, `Template`, `SRM Placeholder`, `Firmware`, `EFI Secure boot`, `OS according to the configuration file` |
+| `vHost` | `Host`, `ESX Version` |
+
+An RVTools workbook has no column for VM encryption, a key provider or a
+cipher, so every row is a census graded `n/a`, and the scope row says so.
+Templates and Site Recovery Manager placeholders (stand-ins at a recovery
+site for machines that run elsewhere) are rows in `vInfo` and are not
+counted as machines.
+
+**Rows**, all data state `platform-integrity`, protocol `firmware`:
+
+| Row | Over | Flags |
+|---|---|---|
+| `VM firmware EFI, secure boot on` | machines powered on | `vm-firmware-census:<n>` |
+| `VM firmware EFI, secure boot off` | machines powered on | `vm-firmware-census:<n>`, `secure-boot-off:<n>` |
+| `VM firmware BIOS (legacy)`: no secure boot is possible without a firmware change | machines powered on | `vm-firmware-census:<n>`, `legacy-bios:<n>` |
+| `VM firmware <value>` for any other value | machines powered on | `vm-firmware-census:<n>` |
+| one per `ESX Version` | hosts | `esxi-version-census:<n>` |
+| `Guest OS <type>`, as configured, not as measured inside the guest | machines | `guest-os-census:<n>` |
+| `Virtual estate scope`: rows, templates, placeholders, machines, powered on, hosts, per site | all | `scope-rvtools-no-encryption-data` |
+
+**Settings.** `vsphere_lists:`, as for `vmware`. When the named folder holds
+a virtual-machine list, the vSphere Client's lists are read for machines,
+hosts, guest types and ESXi versions, so only the firmware rows are written
+here, with a shorter scope row.
+
+**Dates.** Every row is dated by the oldest workbook's date, and its notes
+say it describes the estate as it was then.
+
+**Coverage gaps.** A folder with no workbook, or a workbook that cannot be
+opened or has no `vInfo` rows. With no input, nothing is written: an
+inventory answers no cryptographic question by itself.
+
+**Cannot see.** Encryption of any kind; what runs inside a guest; and any
+vCenter not exported.
+
+### `vsphere_lists`
+
+**Reads** the vSphere Client's own exports of its inventory lists. Each list
+(a datacenter's virtual machines, a vCenter's hosts, its datastores) has an
+**Export** action that saves the columns on screen as a CSV file, named
+after the list: `vmsForDatacenter_Name`, `hostsForVCenter_Name` and
+`datastoresForVCenter_Name`. The input is a folder of them. With more than
+one vCenter, add a label after the list name
+(`vmsForDatacenter_Name SiteA.csv`): it is the row's site, taken from the
+file and never from a machine's name, since a machine replicated from
+another vCenter keeps its name. Show these columns before exporting:
+
+| List | Columns read |
+|---|---|
+| Virtual machines | `Name`, `State`, `Guest OS`, `Managed By`, `Encryption`, `TPM`, `VBS`, and Site Recovery Manager's `com.vmware.vcDr:::protected` attribute if shown |
+| Hosts | `Name`, `Cluster`, `Version`, `Certificate Valid To` |
+| Datastores | `Name`, `Type`, `Device`, `Access`, `Capacity` |
+
+Headings are matched without regard to case or line breaks. Site Recovery
+Manager placeholders (`Managed By` naming Site Recovery Manager) are left
+out of every count but the scope row's.
+
+**Rows.**
+
+| Row | Verdict | Flags |
+|---|---|---|
+| `VM encryption, <site> vCenter`: machines with VM Encryption on and off | `n/a`, or the cipher's grade when any machine is encrypted | `vsphere-vm-census:<n>`, `vm-encryption-off:<n>` (a fact, not a grade), `ungraded:vm-encryption:<value>` |
+| `Virtual TPM, <site> vCenter` | `n/a` | `vsphere-vm-census:<n>`, `vtpm-absent:<n>` |
+| `Virtualisation-based security setting, <site> vCenter`, over Windows machines | `n/a` | `vsphere-vm-census:<n>`, `vbs-enabled:<n>` |
+| `vSphere guest OS <type>`, with its support status | `n/a` | `guest-os-census:<n>` |
+| `ESXi host certificate <host>` | `unknown` | `expired` or `expiry-soon` as at the export date; `not-assessed:certificate-key-and-signature` |
+| `VMware ESXi <version>`, with its support status | `n/a` | `esxi-version-census:<n>` |
+| `Datastores, <site> vCenter` | `n/a` | `datastore-census:<n>` |
+| `vSphere list exports scope` | `n/a` | `scope-vsphere-lists` |
+
+A virtual TPM, like VM encryption, needs a key provider in vCenter
+(Broadcom, *Enable vTPM for an Existing Virtual Machine*: "You must create a
+key provider before you can add a vTPM").
+
+**Support status** is looked up in a software lifecycle table in the format
+of `data/software-lifecycle.yaml`, by the guest type (kind `os`) or by
+`VMware ESXi <version>` (kind `hypervisor`), exact matches only, on the
+export's date. The bundled table is used unless `settings:` names another:
+
+```yaml
+plugins:
+  - name: vsphere_lists
+    input: inbox/vsphere
+    settings: {lifecycle: data/my-lifecycle.yaml}
+```
+
+**Datastores.** A device's NAA identifier (`naa.6…`, `naa.5…`) carries its
+maker's IEEE organisationally unique identifier. A datastore on a
+storage-array maker's prefix (`ARRAY_MAKERS` in
+`takestock/readers/vsphere_lists.py`, from the IEEE registry) or on a
+virtual-volume container counts as on an array; any other prefix counts as
+disks inside a host, and none as not placed. Datastores on disks inside
+hosts are a coverage gap, because the list does not say whether those disks
+encrypt.
+
+**Dates.** The exports carry no date, so every row is dated by the oldest
+file's modification date, and certificate expiry is counted from that date.
+
+**Coverage gaps.** An export that cannot be read; a lifecycle table named in
+`settings:` that cannot be read; datastores on disks inside hosts. With no
+input, or none of the three lists in the folder, nothing is written.
+
+**Cannot see.** The key provider setting itself; which datastore holds which
+machine's disks; whether any storage encrypts; anything inside a guest; and a
+host certificate's key, algorithm and issuer.

@@ -1,0 +1,7 @@
+﻿"Name","Status","Type","Datastore Cluster","Capacity","Free","Device","Access"
+"example-ds-01","Normal","VMFS 6","","10 TB","4 TB","naa.60050760000000000000000000000001","Multiple Hosts"
+"example-ds-02","Normal","VMFS 6","","2 TB","1 TB","naa.600a0980000000000000000000000002","Multiple Hosts"
+"example-vvol-01","Normal","vVol","","5 TB","5 TB","","Multiple Hosts"
+"example-local-01","Normal","VMFS 6","","1 TB","512 GB","naa.50025380000000a1","Single Host"
+"example-local-02","Normal","VMFS 6","","1 TB","64 GB","naa.5abcdef0000000a2","Single Host"
+"example-vsan-01","Normal","vSAN","","20 TB","8 TB","","Multiple Hosts"

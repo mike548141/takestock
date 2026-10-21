@@ -1,0 +1,2 @@
+﻿"Name","State","Status","Cluster","Consumed CPU %","Consumed Memory %","Uptime","Version","Certificate Valid To"
+"esx-b1.example.test","Connected","Normal","Cluster-B","20%","60%","90 days","8.0.9","not available"

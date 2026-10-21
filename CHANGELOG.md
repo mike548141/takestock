@@ -9,6 +9,26 @@ command line or a file format, and its entry says how.
 
 ### Added
 
+- **Readers library**: three readers for VMware vSphere estates.
+  `vmware` reads a PowerCLI CSV of VM Encryption and vSAN encryption state,
+  one row per machine or cluster: a vSAN cluster with encryption off is
+  `weak`, a machine with it off is recorded as a fact (its storage may
+  encrypt), and encryption on is graded as XTS-AES-256, the one cipher
+  vSphere uses; key custody is flagged. `rvtools` reads RVTools workbooks
+  (one, or a folder): a census of machines' firmware and secure boot,
+  configured guest types and ESXi versions, with templates and Site
+  Recovery Manager placeholders left out of the machine count and a scope
+  row saying the workbooks hold no encryption data. `vsphere_lists` reads
+  the vSphere Client's exported lists of virtual machines, hosts and
+  datastores: VM encryption, virtual TPM and virtualisation-based security
+  per site, guest types and ESXi versions with their vendor support status
+  from a lifecycle table (the bundled one, or one named in `settings:`),
+  host certificate expiry as at the export date, and what backs each
+  datastore, read from the maker prefix in its device identifier. When
+  `settings: {vsphere_lists: <folder>}` names a folder holding a
+  virtual-machine list, `vmware` raises no gap for a missing export and
+  `rvtools` writes only its firmware rows.
+- **Roles**: plain-English roles for the rows of the three VMware readers.
 - **IP address plan**: a segment carries how it is attached (`mode`:
   `access` or `trunk`) and, for a trunk, the VLANs it carries
   (`trunk_vlans`), when its reader says. Where the newest source reporting

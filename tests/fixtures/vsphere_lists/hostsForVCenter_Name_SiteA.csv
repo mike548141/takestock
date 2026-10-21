@@ -1,0 +1,4 @@
+﻿"Name","State","Status","Cluster","Consumed CPU %","Consumed Memory %","Uptime","Version","Certificate Valid To"
+"esx-a1.example.test","Connected","Normal","Cluster-A","12%","48%","40 days","8.0.9","Mar 4, 2031 10:15 AM"
+"esx-a2.example.test","Connected","Normal","Cluster-A","14%","51%","40 days","8.0.9","Feb 1, 2030 9:00 PM"
+"esx-a3.example.test","Connected","Normal","Cluster-A","3%","10%","2 days","7.0.9","Dec 1, 2029 8:30 AM"

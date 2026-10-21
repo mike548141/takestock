@@ -114,3 +114,20 @@ def test_stored_data_and_backup_encryption_roles():
         "Encryption of the backups written under the policy Example-Daily — whether the "
         "stored copies could be read without its keys")
     assert roles.database_encryption("") == roles.backup_encryption("") == ""
+
+
+def test_virtual_estate_roles():
+    assert roles.virtual_storage_encryption("example-app-01", False) == (
+        "Encryption of the virtual machine example-app-01 — whether its virtual disk files "
+        "could be read if copied off the datastore")
+    assert roles.virtual_storage_encryption("example-cluster-a", True).startswith(
+        "Encryption of the vSAN cluster example-cluster-a's datastore")
+    assert roles.virtual_storage_encryption("", True) == ""
+    for fn in (roles.vm_encryption_population, roles.virtual_tpm_population,
+               roles.virtualisation_security_population, roles.virtual_guest_os_population,
+               roles.hypervisor_host_population, roles.datastore_population,
+               roles.virtual_machine_boot_population):
+        assert "7 " in fn(7), fn.__name__
+    for fn in (roles.hypervisor_host_certificate, roles.vsphere_lists_scope,
+               roles.virtual_estate_scope):
+        assert fn()

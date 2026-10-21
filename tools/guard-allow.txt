@@ -32,6 +32,7 @@ postgresql.org
 openssl-library.org
 adoptium.net
 endoflife.date
+techdocs.broadcom.com
 # Reference-data files whose purpose is to list public vendor domains. Only the
 # hostname check is lifted for these files; every row is still reviewed.
 hostname-data src/takestock/data/vendor-domains.csv

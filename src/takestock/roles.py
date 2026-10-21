@@ -312,6 +312,77 @@ def backup_encryption(ident: str) -> str:
             "stored copies could be read without its keys")
 
 
+def virtual_storage_encryption(ident: str, is_cluster: bool) -> str:
+    """vSphere's encryption of one virtual machine's disks, or of a vSAN cluster's datastore."""
+    if not ident:
+        return ""
+    if is_cluster:
+        return (f"Encryption of the vSAN cluster {ident}'s datastore — whether the disks "
+                "holding its virtual machines could be read if taken away")
+    return (f"Encryption of the virtual machine {ident} — whether its virtual disk files "
+            "could be read if copied off the datastore")
+
+
+def vm_encryption_population(machines: int) -> str:
+    """How many of a vCenter's virtual machines vSphere itself encrypts."""
+    return (f"Whether vSphere encrypts the files of each of {machines} virtual machine(s) "
+            "itself, apart from anything the storage beneath does")
+
+
+def virtual_tpm_population(machines: int) -> str:
+    """How many virtual machines have a virtual Trusted Platform Module."""
+    return (f"Whether each of {machines} virtual machine(s) has a virtual TPM, the chip "
+            "that holds a machine's disk-encryption key and its record of how it started")
+
+
+def virtualisation_security_population(machines: int) -> str:
+    """How many Windows virtual machines have virtualisation-based security enabled."""
+    return (f"Whether the settings of {machines} Windows virtual machine(s) let Windows "
+            "isolate its sign-in secrets from the rest of the machine")
+
+
+def virtual_guest_os_population(machines: int) -> str:
+    """The virtual machines configured as one guest operating system."""
+    return (f"Which operating system {machines} virtual machine(s) are configured as, "
+            "from their settings rather than from inside the guest")
+
+
+def hypervisor_host_certificate() -> str:
+    """The certificate a virtualisation host presents to its management tools."""
+    return ("The certificate a virtualisation host presents to the administrators and "
+            "tools that manage it")
+
+
+def hypervisor_host_population(hosts: int) -> str:
+    """The virtualisation hosts running one hypervisor version."""
+    return (f"Which hypervisor version {hosts} host(s) run, the layer every virtual "
+            "machine on them depends on")
+
+
+def datastore_population(datastores: int) -> str:
+    """What a vCenter's datastores are stored on."""
+    return (f"Where {datastores} datastore(s) holding virtual machines' disks are stored: "
+            "on a storage array, or on disks inside a host")
+
+
+def vsphere_lists_scope() -> str:
+    """The scope row for a set of vSphere Client list exports."""
+    return ("What the vSphere Client's list exports cover, when they were made, and what "
+            "they cannot show")
+
+
+def virtual_machine_boot_population(machines: int) -> str:
+    """The powered-on virtual machines with one firmware and secure-boot state."""
+    return (f"How {machines} virtual machine(s) start: whether their firmware checks what "
+            "they load before the operating system runs")
+
+
+def virtual_estate_scope() -> str:
+    """The scope row for a virtualisation inventory."""
+    return ("What the virtualisation inventory covers, when it was taken, and that it "
+            "holds no encryption data")
+
+
 def dns_zone_scope(zones: int) -> str:
     """The scope row for a set of DNS zone files."""
     return (f"Every record configured in the organisation's {zones} DNS zone(s) — what "

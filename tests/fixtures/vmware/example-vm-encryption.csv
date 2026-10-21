@@ -1,0 +1,10 @@
+scope,name,encrypted,key_provider,key_provider_type,cipher
+vm,example-app-01,Yes,example-nkp,Native Key Provider,
+vm,example-app-02,No,,,
+vm,example-db-01,true,example-kms,Standard,AES-256-XTS
+vm,example-web-01,,,,
+vm,example-web-02,pending,,,
+vm,example-lab-01,Yes,example-trust,Trusted,example-cipher
+vsan-cluster,example-cluster-a,Enabled,example-kms,Standard,XTS-AES-256
+vsan-cluster,example-cluster-b,Disabled,,,
+vsan,example-cluster-c,,example-kms,,

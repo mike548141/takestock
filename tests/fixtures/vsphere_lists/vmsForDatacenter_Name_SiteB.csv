@@ -1,0 +1,6 @@
+﻿"Name","State","Status","Provisioned Space","Used Space","Guest OS","Managed By","VMware Tools Running
+Status","Encryption","TPM","VBS","SRM-com.vmware.vcDr:::protected"
+"example-app-03","Powered On","Normal","80 GB","40 GB","Microsoft Windows Server 2019 (64-bit)","","Running","Encrypted","True","True",""
+"example-db-02","Powered On","Normal","200 GB","120 GB","Red Hat Enterprise Linux 9 (64-bit)","","Running","Not encrypted","True","False",""
+"example-tool-01","Powered On","Normal","20 GB","10 GB","Other Linux (64-bit)","","Running","Pending","False","False",""
+"example-app-01","Powered Off","Normal","80 GB","0 B","Microsoft Windows Server 2022 (64-bit)","VMware Site Recovery Manager","Not running","Not encrypted","False","False",""
