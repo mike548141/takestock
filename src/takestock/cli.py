@@ -1,7 +1,8 @@
 """The ``takestock`` command.
 
 Each subcommand is a thin layer over a module that can also be used from
-Python: ``observe`` over :mod:`takestock.observe`, ``cmdb`` over
+Python: ``observe`` over :mod:`takestock.observe`, ``rerun`` over
+:mod:`takestock.rerun`, ``cmdb`` over
 :mod:`takestock.cmdb`, ``requirements`` over :mod:`takestock.requirements`,
 ``comply`` over the standards registered in :mod:`takestock.comply`, and
 ``ipam`` over :mod:`takestock.ipam` where that module is installed.
@@ -15,17 +16,17 @@ import textwrap
 from importlib import import_module
 from pathlib import Path
 
-from . import __version__, carry, comply, config
+from . import __version__, carry, comply, config, rerun
 from .exits import EXIT_CLEAN, EXIT_ERROR, EXIT_FINDINGS, guarded
 from .observe import ObserveRefused, Options, observe
 
 EXIT_CODES = f"""\
 exit codes:
   {EXIT_CLEAN}  clean: the command did its work and found nothing adverse
-  {EXIT_FINDINGS}  findings present: observe found a weak verdict or work for an
+  {EXIT_FINDINGS}  findings present: observe (or rerun) found a weak verdict or work for an
      out-of-cycle rung; comply found an unmet MUST requirement;
      requirements derived at least one requirement
-  {EXIT_ERROR}  error: bad arguments, an unreadable input, a refused scan or carry, or an
+  {EXIT_ERROR}  error: bad arguments, an unreadable input, a refused scan, carry or rerun, or an
      observation that could not judge because a collector failed (the
      observation is still written, and summary.json lists the failures)
 """
@@ -90,6 +91,27 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--refresh-ct", action="store_true",
                    help="ask the certificate-transparency service again rather than reuse "
                         "a recent answer from an earlier observation")
+
+    p = sub.add_parser(
+        "rerun", parents=[common], formatter_class=_Formatter, epilog=EXIT_CODES,
+        help="derive an observation from an earlier one, reading named plug-ins again",
+        description=textwrap.fill(
+            "Write a new observation that holds every row, gap and raw file of an earlier "
+            "observation of this target, except the named plug-ins' rows, which are read "
+            "again from their inputs. Only those plug-ins, and the annotations that label "
+            "their rows, run: nothing is looked up or probed. Carried rows are written "
+            "exactly as they were stored; what grading them again would change is "
+            "counted, not applied. summary.json records the observation it was derived "
+            "from under `rerun`.", 78))
+    p.add_argument("target", help="a target profile: a path, or a name under targets/")
+    p.add_argument("--from", dest="base", metavar="OBSERVATION", required=True,
+                   help="the earlier observation: a stamp under observations/, or a path")
+    p.add_argument("--plugin", dest="plugins", metavar="NAME", action="append", default=[],
+                   help="a plug-in to read again, as the profile's `plugins:` list names it "
+                        "(repeat for several)")
+    p.add_argument("--inbox", metavar="DIR",
+                   help="read supplied exports from DIR (default: $TAKESTOCK_INBOX, "
+                        "else <workspace>/inbox)")
 
     p = sub.add_parser("cmdb", parents=[common], help="build the draft configuration register",
                        description="Build the draft configuration register from one "
@@ -179,6 +201,30 @@ def _observe(args: argparse.Namespace) -> int:
     return result.exit_code
 
 
+def _rerun(args: argparse.Namespace) -> int:
+    if args.inbox:
+        config.set_inbox(args.inbox)
+    target = config.load_target(args.target)
+    try:
+        result = rerun.rerun(target, args.base, rerun.Options(
+            plugins=tuple(args.plugins),
+            announce=lambda line: print(line, file=sys.stderr, flush=True)))
+    except rerun.RerunRefused as exc:
+        print(f"takestock: REFUSED, nothing written: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    s = result.summary
+    record = s[rerun.SUMMARY_KEY]
+    print(config.display_path(result.observation))
+    print(f"{s['total_assets']} assets ({record['rows_carried']} carried from "
+          f"{record['from_observation']}); verdicts {s['by_verdict']}; "
+          f"{len(s['gaps'])} coverage gap(s); {len(result.findings)} finding(s)")
+    differ = record["carried_rows_graded_differently"]["rows"]
+    if differ:
+        print(f"takestock: grading again would store {differ} carried row(s) differently; "
+              f"they are kept as stored (summary.json `{rerun.SUMMARY_KEY}`)", file=sys.stderr)
+    return result.exit_code
+
+
 def _cmdb(args: argparse.Namespace) -> int:
     from . import cmdb
     _register, paths = cmdb.build_and_write(args.observation, args.out or args.observation / "cmdb",
@@ -231,6 +277,7 @@ def _requirements(args: argparse.Namespace) -> int:
 
 _COMMANDS = {
     "observe": _observe,
+    "rerun": _rerun,
     "cmdb": _cmdb,
     "ipam": _ipam,
     "comply": _comply,

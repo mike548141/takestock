@@ -6,7 +6,10 @@ reuse a domain's answer from an earlier observation, under three conditions:
 the observation is recent (``CT_CACHE_DAYS``), it finished (a completion
 marker parses: ``bom.cdx.json``, or a file a caller registered with
 :func:`register_completion_marker`), and its read of that domain reached the
-end of the results (its page record says ``exhausted``). A reused answer is always reported as such,
+end of the results (its page record says ``exhausted``). An observation derived
+from an earlier one (:mod:`takestock.rerun`) is passed over: its answers were
+fetched for the earlier one, and its name gives its own date, not theirs.
+A reused answer is always reported as such,
 with its age, so a reader knows a certificate issued since then is missing.
 
 The raw files this module reads are written by the ``ct_dns`` collector:
@@ -103,6 +106,19 @@ def _is_complete(observation: Path) -> bool:
     return False
 
 
+#: The ``summary.json`` key a derived observation carries (:mod:`takestock.rerun`).
+DERIVED_KEY = "rerun"
+
+
+def _is_derived(observation: Path) -> bool:
+    """True for an observation derived from an earlier one: its answers are that one's."""
+    try:
+        summary = json.loads((observation / "summary.json").read_text())
+    except (OSError, ValueError):
+        return False
+    return isinstance(summary, dict) and DERIVED_KEY in summary
+
+
 def _read_to_the_end(observation: Path, domain: str) -> bool:
     try:
         note = json.loads((observation / "raw" / pages_name(domain)).read_text())
@@ -124,7 +140,7 @@ def find(domain: str, observations: Path, max_age_days: int = CT_CACHE_DAYS,
         if when is not None and when >= cutoff:
             candidates.append((when, child))
     for when, child in sorted(candidates, reverse=True):
-        if not _is_complete(child):
+        if not _is_complete(child) or _is_derived(child):
             continue
         path = child / "raw" / raw_name(domain)
         if not path.is_file():

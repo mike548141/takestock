@@ -133,6 +133,83 @@ measured are carried in, and the raw transcripts beside them are copied.
   `takestock:carried_scan` with the earlier stamp. Late plug-ins, coverage
   checks and annotations see the carried collectors as `ctx.run.carried`.
 
+### Reading named plug-ins again (`rerun.py`)
+
+`takestock rerun <target> --from <observation> --plugin <name>` (or
+`rerun.rerun(target, observation, rerun.Options(plugins=(...)))`) writes a new
+observation that holds everything an earlier one holds, except the named
+plug-ins' rows, which are read again from their inputs. Only those plug-ins
+run, with the profile's annotations to label their rows, so nothing is looked
+up or probed. It suits a plug-in whose reader has changed, or whose export
+has been supplied again, while the rest of the observation is still current.
+The result is a *derived* observation, and its record says so.
+
+- **Rows.** Every row whose `source` is not a named plug-in's is written
+  exactly as it was stored. The named plug-ins' old rows are dropped; their
+  new rows take the place of the first old one, or, for a plug-in that wrote
+  none before, follow the rows of the nearest plug-in before it in the
+  profile's `plugins:` list.
+- **Grading.** The new rows are graded together with the carried ones, as a
+  full observation grades every row at once (usage bands, shared keys and
+  Secure Government Email marks compare rows across the population). The
+  carried rows are then written as stored. Where that pass would have stored
+  a carried row differently, because the tool has changed since or a new row
+  changes a reading across rows, the record counts it by source and by
+  field; it is not applied.
+- **Annotations** label the new rows as a full run would. Every other
+  plug-in's record and summary are the earlier observation's.
+- **Gaps.** The earlier gaps are kept, except those naming a named plug-in
+  (``plug-in `<name>` ``), and the new run's gaps are added. A plug-in
+  declared with `gap_prefix=False` writes gaps that do not name it; its
+  earlier gaps are kept, a new gap with the same text is not added twice
+  (`gaps_repeated` counts those), and an earlier gap it would now word
+  differently stays beside the new wording.
+- **The summary** is worked out again from the rows and gaps written; any
+  other key the earlier summary holds is copied. The `observation` block
+  keeps the earlier `dispositions_digest`, since the carried rows were judged
+  under that set; the record's `dispositions_digest` is the set the new rows
+  were judged under.
+- **Raw files** are copied, except the named plug-ins' own folders under
+  `raw/plugins/`.
+- **Refused**, leaving nothing behind: when no plug-in is named, or one twice;
+  when the earlier observation cannot be found, has not finished, has no
+  `observation` block or was taken of another target; when a name is not a
+  declared plug-in (a built-in collector is named as one), or is an
+  annotation, a coverage check or a late step, each of which reads the rest of
+  the observation; when a named plug-in's source is also another declared
+  plug-in's (named or not) or a built-in collector's; when a stored row was
+  merged across the line, or a new row would merge with a carried one; when a
+  named plug-in does not run (its input is missing); and when the directory
+  exists.
+- **The record.** `summary.json` gains `rerun`:
+
+  ```json
+  "rerun": {
+    "from_observation": "2030-01-31T0930Z",
+    "from_collected_at": "2030-01-31T09:30:00Z",
+    "plugins": ["disks"],
+    "rows_carried": 120,
+    "rows_dropped": {"disks": 2},
+    "rows_added": {"disks": 3},
+    "gaps_carried": 14,
+    "gaps_dropped": 1,
+    "gaps_added": ["plug-in `disks`: ..."],
+    "gaps_repeated": 0,
+    "annotation_gaps_not_carried": [],
+    "dispositions_digest": "sha256:...",
+    "raw_files_copied": 9,
+    "carried_rows_graded_differently": {"rows": 0, "by_source": {}, "by_field": {},
+                                         "sample": [], "merged_away": 0}
+  }
+  ```
+
+  A derived observation derived from again keeps the earlier record under
+  `from_rerun`. The `observation` block records `scan: false` and
+  `offline: true`, so `--carry-scan` refuses it and the
+  certificate-transparency cache (`ctcache.find`) passes over it: its answers
+  were fetched for the earlier observation, and its name gives its own date.
+  `bom.cdx.json` carries the property `takestock:derived_from`.
+
 ### 2. Normalise and grade (`normalise.py`, `policy.py`, `disposition.py`)
 
 `normalise.finalise` makes the run's rows one consistent set, in order:

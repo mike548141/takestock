@@ -42,8 +42,9 @@ observation or sent anywhere:
   caller sets another), or dated after the new one;
 * it was taken of another target, or of another organisation;
 * it was not a ``--scan`` observation (so it holds no probe rows), which
-  includes an observation that was itself a carry: a carry always reaches
-  back to the run that measured;
+  includes an observation that was itself a carry, or was derived from
+  another (:mod:`takestock.rerun`): a carry always reaches back to the run
+  that measured;
 * an active collector, or ``spf_senders``, failed in it, so its rows are not
   a complete measurement.
 
@@ -262,6 +263,7 @@ def load(ref: str | Path, target: dict, observations: Path, now: datetime,
 
     if block.get("scan") is not True:
         why = ("it was itself a carry" if summary.get(SUMMARY_KEY)
+               else "it was derived from an earlier observation" if summary.get("rerun")
                else "it was taken without --scan")
         raise CarryRefused("carry-not-scanned",
                            f"{stamp} holds no probe measurement to carry: {why}. Carry from "

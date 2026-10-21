@@ -9,6 +9,17 @@ command line or a file format, and its entry says how.
 
 ### Added
 
+- **`takestock rerun`**: derive a new observation from an earlier one,
+  reading only the named plug-ins again (`--from <observation> --plugin
+  <name>`, repeatable). Every other row is written exactly as it was stored,
+  with its own date and source; the named plug-ins' new rows take their
+  place. Nothing is looked up or probed. `summary.json` gains a `rerun`
+  record (the earlier observation, the plug-ins, rows and gaps carried,
+  dropped and added, and how many carried rows grading again would have
+  stored differently), and `bom.cdx.json` the property
+  `takestock:derived_from`. A derived observation is never carried by
+  `--carry-scan`, and its certificate-transparency answers are never reused
+  as recent ones.
 - **Readers library**: `vsphere_lists` takes `settings: {makers: <csv>}`, a
   table of device maker prefixes (`prefix`, `maker`, and optionally `array`)
   merged over the bundled ones. A row names a prefix's maker in the

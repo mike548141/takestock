@@ -181,6 +181,12 @@ Collectors come in three kinds:
   such a row; without it the carry is refused before anything is sent.
   `summary.json` records the carry under `carried_scan`. See
   [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#carrying-earlier-probe-rows).
+- `takestock rerun <target> --from <observation> --plugin <name>` derives a
+  new observation from an earlier one: every row is carried as it was
+  stored, except the named plug-ins' rows, which are read again from their
+  inputs. Nothing is looked up or probed. `summary.json` records the
+  observation it was derived from under `rerun`. See
+  [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#reading-named-plug-ins-again-rerunpy).
 - Probes that run inside a network each need their own named, dated record
   as well, and every host must be named one at a time. Ranges, wildcards and
   lists over a ceiling are refused, never cut short.
