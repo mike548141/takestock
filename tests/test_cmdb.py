@@ -877,6 +877,27 @@ def test_populations_are_held_side_by_side(built):
     assert all(p.contested and p.unit == "machines" for p in built.populations)
 
 
+def _discovery_count(tmp_path, value):
+    rows = cmdbfake.rows()
+    for row in rows:
+        if "discovered" in row["extra"]:
+            row["extra"]["discovered"] = value
+    register = cmdb.build(cmdbfake.write_observation(tmp_path, assets=rows))
+    return {p.instrument: p.count for p in register.populations}.get("Example discovery service")
+
+
+@pytest.mark.parametrize("value", [40, "40", " 40 ", "40\n"])
+def test_a_discovery_count_may_be_a_whole_number_written_as_text(tmp_path, value):
+    assert _discovery_count(tmp_path, value) == 40
+
+
+@pytest.mark.parametrize("value", ["forty", "40.0", "4 0", "-40", "", "\u0664\u0660", True, 40.0, None, [40]],
+                         ids=["word", "decimal", "spaced", "negative-text", "empty", "non-ascii-digits",
+                              "boolean", "float", "none", "list"])
+def test_anything_else_is_not_counted(tmp_path, value):
+    assert _discovery_count(tmp_path, value) is None
+
+
 def test_a_registered_source_strength_applies(tmp_path, monkeypatch):
     monkeypatch.setattr(cmdb, "_SOURCE_STRENGTH", {})
     cmdb.register_source_strength("example_agent", cmdb.REPORTED)

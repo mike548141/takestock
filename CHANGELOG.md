@@ -9,6 +9,10 @@ command line or a file format, and its entry says how.
 
 ### Added
 
+- **Configuration register**: a discovery source's machine count
+  (`extra.discovered`) may be a whole number written as text, such as
+  `"40"`, with surrounding spaces ignored; it is counted on the
+  population rows as a number is. Any other value is still not counted.
 - **Configuration register**: `cmdb: installed_on_from: [<source or plug-in>, ...]`
   in a target profile (or `installed_on_from=` to `build` and
   `build_register`) names the rows whose lists of hosts draw *installed on*,

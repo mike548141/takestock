@@ -501,9 +501,11 @@ third-party row does not say which machine made the lookup.
 Machines are counted once per instrument, and those counts are kept side by
 side, never averaged: one instrument's count is what it can see, not what
 exists. A software inventory counts the machines its rows name in
-`extra.installed_on`. A discovery source that reports how many machines exist is counted
-as `reported`. A final row counts every machine any instrument named, once.
-Where the counts differ, every row is marked contested.
+`extra.installed_on`. A discovery source that reports how many machines exist
+(`extra.discovered`, a whole number or a whole number written as text, such as
+`"40"`) is counted as `reported`; any other value is not counted. A final row
+counts every machine any instrument named, once. Where the counts differ,
+every row is marked contested.
 
 ### Governance
 

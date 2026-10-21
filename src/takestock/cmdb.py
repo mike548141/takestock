@@ -1227,6 +1227,21 @@ def plan_machines(plan: Mapping[str, Any]) -> list[dict[str, Any]]:
     return [out[k] for k in sorted(out)]
 
 
+_WHOLE_NUMBER = re.compile(r"[0-9]+")
+
+
+def _whole_number(value: Any) -> int | None:
+    """A count a row gives: a whole number, or one written as text (``"40"``,
+    surrounding spaces ignored); None for anything else, which is not counted."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and _WHOLE_NUMBER.fullmatch(value.strip()):
+        return int(value.strip())
+    return None
+
+
 def _source_names(names: Sequence[str] | None) -> tuple[str, ...] | None:
     """``installed_on_from`` checked: None, or a list or tuple of non-blank names.
 
@@ -1908,8 +1923,8 @@ class _Builder:
                 source = str(asset.get("source_name") or asset.get("source") or "")
                 per_source.setdefault(source, set()).update(named)
                 dates[source] = max(dates.get(source, ""), self._seen_at(asset))
-            discovered = (asset.get("extra") or {}).get("discovered")
-            if isinstance(discovered, int) and not isinstance(discovered, bool):
+            discovered = _whole_number((asset.get("extra") or {}).get("discovered"))
+            if discovered is not None:
                 rows.append(Population(
                     population="machines",
                     instrument=str(asset.get("source_name") or "discovery"),
