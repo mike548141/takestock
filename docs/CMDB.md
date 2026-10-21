@@ -65,6 +65,19 @@ observations/latest/cmdb/keys.jsonl
 - The recording date is the observation's own date when its directory is
   named by a time stamp, otherwise today. Rebuilding the same observation
   therefore gives the same register.
+- A derived observation (`takestock rerun`) holds rows read on different
+  dates: the rows it carries were read when the full observation it comes
+  from was taken, and the rows of the plug-ins it read again were read on its
+  own date. Each fact, key and relationship drawn from a row is dated by the
+  observation that read the row: a row a plug-in wrote (it names the plug-in
+  in `extra.plugin`) by the latest observation that read that plug-in again,
+  and every other row by the full observation, following a chain of derived
+  observations back to it. A row that gives its own `collected_at` keeps it
+  as the date the value was true. The register's own recording date, and
+  what the build says of the whole (the count of every machine, the classes
+  a machine is attributed to), take the full observation's date. A recording
+  date given to `build(..., recorded_at=)` is the recording date of every
+  fact; each row is still dated as true when it was read.
 - If `summary.json` gives a `total_assets` count that differs from the rows
   in `assets.json`, the build stops: the observation is incomplete.
 - The schema is read from `data/cmdb-schema.yaml` in the workspace if one is

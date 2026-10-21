@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from takestock import carry, cli, config, ctcache, observe, plugins, rerun
+from takestock import carry, cli, cmdb, config, ctcache, observe, plugins, rerun
 from takestock.disposition import load_dispositions_for_target, set_digest
 from takestock.model import CryptoAsset
 from takestock.plugins import Context, Plugin, StepResult
@@ -282,6 +282,21 @@ def test_a_derived_observation_can_be_derived_from_again(workspace):
     record = second.summary[rerun.SUMMARY_KEY]
     assert record["from_observation"] == first.observation.name
     assert record["from_rerun"]["from_observation"] == "2030-01-31T0930Z"
+
+
+def test_the_register_dates_each_fact_by_the_observation_that_read_its_row(workspace):
+    _base()
+    first = _rerun("disks")
+    second = _rerun("servers", base=first.observation, now=LATER + timedelta(days=1))
+    register = cmdb.build(second.observation)
+    recorded: dict[str, set[str]] = {}
+    for a in register.assertions:
+        if a.attribute == "hostname":
+            recorded.setdefault(str(a.value), set()).add(a.recorded_at)
+    assert recorded["laptop-01.example.test"] == {"2030-01-31"}
+    assert recorded["disk-01.example.test"] == {"2030-02-03"}
+    assert recorded["server-01.example.test"] == {"2030-02-04"}
+    assert register.recorded_at == "2030-01-31"
 
 
 # ── never mistaken for a fresh measurement ──

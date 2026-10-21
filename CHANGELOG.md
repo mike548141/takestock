@@ -19,7 +19,12 @@ command line or a file format, and its entry says how.
   stored differently), and `bom.cdx.json` the property
   `takestock:derived_from`. A derived observation is never carried by
   `--carry-scan`, and its certificate-transparency answers are never reused
-  as recent ones.
+  as recent ones. The configuration register built from one dates each
+  fact, key and relationship by the observation that read its row: a
+  carried row by the full observation it was read in, a re-read plug-in's
+  row by the observation that read it again, following a chain of derived
+  observations; the register's own date is the full observation's
+  (`takestock.cmdb.read_dates`).
 - **Readers library**: `vsphere_lists` takes `settings: {makers: <csv>}`, a
   table of device maker prefixes (`prefix`, `maker`, and optionally `array`)
   merged over the bundled ones. A row names a prefix's maker in the

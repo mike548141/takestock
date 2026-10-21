@@ -1231,6 +1231,53 @@ def _default_recorded_at(observation: Path) -> str:
     return date.today().isoformat()
 
 
+#: The ``summary.json`` key a derived observation carries (``takestock.rerun.SUMMARY_KEY``).
+DERIVED_KEY = "rerun"
+
+
+@dataclass(frozen=True)
+class ReadDates:
+    """When the rows of a derived observation were read.
+
+    ``held`` is the date of the full observation every carried row was read
+    in; ``reread`` maps each plug-in read again to the date of the derived
+    observation that last read it.
+    """
+
+    held: str
+    reread: dict[str, str]
+
+    def of(self, row: Mapping[str, Any]) -> str:
+        """The date the observation that read ``row`` was taken."""
+        plugin = str((row.get("extra") or {}).get("plugin") or "")
+        return self.reread.get(plugin, self.held)
+
+
+def read_dates(summary: Mapping[str, Any], stamp: str) -> ReadDates | None:
+    """When a derived observation's rows were read; None for an observation that is not derived.
+
+    ``stamp`` is the observation's own time stamp. A derived observation
+    (``takestock rerun``) carries the record of the one it was derived from,
+    which may be derived in turn, so the chain is followed back to the full
+    observation: a row a plug-in wrote is dated by the latest observation
+    that read that plug-in again, and every other row by the full one. A
+    plug-in row names its plug-in in ``extra.plugin``. None too when the
+    record names no earlier observation by a dated stamp.
+    """
+    record = summary.get(DERIVED_KEY)
+    if not isinstance(record, Mapping):
+        return None
+    reread: dict[str, str] = {}
+    day = stamp[:10]
+    while isinstance(record, Mapping):
+        if _ISO_DATE.match(day):
+            for name in record.get("plugins") or []:
+                reread.setdefault(str(name), day)
+        day = str(record.get("from_observation") or "")[:10]
+        record = record.get("from_rerun")
+    return ReadDates(held=day, reread=reread) if _ISO_DATE.match(day) else None
+
+
 # ── The builder ────────────────────────────────────────────────────────────
 
 
@@ -1240,19 +1287,32 @@ class _Builder:
         self.dir = Path(observation)
         self.schema = schema or load_schema()
         self.ledger = ledger or KeyLedger(self.schema)
-        self.recorded_at = _check_date(recorded_at or _default_recorded_at(self.dir),
-                                       "recorded_at")
         raw = (self.dir / "assets.json").read_bytes()
         rows = json.loads(raw)
         if not isinstance(rows, list):
             raise ValueError(f"{self.dir / 'assets.json'} is not a list of rows")
         self.assets: list[dict[str, Any]] = [r for r in rows if isinstance(r, dict)]
         summary_path = self.dir / "summary.json"
+        summary: dict[str, Any] = {}
         if summary_path.is_file():
-            total = json.loads(summary_path.read_text()).get("total_assets")
+            loaded = json.loads(summary_path.read_text())
+            summary = loaded if isinstance(loaded, dict) else {}
+            total = summary.get("total_assets")
             if isinstance(total, int) and total != len(self.assets):
                 raise ValueError(f"summary.json counts {total} assets and assets.json holds "
                                  f"{len(self.assets)}: the observation is incomplete")
+        # A derived observation holds rows read on more than one date: each
+        # row's facts are dated by the observation that read it (`_read_on`),
+        # and what the build says of the whole by the full observation's date.
+        block = summary.get("observation")
+        stamp = str((block if isinstance(block, dict) else {}).get("stamp") or self.dir.name)
+        self.read = read_dates(summary, stamp)
+        self._explicit = bool(recorded_at)
+        default = self.read.held if self.read else _default_recorded_at(self.dir)
+        self.recorded_at = _check_date(recorded_at or default, "recorded_at")
+        # The recording date of the fact in hand: a row's while its facts are
+        # asserted, the build's otherwise.
+        self._recording = self.recorded_at
         self.artefact = f"{self.dir.name}/assets.json"
         self.digest = "sha256:" + hashlib.sha256(raw).hexdigest()
         self.assertions: list[Assertion] = []
@@ -1264,8 +1324,11 @@ class _Builder:
         self._sources_by_machine: dict[str, set[tuple[str, str]]] = {}
         self._names: dict[str, str] = {}
         self._installs: dict[tuple[str, str], int] = {}
-        # (machine, listener) -> (strength, valid_at, actor) of the contains edge.
-        self._contains: dict[tuple[str, str], tuple[str, str, Actor]] = {}
+        # (machine, listener) -> (strength, valid_at, actor, recorded_at) of the contains edge.
+        self._contains: dict[tuple[str, str], tuple[str, str, Actor, str]] = {}
+        # A release, or a (release, machine) install -> the latest (read, recorded)
+        # dates of the rows that name it (`_note_read`).
+        self._edge_dates: dict[Any, tuple[str, str]] = {}
         self._release_of: dict[str, str] = {}
         self._environment_said: set[tuple[str, str]] = set()
         self._cert_history: dict[str, str] | None = None
@@ -1287,14 +1350,24 @@ class _Builder:
 
     # Keys
 
+    def _read_on(self, asset: Mapping[str, Any]) -> str:
+        """The date of the observation that read ``asset``: the recording date,
+        unless the observation is derived (:func:`read_dates`)."""
+        return self.read.of(asset) if self.read else self.recorded_at
+
+    def _recorded_on(self, asset: Mapping[str, Any]) -> str:
+        """The date a row's facts are recorded: the date it was read, unless a
+        recording date was given for the whole build."""
+        return self.recorded_at if self._explicit else self._read_on(asset)
+
     def _seen_at(self, asset: Mapping[str, Any]) -> str:
         collected = str(asset.get("collected_at") or "")
-        return collected if _ISO_DATE.match(collected) else self.recorded_at
+        return collected if _ISO_DATE.match(collected) else self._read_on(asset)
 
     def _named_key(self, kind: str, identifier: str, asset: Mapping[str, Any]) -> str:
         return self.ledger.key_for(
             [(kind, identifier)], source=str(asset.get("source") or ""),
-            seen_at=self._seen_at(asset), merged_at=self.recorded_at,
+            seen_at=self._seen_at(asset), merged_at=self._recorded_on(asset),
             reason=f"one row named both identifiers ({self.artefact})")
 
     def _machine_key(self, asset: Mapping[str, Any]) -> str | None:
@@ -1305,7 +1378,7 @@ class _Builder:
             return None
         return self.ledger.key_for(
             candidates, source=str(asset.get("source") or ""), seen_at=self._seen_at(asset),
-            merged_at=self.recorded_at,
+            merged_at=self._recorded_on(asset),
             reason=f"one row named both identifiers ({self.artefact})")
 
     def _key_of(self, asset: Mapping[str, Any]) -> str | None:
@@ -1333,7 +1406,7 @@ class _Builder:
             return []
         return [(name, self.ledger.key_for(
                     [("hostname", name)], source=str(asset.get("source") or ""),
-                    seen_at=self._seen_at(asset), merged_at=self.recorded_at,
+                    seen_at=self._seen_at(asset), merged_at=self._recorded_on(asset),
                     reason=f"one row named both identifiers ({self.artefact})"))
                 for name in _listed_hosts(asset)]
 
@@ -1454,7 +1527,7 @@ class _Builder:
         self.assertions.append(Assertion(
             item=key, attribute=attribute, value=value,
             evidence_strength=capped_strength(self.schema, attribute, strength),
-            valid_at=valid_at, recorded_at=self.recorded_at, actor=actor))
+            valid_at=valid_at, recorded_at=self._recording, actor=actor))
 
     def _check_code(self, attribute: str, value: Any, actor: Actor) -> None:
         """Refuse a value outside the attribute's vocabulary, if it has one."""
@@ -1473,16 +1546,18 @@ class _Builder:
                 self._check_code(attribute, str(extra[attribute]), actor)
 
     def _edge(self, kind: str, from_key: str, to_key: str, strength: str, valid_at: str,
-              actor: Actor, count: int = 1, qualifier: str = "", unit: str = "") -> None:
+              actor: Actor, count: int = 1, qualifier: str = "", unit: str = "",
+              recorded_at: str = "") -> None:
         if kind not in self.schema.relationships:
             raise SchemaError(f"relationship {kind!r} is not declared in {SCHEMA_FILE}")
         self.edges.append(Edge(kind=kind, from_key=from_key, to_key=to_key,
                                evidence_strength=strength, valid_at=valid_at,
-                               recorded_at=self.recorded_at, actor=actor, count=count,
-                               qualifier=qualifier, unit=unit))
+                               recorded_at=recorded_at or self._recording, actor=actor,
+                               count=count, qualifier=qualifier, unit=unit))
 
     def assert_facts(self) -> None:
         for asset in self.assets:
+            self._recording = self._recorded_on(asset)
             key = self._key_of(asset)
             extra = asset.get("extra") or {}
             seen = self._seen_at(asset)
@@ -1500,7 +1575,7 @@ class _Builder:
                 continue
             for attribute, value in self._attributes(asset, extra).items():
                 self._say(key, attribute, value, strength, seen, actor)
-            self._say_environment(key, extra)
+            self._say_environment(key, extra, self._read_on(asset))
             if asset.get("data_state") == "third-party" and str(extra.get("vendor") or "").strip():
                 self._say(key, "vendor_name", str(extra["vendor"]).strip(),
                           DECLARED if extra.get("declared") is True else INFERRED, seen, actor)
@@ -1514,6 +1589,7 @@ class _Builder:
                 self._machine_facts(key, asset, extra, strength, seen, actor)
             if _is_machine_row(asset):
                 self._software_facts(key, asset, strength, seen, actor)
+        self._recording = self.recorded_at
         self._plan_facts()
 
     def _plan_facts(self) -> None:
@@ -1553,7 +1629,7 @@ class _Builder:
             held = self._contains.get((key, listener))
             if held is None or ((_STRENGTH_RANK[strength], _invert_date(seen))
                                 < (_STRENGTH_RANK[held[0]], _invert_date(held[1]))):
-                self._contains[(key, listener)] = (strength, seen, actor)
+                self._contains[(key, listener)] = (strength, seen, actor, self._recording)
 
     def _software_facts(self, key: str | None, asset: Mapping[str, Any], strength: str,
                         seen: str, actor: Actor) -> None:
@@ -1579,10 +1655,18 @@ class _Builder:
             if asset.get(src):
                 self._say(release, attribute, str(asset[src]), DECLARED, seen, actor)
         self._release_of[release] = product
+        self._note_read(release, asset)
         machines = [key] if key is not None and self._is_hardware(key) else []
         machines += [m for _, m in listed if m not in machines]
         for machine in machines:
             self._installs[(release, machine)] = self._installs.get((release, machine), 0) + 1
+            self._note_read((release, machine), asset)
+
+    def _note_read(self, what: Any, asset: Mapping[str, Any]) -> None:
+        """Keep the latest (read, recorded) dates of the rows behind an edge the
+        fold draws, so the edge is dated by them and not by the build."""
+        dates = (self._read_on(asset), self._recording)
+        self._edge_dates[what] = max(self._edge_dates.get(what, dates), dates)
 
     def _release_facts(self, asset: Mapping[str, Any], entry: Mapping[str, Any],
                        strength: str, seen: str, actor: Actor) -> None:
@@ -1627,11 +1711,12 @@ class _Builder:
                 self._say(release, "exploited_defects_past_due", past_due, strength, as_of,
                           actor)
         self._release_of[release] = product
+        self._note_read(release, asset)
 
     def _is_hardware(self, key: str) -> bool:
         return self.schema.classes.get(self._class.get(key, ""), {}).get("family") == "Hardware"
 
-    def _say_environment(self, key: str, extra: Mapping[str, Any]) -> None:
+    def _say_environment(self, key: str, extra: Mapping[str, Any], read_on: str) -> None:
         env = extra.get("environment")
         if not isinstance(env, Mapping):
             return
@@ -1647,7 +1732,7 @@ class _Builder:
         self._environment_said.add(said)
         valid_at = str(env.get("valid_at") or "")
         self._say(key, "environment", value, INFERRED,
-                  valid_at if _ISO_DATE.match(valid_at) else self.recorded_at,
+                  valid_at if _ISO_DATE.match(valid_at) else read_on,
                   Actor(kind=COLLECTOR, name=str(env.get("source_name") or "environment derivation"),
                         artefact=self.artefact, artefact_digest=self.digest,
                         source=str(env.get("source") or "")))
@@ -1735,14 +1820,21 @@ class _Builder:
     def fold(self) -> None:
         actor = Actor(kind=COLLECTOR, name="configuration register build",
                       artefact=self.artefact, artefact_digest=self.digest, source="cmdb")
-        for (machine, listener), (strength, seen, seen_by) in sorted(self._contains.items()):
-            self._edge("contains", machine, listener, strength, seen, seen_by)
+        for (machine, listener), (strength, seen, seen_by, recorded) in sorted(
+                self._contains.items()):
+            self._edge("contains", machine, listener, strength, seen, seen_by,
+                       recorded_at=recorded)
+        build = (self.recorded_at, self.recorded_at)
         for (release, machine), copies in sorted(self._installs.items()):
-            self._edge("installed-on", release, machine, MEASURED, self.recorded_at, actor,
+            read_on, recorded = self._edge_dates.get((release, machine), build)
+            self._edge("installed-on", release, machine, MEASURED, read_on, actor,
                        count=copies, unit=_INSTALLED_ON_UNIT,
-                       qualifier="An edge with a count; no item is created per copy.")
+                       qualifier="An edge with a count; no item is created per copy.",
+                       recorded_at=recorded)
         for release, product in sorted(self._release_of.items()):
-            self._edge("release-of", release, product, INFERRED, self.recorded_at, actor)
+            read_on, recorded = self._edge_dates.get(release, build)
+            self._edge("release-of", release, product, INFERRED, read_on, actor,
+                       recorded_at=recorded)
         self._member_of(actor)
 
     def _member_of(self, actor: Actor) -> None:
@@ -1836,7 +1928,11 @@ def build(observation: Path | str, *, ledger: KeyLedger | None = None,
 
     ``recorded_at`` defaults to the observation's own date when its directory
     is named by a time stamp, so rebuilding the same observation gives the
-    same register. ``ip_plan`` names an IP address plan's JSON (as
+    same register. A derived observation (``takestock rerun``) holds rows read
+    on different dates, so each row's facts, keys and edges are dated by the
+    observation that read the row (:func:`read_dates`), and the register's
+    own date is the full observation's; a ``recorded_at`` given here is the
+    recording date of every fact. ``ip_plan`` names an IP address plan's JSON (as
     ``takestock ipam`` writes it); when given, every machine it names at an
     address is an item too (:func:`plan_machines`). It is never read unless
     named. ``schema_overlay`` names a schema overlay whose wording is merged
