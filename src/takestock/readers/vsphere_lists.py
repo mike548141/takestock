@@ -56,6 +56,15 @@ datastore whose device carries a storage-array maker's prefix
 on an array; one with any other prefix is counted as on disks inside a host;
 one with no prefix as not placed. Datastores on disks inside hosts are a
 coverage gap: the export does not say whether those disks are encrypted.
+A prefix no table names is shown as the prefix itself. The declaration's
+``settings`` may name a CSV maker table with ``makers:`` (columns ``prefix``,
+``maker`` and, optionally, ``array``), whose rows are merged over the bundled
+tables: a row names a prefix's maker, replacing any bundled name, and
+``array`` (``yes``, ``true``, ``y`` or ``1``; ``no``, ``false``, ``n`` or ``0``;
+in any case) says whether that maker's prefix is counted on an array; left
+blank, a bundled prefix keeps its placement and any other is counted as on
+disks inside a host. A table without the ``prefix`` and ``maker`` columns is
+not used.
 
 **Dates.** The exports carry no date, so every row is dated by the oldest
 file's modification date, and certificate expiry is counted from that date,
@@ -165,6 +174,13 @@ DEVICE_MAKERS: dict[str, str] = {
 }
 
 _NAA = re.compile(r"naa\.[56]([0-9a-f]{6})")
+_OUI = re.compile(r"[0-9a-f]{6}")
+_OUI_SEPARATORS = str.maketrans("", "", ":-. ")
+#: The columns a maker table must have; ``array`` is optional.
+MAKER_COLUMNS = frozenset({"prefix", "maker"})
+#: How a maker table may write ``array``, in any case.
+_YES = frozenset({"yes", "true", "y", "1"})
+_NO = frozenset({"no", "false", "n", "0"})
 _SIZE = re.compile(r"([\d.,]+)\s*([KMGTP]B)", re.IGNORECASE)
 _GB_PER = {"KB": 1 / 1024 ** 2, "MB": 1 / 1024, "GB": 1.0, "TB": 1024.0, "PB": 1024.0 ** 2}
 
@@ -304,6 +320,89 @@ def _lifecycle_table(ctx: Context) -> tuple[dict, coverage.Gap | None]:
             nature=coverage.NO_DATA)
 
 
+# ── makers ──
+
+def oui(text: str) -> str:
+    """A maker prefix as a table writes it (``00A098``, ``00:a0:98``, ``00-A0-98``),
+    folded to six lower-case hex digits, or "" when it is not one."""
+    folded = str(text or "").strip().casefold().translate(_OUI_SEPARATORS)
+    return folded if _OUI.fullmatch(folded) else ""
+
+
+def merge_makers(rows: list[dict[str, str]]) -> tuple[dict[str, str], dict[str, str], list[str]]:
+    """The array and other makers' tables with ``rows`` merged over the bundled ones.
+
+    Each row is a maker table's data row, keyed by folded heading and counted
+    from 1 after the heading row. A row replaces
+    the bundled name of its prefix; its ``array`` value, when given, moves the
+    prefix between the two tables. The third value lists the rows that could
+    not be used, each with why.
+    """
+    arrays, devices = dict(ARRAY_MAKERS), dict(DEVICE_MAKERS)
+    refused: list[str] = []
+    for n, r in enumerate(rows, start=1):
+        raw = field(r, "prefix")
+        name = " ".join(field(r, "maker").split())
+        flag = field(r, "array").casefold()
+        prefix = oui(raw)
+        if not raw and not name:
+            continue
+        if not prefix:
+            refused.append(f"row {n}: {raw or '(blank)'} is not a six-digit maker prefix")
+            continue
+        if not name:
+            refused.append(f"row {n}: no maker named for {prefix}")
+            continue
+        if flag and flag not in _YES | _NO:
+            refused.append(f"row {n}: array is {flag!r}, not a yes or no value")
+            continue
+        on_array = flag in _YES if flag else prefix in arrays
+        arrays.pop(prefix, None)
+        devices.pop(prefix, None)
+        (arrays if on_array else devices)[prefix] = name
+    return arrays, devices, refused
+
+
+def _maker_table_headings(path: Path) -> set[str]:
+    """The folded headings of a maker table's first row."""
+    with path.open(encoding="utf-8-sig", newline="") as fh:
+        return {heading(h) for h in next(csv.reader(fh), [])}
+
+
+def _maker_tables(ctx: Context) -> tuple[dict[str, str], dict[str, str], coverage.Gap | None]:
+    named = (ctx.settings or {}).get("makers")
+    if not named:
+        return dict(ARRAY_MAKERS), dict(DEVICE_MAKERS), None
+    path = ctx.inbox_path(str(named))
+    try:
+        missing = sorted(MAKER_COLUMNS - _maker_table_headings(path))
+        rows = read_list(path)
+        problem = (f"has no {' or '.join(missing)} column: {path.name}" if missing else "")
+    except (OSError, UnicodeDecodeError, csv.Error) as exc:
+        problem = f"could not be read: {path.name} ({exc})"
+    if problem:
+        return dict(ARRAY_MAKERS), dict(DEVICE_MAKERS), coverage.gap(
+            coverage.NOT_COLLECTED,
+            f"the maker table named in the vsphere_lists settings {problem}",
+            impact_kind=coverage.NARROWS_CONFIDENCE,
+            impact=("Datastores are placed and their makers named from the bundled tables "
+                    "alone."),
+            harvest=("Correct the makers: setting or the table's heading row, or remove the "
+                     "setting to use the bundled tables."),
+            nature=coverage.NO_DATA)
+    arrays, devices, refused = merge_makers(rows)
+    if not refused:
+        return arrays, devices, None
+    return arrays, devices, coverage.gap(
+        coverage.NOT_COLLECTED,
+        f"rows of the maker table {path.name} that could not be used: " + "; ".join(refused),
+        impact_kind=coverage.NARROWS_CONFIDENCE,
+        impact=("Those prefixes are placed and named from the bundled tables, or shown as "
+                "the prefix itself."),
+        harvest="Correct those rows of the maker table.",
+        nature=coverage.NO_DATA)
+
+
 # ── the step ──
 
 def read(ctx: Context) -> StepResult:
@@ -368,7 +467,10 @@ def read(ctx: Context) -> StepResult:
         out += _site_rows(site, members, source_name, stamp, ctx)
     out += _guest_os_rows(machines, source_name, stamp, dates_text, table)
     out += _host_rows(lists[HOST_LIST], source_name, stamp, dates_text, table)
-    out += _datastore_rows(lists[DATASTORE_LIST], source_name, stamp, gaps)
+    arrays, devices, makers_gap = _maker_tables(ctx)
+    if makers_gap is not None:
+        gaps.append(makers_gap)
+    out += _datastore_rows(lists[DATASTORE_LIST], source_name, stamp, gaps, arrays, devices)
     out.append(_scope_row(lists, tally, source_name, stamp, dates_text))
     return StepResult(records=out, gaps=gaps)
 
@@ -558,7 +660,8 @@ def _host_rows(hosts: list[tuple[str, Path, Rows]], source_name: str, stamp: str
 
 
 def _datastore_rows(stores: list[tuple[str, Path, Rows]], source_name: str, stamp: str,
-                    gaps: list[coverage.Gap]) -> list[CryptoAsset]:
+                    gaps: list[coverage.Gap], arrays: dict[str, str],
+                    devices: dict[str, str]) -> list[CryptoAsset]:
     rows = []
     in_hosts: list[tuple[str, int, int]] = []
     for site, _p, entries in stores:
@@ -577,12 +680,12 @@ def _datastore_rows(stores: list[tuple[str, Path, Rows]], source_name: str, stam
             if field(r, "Type").casefold() == "vvol":
                 on_array.append(r)
                 makers["a virtual-volume container on a storage array"] += 1
-            elif prefix in ARRAY_MAKERS:
+            elif prefix in arrays:
                 on_array.append(r)
-                makers[ARRAY_MAKERS[prefix]] += 1
+                makers[arrays[prefix]] += 1
             elif prefix:
                 elsewhere.append(r)
-                makers[DEVICE_MAKERS.get(prefix, f"maker prefix {prefix}")] += 1
+                makers[devices.get(prefix, f"maker prefix {prefix}")] += 1
             else:
                 unplaced.append(r)
                 makers["a device identifier with no maker prefix"] += 1

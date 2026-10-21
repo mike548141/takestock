@@ -9,6 +9,14 @@ command line or a file format, and its entry says how.
 
 ### Added
 
+- **Readers library**: `vsphere_lists` takes `settings: {makers: <csv>}`, a
+  table of device maker prefixes (`prefix`, `maker`, and optionally `array`)
+  merged over the bundled ones. A row names a prefix's maker in the
+  datastore notes, replacing any bundled name, and `array` (`yes`, `true`,
+  `y` or `1`; `no`, `false`, `n` or `0`) says whether datastores on it
+  count as on a storage array. Rows that cannot be used are a coverage gap;
+  so is a table that cannot be read or lacks the `prefix` or `maker`
+  columns, and the bundled tables are then used alone.
 - **Readers library**: three readers for VMware vSphere estates.
   `vmware` reads a PowerCLI CSV of VM Encryption and vSAN encryption state,
   one row per machine or cluster: a vSAN cluster with encryption off is

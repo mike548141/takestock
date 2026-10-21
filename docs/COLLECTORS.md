@@ -1514,13 +1514,42 @@ storage-array maker's prefix (`ARRAY_MAKERS` in
 virtual-volume container counts as on an array; any other prefix counts as
 disks inside a host, and none as not placed. Datastores on disks inside
 hosts are a coverage gap, because the list does not say whether those disks
-encrypt.
+encrypt. The notes name each prefix's maker from the bundled tables
+(`ARRAY_MAKERS` and `DEVICE_MAKERS`), or show the prefix itself when neither
+names it.
+
+A maker table of your own, named with `makers:` in `settings:`, is merged
+over the bundled tables. It is a CSV with a heading row: `prefix` (six hex
+digits, with or without `:` or `-` between pairs), `maker` (the name the
+notes give), and, optionally, `array` (whether datastores on that prefix
+count as on an array: `yes`, `true`, `y` or `1` for yes, `no`, `false`, `n`
+or `0` for no, in any case). A row replaces any bundled name for its prefix;
+with `array` left blank, a bundled prefix keeps its placement and any other
+counts as disks inside a host. Rows that cannot be used are listed in a
+coverage gap and left out. A table whose heading row lacks `prefix` or
+`maker`, or that cannot be read, is a coverage gap, and the bundled tables
+are used alone.
+
+```yaml
+plugins:
+  - name: vsphere_lists
+    input: inbox/vsphere
+    settings: {makers: data/my-makers.csv}
+```
+
+```csv
+prefix,maker,array
+00:11:22,Example Storage Ltd,yes
+334455,Example Disks Ltd,
+```
 
 **Dates.** The exports carry no date, so every row is dated by the oldest
 file's modification date, and certificate expiry is counted from that date.
 
-**Coverage gaps.** An export that cannot be read; a lifecycle table named in
-`settings:` that cannot be read; datastores on disks inside hosts. With no
+**Coverage gaps.** An export that cannot be read; a lifecycle table or maker
+table named in `settings:` that cannot be read; a maker table without the
+`prefix` and `maker` columns; maker table rows that cannot be used;
+datastores on disks inside hosts. With no
 input, or none of the three lists in the folder, nothing is written.
 
 **Cannot see.** The key provider setting itself; which datastore holds which

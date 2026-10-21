@@ -215,6 +215,118 @@ def test_datastores_by_what_backs_them(result):
     assert coverage.nature_of(gap) == coverage.LOW_FIDELITY
 
 
+def _with_makers(tmp_path: Path, text: str) -> StepResult:
+    table = tmp_path / "makers.csv"
+    table.write_text(text, encoding="utf-8")
+    return vsphere_lists.read(_ctx(_copy(tmp_path), {"makers": str(table)}))
+
+
+def test_with_no_maker_table_an_unknown_prefix_is_shown_as_itself(result):
+    notes = _by_name(result.records)["Datastores, SiteA vCenter"].notes
+    assert "1 on maker prefix abcdef" in notes
+    assert "1 on Samsung Electronics Co., Ltd." in notes
+
+
+def test_a_maker_table_names_a_prefix_and_keeps_the_bundled_names(tmp_path):
+    out = _with_makers(tmp_path, "prefix,maker\nABCDEF,Example Disk Works\n")
+    ds = _by_name(out.records)["Datastores, SiteA vCenter"]
+    assert "1 on Example Disk Works" in ds.notes
+    assert "maker prefix abcdef" not in ds.notes
+    assert "1 on Samsung Electronics Co., Ltd." in ds.notes
+    assert "1 on IBM Corp" in ds.notes
+    assert (ds.extra["on_array"], ds.extra["off_array"]) == ("3", "2")
+    assert not [g for g in out.gaps if "maker table" in str(g)]
+
+
+def test_a_maker_table_row_replaces_a_bundled_name(tmp_path):
+    out = _with_makers(tmp_path, "prefix,maker\n00:25:38,Example Flash Ltd\n")
+    ds = _by_name(out.records)["Datastores, SiteA vCenter"]
+    assert "1 on Example Flash Ltd" in ds.notes
+    assert "Samsung" not in ds.notes
+    assert (ds.extra["on_array"], ds.extra["off_array"]) == ("3", "2")
+
+
+def test_the_array_column_puts_a_prefix_on_an_array(tmp_path):
+    out = _with_makers(tmp_path, "prefix,maker,array\nabcdef,Example Array Co,yes\n")
+    ds = _by_name(out.records)["Datastores, SiteA vCenter"]
+    assert (ds.extra["on_array"], ds.extra["off_array"]) == ("4", "1")
+    assert "1 on Example Array Co" in ds.notes
+    [gap] = [g for g in out.gaps if "datastores are on disks inside hosts" in str(g)]
+    assert str(gap).startswith("1 datastores")
+
+
+def test_the_array_column_takes_a_bundled_prefix_off_the_array(tmp_path):
+    out = _with_makers(tmp_path, "prefix,maker,array\n00-A0-98,Example Filer,no\n")
+    ds = _by_name(out.records)["Datastores, SiteA vCenter"]
+    assert (ds.extra["on_array"], ds.extra["off_array"]) == ("2", "3")
+    assert "1 on Example Filer" in ds.notes and "NetApp" not in ds.notes
+
+
+def test_a_blank_array_value_keeps_a_bundled_prefix_on_the_array(tmp_path):
+    out = _with_makers(tmp_path, "prefix,maker,array\n00a098,Example Filer,\n")
+    ds = _by_name(out.records)["Datastores, SiteA vCenter"]
+    assert ds.extra["on_array"] == "3"
+    assert "1 on Example Filer" in ds.notes
+
+
+def test_maker_table_rows_that_cannot_be_used_are_a_gap(tmp_path):
+    out = _with_makers(tmp_path, "prefix,maker,array\n"
+                                 "abcdef,Example Disk Works,\n"
+                                 "abc,Too Short,\n"
+                                 "002538,,\n"
+                                 "005076,Example Maker,maybe\n")
+    ds = _by_name(out.records)["Datastores, SiteA vCenter"]
+    assert "1 on Example Disk Works" in ds.notes
+    assert "1 on Samsung Electronics Co., Ltd." in ds.notes and "1 on IBM Corp" in ds.notes
+    [gap] = [g for g in out.gaps if "maker table" in str(g)]
+    assert "row 2: abc is not a six-digit maker prefix" in str(gap)
+    assert "row 3: no maker named for 002538" in str(gap)
+    assert "row 4: array is 'maybe', not a yes or no value" in str(gap)
+    assert coverage.kind_of(gap) == coverage.NOT_COLLECTED
+
+
+@pytest.mark.parametrize("text", [
+    "oui,vendor\nabcdef,Example Disk Works\n",
+    "prefix,name\nabcdef,Example Disk Works\n",
+    "",
+])
+def test_a_maker_table_without_its_two_columns_is_a_gap_and_the_bundled_tables_serve(
+        tmp_path, text):
+    out = _with_makers(tmp_path, text)
+    ds = _by_name(out.records)["Datastores, SiteA vCenter"]
+    assert "1 on maker prefix abcdef" in ds.notes
+    assert "1 on Samsung Electronics Co., Ltd." in ds.notes
+    [gap] = [g for g in out.gaps if "maker table" in str(g)]
+    assert "maker table named in the vsphere_lists settings has no" in str(gap)
+    assert coverage.kind_of(gap) == coverage.NOT_COLLECTED
+
+
+def test_the_array_column_reads_its_other_spellings(tmp_path):
+    out = _with_makers(tmp_path, "Prefix,Maker,Array\nabcdef,Example Array Co,TRUE\n"
+                                 "00a098,Example Filer,0\n")
+    ds = _by_name(out.records)["Datastores, SiteA vCenter"]
+    assert (ds.extra["on_array"], ds.extra["off_array"]) == ("3", "2")
+    assert "1 on Example Array Co" in ds.notes and "1 on Example Filer" in ds.notes
+    assert not [g for g in out.gaps if "maker table" in str(g)]
+
+
+def test_a_maker_table_that_cannot_be_read_is_a_gap_and_the_bundled_tables_serve(tmp_path):
+    out = vsphere_lists.read(_ctx(_copy(tmp_path), {"makers": str(tmp_path / "none.csv")}))
+    ds = _by_name(out.records)["Datastores, SiteA vCenter"]
+    assert "1 on maker prefix abcdef" in ds.notes
+    texts = [str(g) for g in out.gaps]
+    assert any("maker table named in the vsphere_lists settings could not be read" in t
+               for t in texts)
+
+
+@pytest.mark.parametrize(("text", "prefix"), [
+    ("00A098", "00a098"), ("00:a0:98", "00a098"), ("00-A0-98", "00a098"), (" 00a098 ", "00a098"),
+    ("00a09", ""), ("00a0981", ""), ("zz0098", ""), ("", ""),
+])
+def test_oui(text, prefix):
+    assert vsphere_lists.oui(text) == prefix
+
+
 @pytest.mark.parametrize(("device", "prefix"), [
     ("naa.600a0980000000000000000000000002", "00a098"),
     ("NAA.50025380000000A1", "002538"),
