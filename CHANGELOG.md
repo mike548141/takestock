@@ -9,6 +9,26 @@ command line or a file format, and its entry says how.
 
 ### Added
 
+- **Readers library: six Microsoft Entra readers.** Each runs when a profile
+  names it in `plugins:`, with `input:` and `settings:` naming the exports
+  (`docs/COLLECTORS.md`, "The Microsoft Entra readers"). `entra_signins`
+  reads the interactive sign-in log, several downloads merged, with the
+  directory role assignments: whether each role was used, successful
+  single-factor sign-ins by role holders (a failed or interrupted attempt is
+  not counted as either), applications with sign-in attempts that had no
+  Conditional Access policy in scope, legacy flows and legacy clients. `entra_auth_methods`
+  reads the sign-in logs' authentication details: the share of second checks
+  that resist phishing, and app passwords. `entra_workload_signins` reads the
+  application, managed identity and non-interactive sign-in logs:
+  applications signing in with a client secret. `entra_audit` reads the
+  audit log, and a download filtered to role management: how each role was
+  granted, activated and removed, and repeating failures.
+  `entra_privileged_groups` reads the membership of groups holding roles and
+  counts everyone who can act with a role once. `entra_app_credentials` reads
+  CSVs of application secrets and certificates and grades their lifetimes
+  against NIST SP 800-57's cryptoperiods. A download cut short at a row limit
+  is recognised from its row count and said to be. Thresholds and name
+  patterns are settings with stated defaults.
 - **Configuration register**: a discovery source's machine count
   (`extra.discovered`) may be a whole number written as text, such as
   `"40"`, with surrounding spaces ignored; it is counted on the

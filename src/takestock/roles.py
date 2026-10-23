@@ -415,3 +415,122 @@ def dns_zone_services(services: int) -> str:
     """Outside services the organisation's DNS records name."""
     return (f"Outside services the organisation's DNS records name — {services} — through "
             f"ownership proofs and pointers to their hosts")
+
+
+# ── Microsoft Entra: sign-ins, roles, audit and application credentials ──
+
+def signin_assignment_usage(holders: int) -> str:
+    """Whether the holders of one directory role used it."""
+    return (f"Whether the {holders} account(s) or group(s) holding one administrator role "
+            "used it in the period read")
+
+
+def signin_unmeasurable(role_count: int) -> str:
+    """Directory roles held only by groups or service principals."""
+    return (f"{role_count} administrator role(s) held only by groups or service principals, "
+            "whose use a sign-in log cannot show")
+
+
+def signin_policy_coverage(uncovered: int) -> str:
+    """An application with sign-in attempts no Conditional Access policy covered."""
+    return (f"One application with sign-in attempts that had no access policy in scope, "
+            f"{uncovered} of them")
+
+
+def legacy_signin_flow(count: int) -> str:
+    """A legacy sign-in flow that cannot ask for a second check."""
+    return f"An older way of signing in that cannot ask for a second check, used {count} time(s)"
+
+
+def legacy_client_signins(count: int) -> str:
+    """Sign-ins from mail and desktop clients that cannot ask for a second check."""
+    return (f"Sign-ins from older mail and desktop clients that cannot ask for a second check, "
+            f"{count} of them")
+
+
+def signin_unmatched_names(accounts: int) -> str:
+    """Accounts named like administrator accounts that hold no directory role."""
+    return (f"{accounts} account(s) named like administrator accounts that hold no directory "
+            "role in the roster read")
+
+
+def signin_scope() -> str:
+    """The scope row for a sign-in log."""
+    return "What the sign-in log covers, over what period, and what it cannot show"
+
+
+def auth_method_mix(population: str) -> str:
+    """The mix of sign-in checks a population used."""
+    return f"Which checks people used to prove who they were, across the {population} read"
+
+
+def app_password_signins(count: int) -> str:
+    """Sign-ins where an app password stood in for the second check."""
+    return (f"Sign-ins where a fixed app password stood in for the second check, {count} "
+            "time(s)")
+
+
+def workload_signin_credential(kind: str) -> str:
+    """An application signing in as itself."""
+    return f"An application that signs in as itself, with no person present, using {kind}"
+
+
+def delegated_signin_credential(kind: str) -> str:
+    """An application acting for signed-in people, proving its own identity."""
+    return f"An application acting for signed-in people that proves its own identity with {kind}"
+
+
+def workload_signin_scope(population: str) -> str:
+    """The scope row for an application or managed identity sign-in log."""
+    return f"What the sign-in log of {population} covers, over what period, and what it cannot show"
+
+
+def privileged_group(role_count: int, members: int) -> str:
+    """A group that holds directory roles."""
+    held = "them" if role_count > 1 else "it"
+    return (f"A group holding {role_count} administrator role(s): each of its {members} "
+            f"member(s) can act with {held}")
+
+
+def privileged_population() -> str:
+    """Everyone who can act with a directory role."""
+    return ("Everyone who can act with an administrator role in the directory, counted once "
+            "whether the role is theirs directly or through a group")
+
+
+def privilege_history(activations: int, standing: int) -> str:
+    """How one directory role was granted over the period read."""
+    if standing:
+        return f"How one administrator role was granted: {standing} time(s) with no end date"
+    return (f"How one administrator role was granted: {activations} time(s) on demand, each "
+            "for a limited period")
+
+
+def failing_automation(subjects: int) -> str:
+    """An automated directory job that keeps failing."""
+    return (f"An automated job that keeps failing, holding up {subjects} person or object "
+            "record(s)")
+
+
+def audit_scope() -> str:
+    """The scope row for a directory audit log."""
+    return "What the directory's record of changes covers, over what period, and what it cannot show"
+
+
+def application_credential(kind_word: str, directory_write: bool = False) -> str:
+    """A secret or certificate an application signs in with."""
+    what = {"secret": "A client secret", "certificate": "A certificate"}.get(
+        kind_word, "A credential")
+    able = ", and that can change what the directory holds" if directory_write else ""
+    return f"{what} an application uses to sign in to the directory as itself{able}"
+
+
+def application_credential_absent(directory_write: bool = False) -> str:
+    """An application listed with no credential of its own."""
+    able = " that can change what the directory holds" if directory_write else ""
+    return f"An application{able}, with no secret or certificate of its own in the export"
+
+
+def application_credential_scope() -> str:
+    """The scope row for an application credential export."""
+    return "What the export of applications' sign-in credentials covers, and what it cannot show"

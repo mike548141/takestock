@@ -966,6 +966,12 @@ plugins:
 | `vmware` | `general` | A CSV of vSphere VM Encryption and vSAN encryption state, one row per virtual machine or vSAN cluster, written with PowerCLI | none: name it with `input:` |
 | `rvtools` | `general` | RVTools workbooks: virtual machines' firmware and secure boot, configured guest types and ESXi versions (no encryption data) | none: name a workbook or a folder with `input:` |
 | `vsphere_lists` | `general` | The vSphere Client's exported lists of virtual machines, hosts and datastores: VM encryption, virtual TPM, virtualisation-based security, guest types, ESXi versions, host certificate expiry and what backs each datastore | none: name the folder with `input:` |
+| `entra_signins` | `general` | Microsoft Entra interactive sign-in logs with the directory role assignments: whether each role was used, single-factor sign-ins, applications outside Conditional Access, legacy flows and clients | none: name it with `input:` |
+| `entra_auth_methods` | `general` | Microsoft Entra sign-in logs' authentication details: the mix of sign-in checks, phishing-resistant or not, and app passwords | none: name it with `input:` |
+| `entra_workload_signins` | `general` | Microsoft Entra application, managed identity and non-interactive sign-in logs: applications signing in with a client secret, legacy clients | none: name it with `input:` |
+| `entra_audit` | `general` | The Microsoft Entra audit log: how directory roles were granted and removed, and repeating failures | none: name it with `input:` |
+| `entra_privileged_groups` | `general` | The membership of groups holding directory roles, with the role assignments: everyone who can act with a role, counted once | none: name it with `input:` or `settings: members:` |
+| `entra_app_credentials` | `general` | CSVs of Microsoft Entra application credentials: client secret or certificate, lifetime, expiry and permissions | none: name it with `input:` |
 
 A reader with no default input still runs when the profile gives it none,
 and records in its own coverage gap that no export was read. A profile that
@@ -1555,3 +1561,339 @@ input, or none of the three lists in the folder, nothing is written.
 **Cannot see.** The key provider setting itself; which datastore holds which
 machine's disks; whether any storage encrypts; anything inside a guest; and a
 host certificate's key, algorithm and issuer.
+
+### The Microsoft Entra readers
+
+Six readers read what Microsoft Entra ID records about sign-ins, directory
+roles and application credentials. Four read the activity logs the Microsoft
+Entra admin centre downloads as CSV (Monitoring & health → Sign-in logs, or
+Audit logs → Download; Microsoft's *How to download logs in Microsoft Entra
+ID*). A download holds up to 100,000 sign-in records or 250,000 audit
+records; a file holding exactly one of the round counts the readers know
+(1,000, 5,000, 10,000, 25,000, 50,000, 100,000, 250,000, 500,000 or
+1,000,000) is read as cut short at a limit, and every row and scope row says
+so. Two read CSV exports written with Microsoft Graph PowerShell, in the
+columns below.
+
+Every reader is `general` and has no default input. With none given it still
+runs and records in its own coverage gap what was not read. A setting that
+names a file may be a path, a list of paths, or a pattern (`*`, `?` or `[`
+in the file name); where one file is wanted, the last match in name order is
+read, so a date in each file's name picks the newest. Rows count accounts
+rather than list them. The one place a person's name could appear is a
+failure message in `entra_audit` (see there).
+
+```yaml
+plugins:
+  - name: entra_signins
+    input: inbox/entra/interactive-signins.csv
+    settings:
+      also: [inbox/entra/interactive-signins-2030-*.csv]
+      roles: [inbox/entra/roles-active.csv, inbox/entra/roles-eligible.csv]
+  - name: entra_auth_methods
+    input: inbox/entra/interactive-authdetails.csv
+    settings: {noninteractive: inbox/entra/noninteractive-authdetails.csv}
+  - name: entra_workload_signins
+    input: inbox/entra/application-signins.csv
+    settings:
+      managed_identities: inbox/entra/managed-identity-signins.csv
+      noninteractive: inbox/entra/noninteractive-signins.csv
+      app_credentials: inbox/entra/app-credentials.csv
+  - name: entra_audit
+    input: inbox/entra/audit.csv
+    settings: {role_changes: inbox/entra/audit-rolemanagement-*.csv}
+  - name: entra_privileged_groups
+    settings:
+      members: inbox/entra/members-*.csv
+      roles: [inbox/entra/roles-active.csv, inbox/entra/roles-eligible.csv]
+  - name: entra_app_credentials
+    input: inbox/entra/app-credentials.csv
+    settings:
+      applications: inbox/entra/applications.csv
+      permissions: inbox/entra/app-permissions.csv
+```
+
+#### The role assignment exports
+
+`entra_signins` and `entra_privileged_groups` read who holds each directory
+role from two CSVs, active and eligible assignments, in the columns
+`RoleDisplayName`, `PrincipalId`, `PrincipalDisplayName`,
+`PrincipalUserPrincipalName` and `PrincipalType` (the Graph `@odata.type`,
+such as `#microsoft.graph.group`). This Microsoft Graph PowerShell script
+writes them. It was written from Microsoft's Graph PowerShell documentation
+and has not been run here; eligible assignments need Privileged Identity
+Management.
+
+```powershell
+Connect-MgGraph -Scopes 'RoleManagement.Read.Directory','Directory.Read.All'
+$names = @{}
+Get-MgRoleManagementDirectoryRoleDefinition -All | ForEach-Object { $names[$_.Id] = $_.DisplayName }
+function Rows($assignments) {
+    foreach ($a in $assignments) {
+        $p = Get-MgDirectoryObject -DirectoryObjectId $a.PrincipalId
+        [pscustomobject]@{
+            RoleDisplayName = $names[$a.RoleDefinitionId]; PrincipalId = $a.PrincipalId
+            PrincipalDisplayName = $p.AdditionalProperties.displayName
+            PrincipalUserPrincipalName = $p.AdditionalProperties.userPrincipalName
+            PrincipalType = $p.AdditionalProperties.'@odata.type'
+        }
+    }
+}
+Rows (Get-MgRoleManagementDirectoryRoleAssignment -All) |
+    Export-Csv -NoTypeInformation -Path roles-active.csv
+Rows (Get-MgRoleManagementDirectoryRoleEligibilitySchedule -All) |
+    Export-Csv -NoTypeInformation -Path roles-eligible.csv
+```
+
+### `entra_signins`
+
+**Reads** the interactive sign-in log (`input:`), and further downloads of
+it named under `settings: also:`, merged with a sign-in held by two files
+counted once (by request ID, time, status, error code and correlation ID).
+Columns read: `Date (UTC)`, `Request ID`, `Correlation ID`, `Username`,
+`Application`, `Status`, `Sign-in error code`, `Client app`, `Authentication
+Protocol`, `Original transfer method`, `Compliant`, `Authentication
+requirement` and `Conditional Access`. Beside it, `settings: roles:` names
+the role assignment exports. A sign-in log cannot show an account that never
+signs in, so unused assignments are measured against the roles; without them
+the reader says so in a gap. A holder has used a role, and a sign-in
+completed on a single factor, only where `Status` is `Success`: Microsoft's
+*Learn about the sign-in log activity details* says an attempt whose first
+factor failed records `singleFactorAuthentication`, because it never reached
+the check that would ask for a second. Failed and interrupted attempts are
+counted apart in the notes. The administrator-named accounts row and the
+per-application rows count attempts, successful or not: Microsoft's same page
+notes that an interrupted sign-in can show no Conditional Access policy
+applied.
+
+**Rows** (data state `identity` unless noted):
+
+| Row | Verdict | Flags |
+|---|---|---|
+| `<role> — assignment usage`, per role with a holder that has a sign-in name | `weak` if a holder's successful sign-in completed on a single factor, else `unknown` | `signin-privileged-used:<n>`, `signin-privileged-unused:<n>`, `signin-single-factor:<n>`, `signin-noncompliant-device:<n>`, `signin-break-glass-unused:<n>` (emergency accounts, meant to be unused), `signin-principal-unmatchable:<n>` (groups and service principals) |
+| `Administrative powers whose use cannot be measured here`: roles held only by groups or service principals | `unknown` | `signin-principal-unmatchable:<n>` |
+| `<application> — sign-ins outside access policy` | `unknown` | `signin-policy-not-applied:<n>` |
+| `<flow> — legacy authentication flow` (`ropc`, `devicecode`) | `weak` | `signin-legacy-flow:<flow>:<n>` |
+| `Administratively-named accounts with no recorded entitlement` | `unknown` | `signin-unmatched-admin-shape:<n>` |
+| `Legacy mail and client protocols — interactive sign-ins` | `weak` if any, else `n/a` | `signin-legacy-client:<type>:<n>` or `signin-legacy-client-none` |
+| `Sign-in evidence scope` (data state `discovery`) | `n/a` | `signin-scope-window:`, `signin-scope-ceiling:` or `signin-scope-span:`, `signin-scope-files:`, `signin-scope-hole:` |
+
+A legacy client is any `Client app` value other than the two Microsoft's
+*How to Use Conditions in Conditional Access Policies* counts as modern
+(Browser; Mobile apps and desktop clients) and `Unknown`; that page says
+legacy clients do not support multifactor authentication, which NZISM v3.9
+16.7.42.C.01 (MUST) requires for user accounts on cloud-based services.
+
+**Settings.**
+
+| Setting | Default | Means |
+|---|---|---|
+| `also` | none | More downloads of the interactive log to merge |
+| `roles` | none | The role assignment exports |
+| `admin_names` | prefixes `admin`, `adm-`, `adm_`, `adm.`, `svc-`, `svc_`, `srv-`, `srv_`, `sync_`; suffixes `-adm`, `_adm`, `-admin`, `_admin`; contains `breakglass` | Name patterns (before `@`) for administrator accounts, as `{prefixes: [...], suffixes: [...], contains: [...]}`; each list given replaces the default |
+| `policy_gap_min_rows` | 20 | An application's uncovered sign-in attempts earn a row at this count… |
+| `policy_gap_min_share` | 0.05 | …or at this share of its own sign-ins… |
+| `policy_gap_share_floor` | 5 | …with at least this many behind the share |
+
+**Coverage gaps.** No log read; no role exports read; the earliest download
+cut short at a limit (how long a role has gone unused before it is not
+known); accounts named like administrators that hold no directory role
+(roles granted outside the directory's role list are not read).
+
+**Cannot see.** Non-interactive, application and managed identity sign-ins
+(`entra_workload_signins`); Azure resource, Intune and per-application
+administrator roles; anything before the first row read.
+
+### `entra_auth_methods`
+
+**Reads** the sign-in logs downloaded "with only the authentication details
+included": the interactive one as `input:`, the non-interactive one under
+`settings: noninteractive:`. Columns: `Request ID`, `Date`, `Authentication
+method`, `Authentication method detail`, `Succeeded`, `Result detail`,
+`Requirement`; one row per authentication step.
+
+**Rows.** `Authentication methods used — <population>`, `n/a`, with
+`authmethod-phishing-resistant:<n>`, `authmethod-other-second-factor:<n>`,
+`authmethod-scope-window:` and `authmethod-scope-ceiling:` or
+`authmethod-scope-span:`; the counts of every method in `extra`.
+Phishing-resistant methods are those Microsoft's built-in "Phishing-resistant
+MFA strength" allows (*Overview of Conditional Access Authentication
+Strengths*): Windows Hello for Business or platform credential, FIDO2
+security key (a method starting `passkey` too) and certificate-based
+authentication (multifactor). NZISM v3.9 16.7.42.C.06 and C.05 ask for them
+(SHOULD), so the mix is stated, not graded. `Previously satisfied` steps are
+counted apart. Where an app password stood in for the second factor, `App
+passwords standing in for a second check — <population>`, `weak`,
+`authmethod-app-password:<n>`. Agent IDs and masked phone numbers in the
+detail column are never written.
+
+**Coverage gaps.** Each population not read.
+
+### `entra_workload_signins`
+
+**Reads** the application (service principal) sign-in log as `input:`, the
+managed identity log under `settings: managed_identities:`, the
+non-interactive user sign-in log under `settings: noninteractive:`, and,
+optionally, the credential export `entra_app_credentials` reads under
+`settings: app_credentials:` (its `KeyId` and `CredentialType` columns, to
+test the secret reading below).
+
+**Rows.**
+
+| Row | Verdict | Flags |
+|---|---|---|
+| `application signing in with a secret — <name> [<application ID start>]` | `unknown` | `workload-signin-secret:<n>`, `workload-signin-certificate:<n>` |
+| `Application sign-in evidence scope` (`discovery`) | `n/a` | `workload-scope-window:`, `workload-scope-ceiling:` or `workload-scope-span:` |
+| `Managed identity sign-in evidence scope` (`discovery`) | `n/a` | the same, and `workload-managed-identities:<n>` |
+| `Legacy mail and client protocols — non-interactive sign-ins` | as for `entra_signins` | |
+| `application acting for people with a secret — <name> [<application ID start>]` | `unknown` | `delegated-client-secret:<n>` |
+| `Non-interactive sign-in evidence scope` (`discovery`) | `n/a` | `workload-scope-…` |
+
+The application log records a `Credential key ID` for a credentialed sign-in
+and a `Credential thumbprint` only for a certificate, so a key ID with no
+thumbprint is read as a client secret; the scope row says how many key IDs
+the credential export confirms. The non-interactive log's `Client credential
+type` is read as recorded. A secret is not graded on its construction alone.
+
+**Coverage gaps.** Each log not read.
+
+### `entra_audit`
+
+**Reads** the audit log as `input:`, and a download filtered to the
+`RoleManagement` category under `settings: role_changes:`, which, when read,
+is the only source of role history. Columns read: `Date (UTC)`, `Category`,
+`Service`, `Activity`, `Result`, `ResultReason`, `ActorType`,
+`ActorDisplayName`, `ActorUserPrincipalName`, `ActorServicePrincipalName`,
+and for targets 1 to 3 `Target<n>Type`, `Target<n>DisplayName`,
+`Target<n>UserPrincipalName` and `Target<n>ModifiedProperty<i>Name`,
+`…OldValue`, `…NewValue`.
+
+**Rows.**
+
+| Row | Verdict | Flags |
+|---|---|---|
+| `<role> — privilege activation history` | `weak` if granted with no end date, else `unknown` | `dirlog-role-activated:<n>`, `dirlog-role-actors:<n>`, `dirlog-role-granted-standing:<n>`, `dirlog-role-revoked:<n>` |
+| `<service> · <activity> — repeating failure` (protocol `provisioning`) | `weak` if it names people or objects it holds up, or reaches `failure_material_share`; else `unknown` | `dirlog-automation-failing:<n>`, `dirlog-automation-affected:<n>`, `dirlog-automation-onset-unobserved` |
+| `Directory change-record scope`, `Role-change record scope` (`discovery`) | `n/a` | `dirlog-scope-window:`, `dirlog-scope-ceiling:` or `dirlog-scope-span:`, `dirlog-privilege-share:<n>` |
+
+Activity names are Microsoft's (`ACTIVATION_ACTS` in
+`takestock/readers/entra_audit.py`); one not listed is counted as
+unclassified and named in a gap. A PIM activation also appears as "Add member
+to role" written by the PIM service, and is counted as the activation, not
+as a grant. Failures are grouped by service, activity and the message, with
+quoted names, email addresses, `Identifier:` values, GUIDs, times and numbers
+replaced and the far system's `Error:` detail cut off; the grouped message is
+written in the row's notes. A name written in a message any other way is not
+replaced and can appear there.
+
+**Settings.** `failure_min_rows` (default 3): the rows a failure group needs
+for a row. `failure_material_share` (default 0.01): the share of the download
+that makes a group naming nobody `weak`.
+
+**Coverage gaps.** No audit log; no unfiltered log beside the filtered one;
+role history cut short by a download limit; the largest repeating failure
+starting before the first day read; unclassified activity names.
+
+### `entra_privileged_groups`
+
+**Reads** the membership of the groups that hold directory roles (`input:`,
+or `settings: members:`) and the role assignment exports (`settings:
+roles:`). Membership columns: `group_id`, `group_name`, `member_id`,
+`member_type`, `member_upn` and `account_enabled`. This script writes them
+from the role exports above (written from the Graph PowerShell
+documentation, not run here):
+
+```powershell
+Connect-MgGraph -Scopes 'GroupMember.Read.All','Directory.Read.All'
+$groups = Import-Csv roles-active.csv, roles-eligible.csv |
+    Where-Object PrincipalType -like '*group' | Select-Object -ExpandProperty PrincipalId -Unique
+$rows = foreach ($g in $groups) {
+    $name = (Get-MgGroup -GroupId $g).DisplayName
+    foreach ($m in Get-MgGroupTransitiveMember -GroupId $g -All) {
+        [pscustomobject]@{
+            group_id = $g; group_name = $name; member_id = $m.Id
+            member_type = $m.AdditionalProperties.'@odata.type'
+            member_upn = $m.AdditionalProperties.userPrincipalName
+            account_enabled = $m.AdditionalProperties.accountEnabled
+        }
+    }
+}
+$rows | Export-Csv -NoTypeInformation -Path "members-$(Get-Date -Format yyyy-MM-dd).csv"
+```
+
+**Rows** (no flags: the counts move whenever someone joins or leaves a group,
+so they are in `extra`, `hosts_count` and `usage_count`): `<group> —
+administrative group membership` or `<group> — administrative group with no
+members listed`, `unknown`; and `Privileged population — everyone who can act
+with administrative power`, `n/a`, with every count a set of object IDs:
+people with a role directly, through a group, and both; the same for Global
+Administrator; the largest group; nested groups; guest accounts (`#EXT#`).
+
+**Coverage gaps.** No membership export; no role exports; rows with no
+account state; nested groups; a group whose member count is a page size a
+directory query stops on (99, 100, 199, 200, 499, 500, 999 or 1,000).
+
+### `entra_app_credentials`
+
+**Reads** CSVs of application registrations' credentials (`input:`), the
+applications (`settings: applications:`) and their permissions (`settings:
+permissions:`):
+
+| File | Columns |
+|---|---|
+| Credentials | `AppDisplayName`, `AppId`, `KeyId`, `CredentialType` (`Password` or `Certificate`), `CredentialOwner`, `CredentialDisplayName`, `StartDateTimeUtc`, `EndDateTimeUtc`, `PermissionsOfInterest` (application permissions, separated by `;`) |
+| Applications | `AppDisplayName`, `AppId`, `ApplicationCreatedDateUtc` (blank when the tenant holds only a service principal for it), `ServicePrincipalCreatedDateUtc`, `PermissionsOfInterest` |
+| Permissions | `AppId`, `PermissionValue`, `ResourceName` |
+
+This script writes the credentials file (written from the Graph PowerShell
+documentation, not run here). The reader never reads `KeyId` or a secret's
+hint; `KeyId` is there for `entra_workload_signins`. The script leaves
+`PermissionsOfInterest` blank: the `credential-minting-permission` flag
+fires only where that column names the application's permissions, so fill it
+from the application's app role assignments if you want the flag.
+
+```powershell
+Connect-MgGraph -Scopes 'Application.Read.All'
+function Row($app, $type, $c) {
+    [pscustomobject]@{
+        AppDisplayName = $app.DisplayName; AppId = $app.AppId; KeyId = $c.KeyId
+        CredentialType = $type; CredentialOwner = 'Application'
+        CredentialDisplayName = $c.DisplayName
+        StartDateTimeUtc = $c.StartDateTime.ToUniversalTime().ToString('o')
+        EndDateTimeUtc = $c.EndDateTime.ToUniversalTime().ToString('o')
+        PermissionsOfInterest = ''
+    }
+}
+$rows = foreach ($app in Get-MgApplication -All) {
+    foreach ($c in $app.PasswordCredentials) { Row $app 'Password' $c }
+    foreach ($c in $app.KeyCredentials) { Row $app 'Certificate' $c }
+}
+$rows | Export-Csv -NoTypeInformation -Path app-credentials.csv
+```
+
+**Grading.** A client secret is flagged `credential-shared-secret` and does
+not set the verdict. A credential valid longer than NIST SP 800-57 Part 1
+Rev. 5 §5.3.6's cryptoperiod for its key type (730 days for a client secret,
+a symmetric authentication key; 1,096 for a certificate's private signature
+key) is `weak` with `credential-lifetime-excessive:<years>y`, otherwise
+`acceptable`. Also flagged: `credential-never-expires` (valid a century or
+more), `credential-unrotated:<years>y`, `credential-expired`,
+`credential-key-unknown` (always: the export holds no key algorithm, size or
+storage, so nothing is graded `strong`), `credential-date-unreadable`,
+`credential-minting-permission:<permission>` (`Application.ReadWrite.All`,
+`AppRoleAssignment.ReadWrite.All`), and `shared-credential:<n>` where one
+certificate name and validity, to the second, is on several applications.
+An application with no credential is `unknown`, flagged
+`credential-held-by-publisher` (a service principal only) or
+`credentials-not-visible`. Rows: `application <secret|certificate> — <name>
+[<application ID start>]`, `application with no visible credential — …` and
+`Application credential scope`, data state `key-material`, protocol
+`oauth-client-credential`.
+
+**Settings.** `date_format`: a `strptime` format for the dates (default
+ISO 8601); a date that does not match is never guessed. `scope:
+directory-write` says the export covers only applications holding directory
+write permissions: the scope row is flagged `scope-directory-write-only`.
+
+**Coverage gaps.** No export read; key strength (always, with the credential
+rows); dates that could not be read.

@@ -26,7 +26,9 @@ from ..plugins import Plugin
 
 #: The library's modules, in the order their readers are listed.
 MODULES: tuple[str, ...] = ("cyclonedx", "oracle_tde", "commvault", "exchange_online", "vmware",
-                            "rvtools", "vsphere_lists")
+                            "rvtools", "vsphere_lists", "entra_signins", "entra_auth_methods",
+                            "entra_workload_signins", "entra_audit", "entra_privileged_groups",
+                            "entra_app_credentials")
 
 
 def _load() -> list[Plugin]:
