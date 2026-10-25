@@ -468,7 +468,11 @@ Limits that every report should carry:
   that send as the organisation, stay outside it. Behind such a service,
   Exchange Online honours a sender's DMARC policy only with Enhanced
   Filtering on the connector that receives the mail, so a tenant configured
-  to honour DMARC can still not do so.
+  to honour DMARC can still not do so. The requirements are the
+  organisation's, not the platform's, so where the platform does not apply
+  the setting behind such a service, SGE-DMARC-02 and a failure of
+  SGE-DMARC-R04 are graded *not measured*: the service in front may check
+  DMARC and act on it before the platform sees the mail.
 
 ### SPF's two lookup limits
 

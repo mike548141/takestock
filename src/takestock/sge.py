@@ -3343,6 +3343,10 @@ _DMARC_LIMITS = (
     "policies and mail flow rules), which the export does not hold; and group membership, "
     "so a rule naming users or groups is read as covering some recipients, never all")
 
+#: The observed clause for a row whose answer turns on a service in front of
+#: the platform, where the MX points and the export does not reach.
+_FRONT_NOT_MEASURED = "the service in front of the platform: not measured"
+
 _R04_LIMITS = (
     "What this reading cannot see: a quarantine kept by any service in front of the "
     "platform; whether an administrator reviews a message before releasing it; and the "
@@ -3471,21 +3475,32 @@ def _eval_inbound_dmarc(req: dict, assets: list[Any], domains: list[str]) -> lis
         route = eo.route_for(s, _mx_hosts(assets, d))
         evidence += [eo.row_name({"setting": "inbound-connector", "connector": c})
                      for c in route.connectors]
+        policy_words = {PASS: "honours DMARC", FAIL: "ignores DMARC",
+                        NOT_MEASURED: "unsettled"}[policy_status]
+        observed = ("policy: " + policy_words + "; route: "
+                    + {True: "applies it", False: "does not apply it",
+                       None: "unsettled"}[route.honours])
         if policy_status == FAIL:
             status, verdict = FAIL, "not met: a policy that governs its recipients ignores DMARC"
         elif route.honours is False:
-            status, verdict = FAIL, ("not met at the mail platform: the policy is not applied "
-                                     "on the route the mail arrives by")
+            # route_for answers False only where the MX names a service in front of
+            # the platform. The requirement is the organisation's, and what that
+            # service does with DMARC is not in the export, so the platform's
+            # answer settles the platform alone.
+            status, verdict = NOT_MEASURED, (
+                "not measured: the mail reaches the platform through a service in front of "
+                "it, and the platform does not apply the policy on that route, so whether "
+                "inbound mail is checked for DMARC turns on what that service does, which "
+                "this reading cannot see. At the platform, the change is Enhanced Filtering "
+                "for Connectors on the connector that receives that mail")
+            observed = (f"policy: {policy_words}; platform: not applied on this route; "
+                        f"{_FRONT_NOT_MEASURED}")
         elif policy_status == PASS and route.honours is True:
             status, verdict = PASS, "met at the mail platform"
         else:
             status, verdict = NOT_MEASURED, "unsettled"
         reason = (f"{verdict}. Policies: {'; '.join(words)}. Route: {route.reason}. "
                   f"Read from {eo.taken(s)}. {_DMARC_LIMITS}.")
-        observed = ("policy: " + {PASS: "honours DMARC", FAIL: "ignores DMARC",
-                                  NOT_MEASURED: "unsettled"}[policy_status]
-                    + "; route: " + {True: "applies it", False: "does not apply it",
-                                     None: "unsettled"}[route.honours])
         rows.append(_platform_row(req, d, status, observed, reason, evidence))
     return rows
 
@@ -3566,11 +3581,26 @@ def _eval_dmarc_quarantine(req: dict, assets: list[Any],
         status, words = _governed(results)
         verdict = {PASS: "met at the mail platform", FAIL: "not met",
                    NOT_MEASURED: "unsettled"}[status]
-        reason = (f"{verdict}. Policies: {'; '.join(words)}. Route: {route.reason}. "
-                  f"Read from {eo.taken(s)}. {_R04_LIMITS}.")
         observed = {PASS: "administrator-only quarantine",
                     FAIL: "failing mail can reach a recipient",
                     NOT_MEASURED: "unsettled"}[status]
+        if status == FAIL and route.honours is False:
+            # As for SGE-DMARC-02: the MX names a service in front of the platform,
+            # and that service may reject or quarantine failing mail before the
+            # platform sees it, so a failure at the platform does not settle the
+            # organisation's answer.
+            status = NOT_MEASURED
+            verdict = ("not measured: at the mail platform, failing mail can reach a "
+                       "recipient, but the mail reaches the platform through a service in "
+                       "front of it, and what that service does with mail failing DMARC is "
+                       "not in this reading. At the platform, the change is Enhanced "
+                       "Filtering for Connectors on the connector that receives that mail, "
+                       "so the sender's policy decides the action, or a spoof intelligence "
+                       "action and quarantine policy that keep failing mail from recipients")
+            observed = ("platform: failing mail can reach a recipient (DMARC not applied on "
+                        f"this route); {_FRONT_NOT_MEASURED}")
+        reason = (f"{verdict}. Policies: {'; '.join(words)}. Route: {route.reason}. "
+                  f"Read from {eo.taken(s)}. {_R04_LIMITS}.")
         rows.append(_platform_row(req, d, status, observed, reason, evidence))
     return rows
 

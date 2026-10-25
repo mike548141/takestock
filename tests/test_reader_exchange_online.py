@@ -266,15 +266,36 @@ def test_dmarc_honoured_with_mx_at_microsoft_is_met(tmp_path):
     assert "cannot see" in r.reason
 
 
-def test_behind_another_mx_with_no_enhanced_filtering_is_not_met(tmp_path):
+def test_behind_another_mx_with_no_enhanced_filtering_is_not_measured(tmp_path):
+    # The platform does not apply the policy on this route, but the requirement
+    # is the organisation's, and the service the MX names may check DMARC first.
     assets = export(tmp_path, inbound=[connector(), connector("Old gateway", enabled=False,
                                                               skip=["198.51.100.0/24"])])
     r = one("SGE-DMARC-02", assets + [mx(D, GATEWAY_MX)])
-    assert r.status == sge.FAIL and r.breaches_must
-    assert "not met at the mail platform" in r.reason
-    assert eo.EF_CONDITION in r.reason
-    assert "1 disabled connector(s) carry Enhanced Filtering settings (Old gateway)" in r.reason
-    assert "Exchange Online anti-phishing policy Default anti-phishing policy" in r.evidence
+    assert (r.status, r.reason) == (sge.NOT_MEASURED, sge.INCONCLUSIVE)
+    assert not r.breaches_must
+    assert r.observed == ("policy: honours DMARC; platform: not applied on this route; "
+                          "the service in front of the platform: not measured")
+    assert r.evidence.startswith("not measured: the mail reaches the platform through a "
+                                 "service in front of it")
+    assert "Enhanced Filtering for Connectors on the connector that receives" in r.evidence
+    assert eo.EF_CONDITION in r.evidence
+    assert "1 disabled connector(s) carry Enhanced Filtering settings (Old gateway)" \
+        in r.evidence
+    assert GATEWAY_MX in r.evidence
+
+
+def test_behind_another_mx_does_not_mark_the_policy_row_non_conformant(tmp_path):
+    assets = export(tmp_path, inbound=[connector()]) + [mx(D, GATEWAY_MX)]
+    sge.apply_conformance(assets, [D], STD)
+    row = next(a for a in assets if a["name"].endswith("Default anti-phishing policy"))
+    assert row.get("standards_verdict") != sge.NON_CONFORMANT
+
+
+def test_a_policy_ignoring_dmarc_behind_another_mx_is_still_not_met(tmp_path):
+    assets = export(tmp_path, policies=[policy(honour=False)], inbound=[connector()])
+    r = one("SGE-DMARC-02", assets + [mx(D, GATEWAY_MX)])
+    assert r.status == sge.FAIL and "HonorDmarcPolicy is false" in r.reason
 
 
 def test_enhanced_filtering_on_the_connector_for_the_mx_host_is_met(tmp_path):
@@ -291,11 +312,12 @@ def test_enhanced_filtering_on_a_connector_not_tied_to_the_mx_host_is_unsettled(
     assert "nothing in this reading ties that connector to the MX host" in r.evidence
 
 
-def test_enhanced_filtering_for_listed_recipients_only_is_not_met(tmp_path):
+def test_enhanced_filtering_for_listed_recipients_only_is_not_measured(tmp_path):
     assets = export(tmp_path, inbound=[connector(last_ip=True, users=["it@example.test"],
                                                  cert="*.gateway.example.net")])
     r = one("SGE-DMARC-02", assets + [mx(D, GATEWAY_MX)])
-    assert r.status == sge.FAIL and "only for listed recipients" in r.reason
+    assert r.status == sge.NOT_MEASURED and "only for listed recipients" in r.evidence
+    assert r.observed.endswith("the service in front of the platform: not measured")
 
 
 def test_no_mx_reading_is_unsettled_not_guessed(tmp_path):
@@ -411,10 +433,27 @@ def test_a_quarantine_policy_missing_from_the_export_is_unsettled(tmp_path):
 
 
 def test_where_dmarc_is_not_applied_the_spoof_action_decides(tmp_path):
-    assets = export(tmp_path, policies=[policy(fail="MoveToJmf")])
+    # The spoof action passes here, so the route's service is not needed.
+    assets = export(tmp_path, policies=[policy(fail="Quarantine")])
     r = one("SGE-DMARC-R04", assets + [mx(D, GATEWAY_MX)])
-    assert r.status == sge.FAIL
+    assert r.status == sge.PASS
     assert "HonorDmarcPolicy is true but is not applied on this route" in r.reason
+
+
+def test_a_platform_failure_behind_another_mx_is_not_measured(tmp_path):
+    # The service the MX names may reject or quarantine failing mail first.
+    for name, pol in (("junk", policy(fail="MoveToJmf")),
+                      ("release", policy(tag="DefaultFullAccessPolicy"))):
+        assets = export(tmp_path / name, policies=[pol])
+        r = one("SGE-DMARC-R04", assets + [mx(D, GATEWAY_MX)])
+        assert (r.status, r.reason) == (sge.NOT_MEASURED, sge.INCONCLUSIVE), name
+        assert r.observed == ("platform: failing mail can reach a recipient (DMARC not "
+                              "applied on this route); the service in front of the "
+                              "platform: not measured")
+        assert r.evidence.startswith("not measured: at the mail platform, failing mail can "
+                                     "reach a recipient")
+        assert "Enhanced Filtering for Connectors" in r.evidence
+        assert "HonorDmarcPolicy is true but is not applied on this route" in r.evidence
 
 
 def test_an_unsettled_route_settles_only_when_both_answers_agree(tmp_path):

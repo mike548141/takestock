@@ -399,10 +399,15 @@ that an export would settle it. With one, each gets a row per domain:
 - SGE-DMARC-02 inbound mail checked for DMARC and acted on: met where every
   policy governing the domain's recipients honours the sender's DMARC policy
   and the route the mail arrives by lets it, which behind a mail service in
-  front of the platform needs Enhanced Filtering on the receiving connector;
+  front of the platform needs Enhanced Filtering on the receiving connector.
+  Where that service is in front and the platform does not apply the
+  policy, the row is not measured, because what that service does with
+  DMARC is outside the export;
 - SGE-DMARC-R04 failed mail to an administrator quarantine, not a junk
   folder: met where the actions in effect quarantine or reject, and
-  recipients cannot release from the quarantine policy in effect;
+  recipients cannot release from the quarantine policy in effect. A failure
+  at the platform behind such a service, on a route where the platform does
+  not apply the setting, is not measured, for the same reason;
 - SGE-DKIM-01 all outbound mail DKIM signed: met where the platform signs
   the domain's mail and hands none of it to another service; not met where
   it does not sign a domain that sends mail and hands none of it on.

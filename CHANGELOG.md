@@ -266,6 +266,19 @@ command line or a file format, and its entry says how.
 
 ### Changed
 
+- **SGE-DMARC-02 and SGE-DMARC-R04 behind a third-party MX.** Where a
+  domain's MX points to a service in front of Exchange Online and the
+  platform does not apply the sender's DMARC policy on that route (no
+  enabled inbound connector with Enhanced Filtering for every recipient),
+  SGE-DMARC-02 is now *not measured* rather than *not met*, and so is a
+  failure of SGE-DMARC-R04: the requirements are the organisation's, and the
+  service in front may check DMARC and act on it first. The observed text
+  says *"policy: honours DMARC; platform: not applied on this route; the
+  service in front of the platform: not measured"*, and the reason keeps
+  Enhanced Filtering for Connectors as the change at the platform. A policy
+  that ignores DMARC is still *not met* (`docs/COLLECTORS.md`,
+  "exchange_online").
+
 - **Plug-ins**: a name a profile gives alone that two different plug-ins
   answer to (the readers library and an installed package, or two packages)
   is no longer run with whichever was found first. It is not run, and its gap
