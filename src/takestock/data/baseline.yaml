@@ -926,14 +926,14 @@ citations:
           breaches: true
           note: below the 3072-bit RSA modulus this control requires
           commentary: >-
-            Genuinely ambiguous, and the ambiguity is in the manual rather than in the measurement. Two
-            MUST-level controls set different floors for RSA: 17.2.24.C.01 requires at least 3072 bits for
-            digital signatures and for passing session keys, and 17.2.25.C.01 requires at least 2048 bits
-            for RSA keys inside an internet X.509 certificate. A 2048-bit key fails the first and meets
-            the second. Where the key was read from a published certificate, the more permissive control's
-            scope is met; the manual does not settle whether that control displaces the general one for a
-            key that also signs the handshake. Marked against the higher floor, with both controls cited
-            on the row so the reading can be checked and argued the other way.
+            The manual is ambiguous here; the measurement is not. Two MUST-level controls set different
+            floors for RSA: 17.2.24.C.01 requires at least 3072 bits for digital signatures and for
+            passing session keys, and 17.2.25.C.01 requires at least 2048 bits for RSA keys inside an
+            internet X.509 certificate. A 2048-bit key fails the first and meets the second. A key read
+            from a published certificate is within the second control's scope; the manual does not say
+            whether that control replaces the first for a key that also signs the handshake. Marked
+            against the higher floor, with both controls cited on the row so the reading can be checked
+            and argued the other way.
       rsa_4096:
         - authority: nist-sp-800-57p1r5
           control: Table 2

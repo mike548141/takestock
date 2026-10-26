@@ -450,6 +450,7 @@ cmdb:
     - heading: Start with the servers.
       body: The Server sheet lists every server an instrument saw.
   jira_assets: true
+  item_noun: IT assets
 ```
 
 Read only by `takestock cmdb --target <profile>` (and
@@ -459,7 +460,8 @@ register; `schema_overlay` names a file, relative to the profile, that
 rewords the register schema and may never add a class or relationship;
 `how_to_read` replaces the built-in reading notes, as a list or the path of
 a YAML file holding one; `jira_assets: true` also writes an import for Jira
-Assets. The register takes the organisation's name from `organisation`, and
+Assets; `item_noun` is what the workbook's Read me sheet calls the items
+when it counts them (default *configuration items*). The register takes the organisation's name from `organisation`, and
 its workbook takes the colours and font of `branding` when that block sets
 anything. Each is described in
 [`CMDB.md`](CMDB.md#options-a-profile-sets).

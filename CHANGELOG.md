@@ -266,6 +266,22 @@ command line or a file format, and its entry says how.
 
 ### Changed
 
+- **Configuration register, the workbook's Read me sheet.** Its third line
+  now says when the data was read, in a sentence, instead of the
+  observation's time stamp, its recording date and the schema version: for a
+  derived observation, *"The data was read on 2030-01-10; 1 of its sources was
+  read again on 2030-01-25."* The time stamp, the recording date and the
+  schema version stay in the JSON, which also gains `register.read_on` and
+  `register.read_again`. The counts line carries thousands separators, and
+  calls the items what `cmdb: item_noun:` in a profile (or `item_noun=` to
+  `build_register` and `register_payload`) says, in the plural; the default
+  is still *configuration items*. The JSON records it as
+  `register.item_noun`.
+
+- **Citations, RSA 2048-bit against NZISM 17.2.24.C.01 and 17.2.25.C.01.** The commentary on
+  the two controls' different floors is reworded in plainer language; its
+  substance is unchanged.
+
 - **SGE-DMARC-02 and SGE-DMARC-R04 behind a third-party MX.** Where a
   domain's MX points to a service in front of Exchange Online and the
   platform does not apply the sender's DMARC policy on that route (no

@@ -226,3 +226,47 @@ def test_an_ordinary_observation_is_dated_by_its_own_stamp(tmp_path):
     assert {e.valid_at for e in register.edges
             if e.kind in ("installed-on", "release-of")} == {REREAD_DAY}
     assert register.recorded_at == REREAD_DAY
+
+
+# ── what the workbook's read-me says of the dates ──────────────────────────
+
+
+def _readme(register: dict[str, Any], tmp_path: Path) -> list[str]:
+    from openpyxl import load_workbook
+    cmdb.write_outputs(register, tmp_path / "out")
+    sheet = load_workbook(tmp_path / "out" / "cmdb.xlsx")["Read me"]
+    return [str(c.value) for c in sheet["A"] if c.value]
+
+
+def test_the_read_me_says_when_a_derived_observation_was_read(tmp_path):
+    register = cmdb.build_register(_derived(tmp_path))
+    assert register["register"]["read_on"] == HELD_DAY
+    assert register["register"]["read_again"] == {PLUGIN: REREAD_DAY}
+    readme = _readme(register, tmp_path)
+    assert (f"The data was read on {HELD_DAY}; 1 of its sources was read again "
+            f"on {REREAD_DAY}.") in readme
+    assert not any(REREAD in line for line in readme)
+
+
+def test_the_read_me_gives_the_range_when_sources_were_read_again_on_several_days(tmp_path):
+    summary = {"from_observation": "2030-01-18T0000Z", "plugins": [PLUGIN],
+               "from_rerun": {"from_observation": HELD, "plugins": [PLUGIN, "example_other"]}}
+    register = cmdb.build_register(_write(tmp_path, _rows(), summary))
+    assert register["register"]["read_again"] == {PLUGIN: REREAD_DAY,
+                                                  "example_other": "2030-01-18"}
+    assert (f"The data was read on {HELD_DAY}; 2 of its sources were read again "
+            f"between 2030-01-18 and {REREAD_DAY}.") in _readme(register, tmp_path)
+
+
+def test_the_read_me_dates_an_ordinary_observation_by_its_stamp(tmp_path):
+    register = cmdb.build_register(_write(tmp_path, _rows(), None))
+    assert register["register"]["read_again"] == {}
+    readme = _readme(register, tmp_path)
+    assert f"The data was read on {REREAD_DAY}." in readme
+    assert not any(line.startswith("Observation ") for line in readme)
+
+
+def test_a_recording_date_given_for_the_build_leaves_the_read_date_alone(tmp_path):
+    register = cmdb.build_register(_write(tmp_path, _rows(), None), recorded_at="2030-02-01")
+    assert register["register"]["recorded_at"] == "2030-02-01"
+    assert register["register"]["read_on"] == REREAD_DAY

@@ -358,3 +358,51 @@ def test_the_sample_profile_and_its_overlay_load():
     assert "asset label" in schema.attributes["serial_number"]["note"]
     # The overlay beside the profile is never taken for a profile itself.
     assert [p.name for p in config.target_profiles(sample)] == ["example-widgets.yaml"]
+
+
+# ── What the read-me calls the items, and how it writes counts ─────────────
+
+
+def _readme_counts(register: dict, tmp_path: Path) -> str:
+    cmdb.write_outputs(register, tmp_path / "out")
+    sheet = load_workbook(tmp_path / "out" / "cmdb.xlsx")["Read me"]
+    return next(str(c.value) for c in sheet["A"] if c.value and "recorded facts" in str(c.value))
+
+
+def test_the_read_me_counts_configuration_items_by_default(tmp_path):
+    register = cmdb.build_register(cmdbfake.write_observation(tmp_path))
+    assert register["register"]["item_noun"] == cmdb.ITEM_NOUN == "configuration items"
+    n = register["register"]["counts"]["configuration_items"]
+    assert _readme_counts(register, tmp_path).startswith(f"{n} configuration items, ")
+
+
+def test_a_caller_names_the_items(tmp_path):
+    register = cmdb.build_register(cmdbfake.write_observation(tmp_path),
+                                   item_noun="  IT assets ")
+    assert register["register"]["item_noun"] == "IT assets"
+    n = register["register"]["counts"]["configuration_items"]
+    line = _readme_counts(register, tmp_path)
+    assert line.startswith(f"{n} IT assets, ") and "configuration items" not in line
+
+
+def test_a_profile_names_the_items(tmp_path):
+    options = cmdb.profile_options({"cmdb": {"item_noun": "IT assets"}})
+    assert options.item_noun == "IT assets"
+    assert options.build_kwargs()["item_noun"] == "IT assets"
+    assert cmdb.profile_options({}).item_noun == ""
+
+
+@pytest.mark.parametrize("bad", ["", "  ", None, 3, ["IT assets"]])
+def test_a_profile_s_blank_or_non_text_item_noun_is_refused(bad):
+    with pytest.raises(ValueError, match="cmdb.item_noun must be text"):
+        cmdb.profile_options({"cmdb": {"item_noun": bad}})
+
+
+def test_the_read_me_separates_thousands(tmp_path):
+    register = cmdb.build_register(cmdbfake.write_observation(tmp_path))
+    register["register"]["counts"].update(configuration_items=27182818, recorded_facts=3141593,
+                                          relationships=1000, contested_attributes=16180339)
+    line = _readme_counts(register, tmp_path)
+    assert line.startswith("27,182,818 configuration items, 3,141,593 recorded facts, "
+                           "1,000 relationships. ")
+    assert "16,180,339 values are contested." in line

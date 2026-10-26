@@ -826,6 +826,12 @@ class Cmdb:
     recorded_at: str = ""
     #: The row sources and plug-ins whose host lists drew installed-on; None for every row.
     installed_on_from: tuple[str, ...] | None = None
+    #: The date the observation's rows were read: a derived observation's full
+    #: observation's date, otherwise the observation's own; empty when its
+    #: directory is not named by a time stamp.
+    read_on: str = ""
+    #: Each plug-in a derived observation read again, with the date it last did.
+    read_again: dict[str, str] = field(default_factory=dict)
 
     def resolved(self) -> dict[str, dict[str, Resolution]]:
         """The published value of every asserted attribute, per item."""
@@ -1341,6 +1347,8 @@ class _Builder:
         block = summary.get("observation")
         stamp = str((block if isinstance(block, dict) else {}).get("stamp") or self.dir.name)
         self.read = read_dates(summary, stamp)
+        self.read_on = (self.read.held if self.read
+                        else stamp[:10] if obsarchive.is_stamp(stamp) else "")
         self._explicit = bool(recorded_at)
         default = self.read.held if self.read else _default_recorded_at(self.dir)
         self.recorded_at = _check_date(recorded_at or default, "recorded_at")
@@ -1966,7 +1974,8 @@ class _Builder:
         return Cmdb(schema=self.schema, items=items, assertions=self.assertions,
                     edges=self.edges, populations=self.populations, ledger=self.ledger,
                     observation=self.dir.name, recorded_at=self.recorded_at,
-                    installed_on_from=self.installed_on_from)
+                    installed_on_from=self.installed_on_from, read_on=self.read_on,
+                    read_again=dict(self.read.reread) if self.read else {})
 
 
 def build(observation: Path | str, *, ledger: KeyLedger | None = None,
@@ -2100,15 +2109,30 @@ def _reading_notes(how_to_read: Sequence[Any] | None) -> list[dict[str, str]]:
     return out
 
 
+#: What the workbook's read-me calls the register's items when it counts them.
+ITEM_NOUN = "configuration items"
+
+
+def _item_noun(noun: Any) -> str:
+    """``noun`` stripped, or :data:`ITEM_NOUN` when it is empty; refused unless text."""
+    if not isinstance(noun, str):
+        raise ValueError("item_noun must be text: what to call the items, in the plural")
+    return noun.strip() or ITEM_NOUN
+
+
 def register_payload(register: Cmdb, *, title: str = "", organisation: str = "",
-                     how_to_read: Sequence[Any] | None = None) -> dict[str, Any]:
+                     how_to_read: Sequence[Any] | None = None,
+                     item_noun: str = "") -> dict[str, Any]:
     """The whole register as one plain dict: the schema, then the data.
 
     ``title`` and ``organisation`` head the register. ``how_to_read`` replaces
     the built-in reading notes (:data:`HOW_TO_READ`) with the caller's own:
     a list of ``{"heading": ..., "body": ...}`` mappings or (heading, body)
-    pairs. It reaches the JSON and the workbook's read-me alike.
+    pairs. It reaches the JSON and the workbook's read-me alike. ``item_noun``
+    is what the workbook's read-me calls the items when it counts them, in
+    the plural (default :data:`ITEM_NOUN`).
     """
+    noun = _item_noun(item_noun)
     notes = _reading_notes(how_to_read)
     schema = register.schema
     resolved = register.resolved()
@@ -2173,6 +2197,9 @@ def register_payload(register: Cmdb, *, title: str = "", organisation: str = "",
             "organisation": organisation,
             "observation": register.observation,
             "recorded_at": register.recorded_at,
+            "read_on": register.read_on or register.recorded_at,
+            "read_again": dict(sorted(register.read_again.items())),
+            "item_noun": noun,
             "schema_version": schema.version,
             "schema_maturity": schema.maturity,
             "schema_overlay": schema.overlay,
@@ -2219,20 +2246,22 @@ def build_register(observation_dir: Path | str, *, keys: Path | str | None = Non
                    ip_plan: Path | str | None = None,
                    schema_overlay: Path | str | None = None, organisation: str = "",
                    how_to_read: Sequence[Any] | None = None,
-                   installed_on_from: Sequence[str] | None = None) -> dict[str, Any]:
+                   installed_on_from: Sequence[str] | None = None,
+                   item_noun: str = "") -> dict[str, Any]:
     """Build the register for ``observation_dir`` and return it as one dict.
 
     ``keys`` names an earlier build's ``keys.jsonl`` so items keep their keys;
     ``ip_plan`` an IP address plan's JSON whose named machines become items;
     ``schema_overlay`` a schema overlay (:func:`apply_overlay`). ``title``,
-    ``organisation`` and ``how_to_read`` are as for :func:`register_payload`;
-    ``installed_on_from`` as for :func:`build`.
+    ``organisation``, ``how_to_read`` and ``item_noun`` are as for
+    :func:`register_payload`; ``installed_on_from`` as for :func:`build`.
     """
     ledger = read_keys(keys) if keys else None
     return register_payload(build(observation_dir, ledger=ledger, recorded_at=recorded_at,
                                   ip_plan=ip_plan, schema_overlay=schema_overlay,
                                   installed_on_from=installed_on_from),
-                            title=title, organisation=organisation, how_to_read=how_to_read)
+                            title=title, organisation=organisation, how_to_read=how_to_read,
+                            item_noun=item_noun)
 
 
 def write_outputs(register: Mapping[str, Any], out_dir: Path | str, *,
@@ -2251,7 +2280,7 @@ def write_outputs(register: Mapping[str, Any], out_dir: Path | str, *,
 
 #: The keys a profile's ``cmdb:`` block may hold.
 PROFILE_KEYS: tuple[str, ...] = ("title", "schema_overlay", "how_to_read", "jira_assets",
-                                 "installed_on_from")
+                                 "installed_on_from", "item_noun")
 
 
 @dataclass(frozen=True)
@@ -2265,12 +2294,13 @@ class ProfileOptions:
     theme: Any = None
     jira_assets: bool = False
     installed_on_from: tuple[str, ...] | None = None
+    item_noun: str = ""
 
     def build_kwargs(self) -> dict[str, Any]:
         """Keyword arguments for :func:`build_register`."""
         return {"title": self.title, "organisation": self.organisation,
                 "schema_overlay": self.schema_overlay, "how_to_read": self.how_to_read,
-                "installed_on_from": self.installed_on_from}
+                "installed_on_from": self.installed_on_from, "item_noun": self.item_noun}
 
     def write_kwargs(self) -> dict[str, Any]:
         """Keyword arguments for :func:`write_outputs`."""
@@ -2281,7 +2311,7 @@ def profile_options(target: Mapping[str, Any]) -> ProfileOptions:
     """The register options a loaded target profile sets.
 
     Read from the profile's ``cmdb:`` block (``title``, ``schema_overlay``,
-    ``how_to_read``, ``jira_assets``, ``installed_on_from``), its
+    ``how_to_read``, ``jira_assets``, ``installed_on_from``, ``item_noun``), its
     organisation's name, and its
     ``branding:`` block, which styles the workbook only when it sets
     anything. A relative path is read from the directory holding the profile;
@@ -2329,13 +2359,16 @@ def profile_options(target: Mapping[str, Any]) -> ProfileOptions:
         installed_on_from = _source_names(sources)
     except ValueError as exc:
         raise ValueError(f"cmdb.{exc}") from exc
+    item_noun = block.get("item_noun", "")
+    if "item_noun" in block and not (isinstance(item_noun, str) and item_noun.strip()):
+        raise ValueError("cmdb.item_noun must be text: what to call the items, in the plural")
     has_org = any(target.get(k) for k in ("organisation", "org"))
     theme = htmlpage.theme_from_target(dict(target)) if target.get("branding") else None
     return ProfileOptions(
         title=title,
         organisation=htmlpage.organisation_name(dict(target)) if has_org else "",
         schema_overlay=overlay, how_to_read=notes, theme=theme, jira_assets=jira,
-        installed_on_from=installed_on_from)
+        installed_on_from=installed_on_from, item_noun=item_noun)
 
 
 def build_and_write(observation: Path | str, out_dir: Path | str, *,

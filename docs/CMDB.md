@@ -78,6 +78,15 @@ observations/latest/cmdb/keys.jsonl
   a machine is attributed to), take the full observation's date. A recording
   date given to `build(..., recorded_at=)` is the recording date of every
   fact; each row is still dated as true when it was read.
+- The register's JSON says when the data was read: `register.read_on` is the
+  full observation's date (for an ordinary observation, its own date; for
+  one that is neither derived nor named by a time stamp, the recording
+  date), and
+  `register.read_again` maps each plug-in a derived observation read again
+  to the date it last did. The workbook's Read me sheet says the same in a
+  sentence, such as *"The data was read on 2030-01-10; 1 of its sources was
+  read again on 2030-01-25."* Counts on that sheet carry thousands
+  separators (*27,182,818*).
 - If `summary.json` gives a `total_assets` count that differs from the rows
   in `assets.json`, the build stops: the observation is incomplete.
 - The schema is read from `data/cmdb-schema.yaml` in the workspace if one is
@@ -117,6 +126,7 @@ cmdb:
       body: The Server sheet lists every server an instrument saw.
   jira_assets: true
   installed_on_from: [software_inventory]
+  item_noun: IT assets
 ```
 
 | Key | Sets |
@@ -126,12 +136,13 @@ cmdb:
 | `cmdb.schema_overlay` | A schema overlay file, relative to the profile, whose wording is merged over the schema (see [Rewording the schema with an overlay](#rewording-the-schema-with-an-overlay)) |
 | `cmdb.how_to_read` | Reading notes that replace the built-in ones in the JSON's `how_to_read` and on the workbook's Read me sheet: a list of `heading` and `body` entries, or the path of a YAML file holding that list |
 | `branding` | When the profile's `branding:` block sets anything, the workbook takes its light colours and font: headers in `text` on `surface`, the title, headings and contested values in `accent`, absences in `muted`, and the first font named in `font` (a generic family such as `sans-serif` names none). Without it, or with an empty block, the workbook keeps its plain style |
+| `cmdb.item_noun` | What the workbook's Read me sheet calls the items when it counts them, in the plural (default *configuration items*), and `register.item_noun` in the JSON. Non-blank text; anything else is refused |
 | `cmdb.jira_assets` | `true` also writes an import for Jira Assets (see [An import for Jira Assets](#an-import-for-jira-assets)) |
 | `cmdb.installed_on_from` | The row sources or plug-ins whose lists of hosts draw *installed on*: a row's `source` or its `extra.plugin`. A list of hosts (`extra.installed_on`, or a list in `extra.hosts`) on any other row is left unread, as if the row held none, so it makes no machine and no edge; the row's own product and release are kept, and a row's own host still carries its software. Without the key every row's list is read. When set, the register's JSON records it as `register.installed_on_from`. In a profile it must be a list of non-blank names; `build` and `build_register` take a list or a tuple of them. An empty list reads no row's list. Anything else (a single string, a mapping, a set, a number, a blank or non-text name) is refused |
 
 From Python, the same options are keyword arguments:
 `build_register(..., title=, organisation=, schema_overlay=, how_to_read=,
-installed_on_from=)`
+installed_on_from=, item_noun=)`
 and `write_outputs(register, out_dir, theme=, jira_assets=)`.
 `cmdb.profile_options(target)` reads them from a loaded profile.
 
@@ -562,7 +573,7 @@ The workbook's sheets:
 
 | Sheet | Answers |
 |---|---|
-| Read me | What was built, from which observation, the headline counts, unassigned governance roles, and how to read the rest |
+| Read me | What was built, when the data was read, the headline counts, unassigned governance roles, and how to read the rest |
 | one per populated class | The items of that class; contested values in the accent colour, absences in grey italics |
 | Relationships | Every drawn edge |
 | Not in here | Every declared class with its count and, for a zero, why; then every relationship not drawn and why |

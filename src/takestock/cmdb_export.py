@@ -194,6 +194,23 @@ def workbook_style(theme: Any = None) -> WorkbookStyle:
                          accent_ink=_hex(light["accent"]), font=font)
 
 
+def as_at_line(reg: Mapping[str, Any]) -> str:
+    """The read-me's sentence saying when the data was read.
+
+    The date the observation's rows were read (``read_on``, else the
+    recording date), and, for a derived observation, how many of its sources
+    were read again and when.
+    """
+    line = f"The data was read on {reg.get('read_on') or reg['recorded_at']}"
+    dates = sorted(set((reg.get("read_again") or {}).values()))
+    if not dates:
+        return line + "."
+    n = len(reg["read_again"])
+    sources = "1 of its sources was" if n == 1 else f"{n:,} of its sources were"
+    when = f"on {dates[0]}" if len(dates) == 1 else f"between {dates[0]} and {dates[-1]}"
+    return f"{line}; {sources} read again {when}."
+
+
 def write_xlsx(register: Mapping[str, Any], path: Path, *, theme: Any = None) -> Path:
     """The register as a workbook: plainly styled, or in ``theme``'s colours and font."""
     # openpyxl ships without type information.
@@ -244,15 +261,15 @@ def write_xlsx(register: Mapping[str, Any], path: Path, *, theme: Any = None) ->
     ]
     if reg.get("organisation"):
         lines.append((str(reg["organisation"]), font(bold=True)))
+    noun = str(reg.get("item_noun") or "configuration items")
     lines += [
-        (f"Observation {reg['observation']}, recorded {reg['recorded_at']}. "
-         f"Schema {reg['schema_version']} ({reg['schema_maturity']}).", None),
+        (as_at_line(reg), None),
         ("", None),
-        (f"{counts['configuration_items']} configuration items, {counts['recorded_facts']} "
-         f"recorded facts, {counts['relationships']} relationships. "
-         f"{counts['classes_populated']} of {counts['classes_declared']} declared classes "
+        (f"{counts['configuration_items']:,} {noun}, {counts['recorded_facts']:,} "
+         f"recorded facts, {counts['relationships']:,} relationships. "
+         f"{counts['classes_populated']:,} of {counts['classes_declared']:,} declared classes "
          f"hold items; the 'Not in here' sheet says why each other one is empty. "
-         f"{counts['contested_attributes']} values are contested.", font(bold=True)),
+         f"{counts['contested_attributes']:,} values are contested.", font(bold=True)),
     ]
     unassigned = reg["governance"].get("unassigned") or []
     if unassigned:
