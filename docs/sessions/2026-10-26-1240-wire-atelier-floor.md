@@ -57,6 +57,14 @@ chose to wire it the way atelier's other public children do.
   contributor will notice `make hooks` now needs an atelier clone, and
   `CONTRIBUTING.md` says so.
 
+## Decision after close
+
+The maintainer ruled (2026-10-27) on what happens when a pin bump brings in
+atelier text that a contributor's own extra hook (`takestock.extraHook`)
+refuses: that contributor adds a narrow exception in their own check, one
+word for one file, each time it happens. The text copied from atelier is
+never reworded to get past a local check, and takestock's tree does not change.
+
 ## Identifiers
 
 - Session: `8266042b`
