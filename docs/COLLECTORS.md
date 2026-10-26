@@ -1661,7 +1661,8 @@ completed on a single factor, only where `Status` is `Success`: Microsoft's
 *Learn about the sign-in log activity details* says an attempt whose first
 factor failed records `singleFactorAuthentication`, because it never reached
 the check that would ask for a second. Failed and interrupted attempts are
-counted apart in the notes. The administrator-named accounts row and the
+counted apart in the notes. The administrator-named accounts row counts an
+account that appears in the log, and only its successful sign-ins as use. The
 per-application rows count attempts, successful or not: Microsoft's same page
 notes that an interrupted sign-in can show no Conditional Access policy
 applied.

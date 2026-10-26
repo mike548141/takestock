@@ -567,15 +567,19 @@ def unmatched_names_row(tally: Tally, out: _Out) -> CryptoAsset | None:
     """The accounts named like administrators that hold no role in the roster, or None."""
     if not tally.admin_shaped:
         return None
-    signins = sum(tally.by_principal[u]["attempts"] for u in tally.admin_shaped)
+    # An account is counted once it appears in the log, but only its
+    # successful sign-ins are counted as use, as on the role rows: a failed or
+    # interrupted attempt is not a sign-in that completed.
+    signins = sum(tally.by_principal[u]["signins"] for u in tally.admin_shaped)
     n = len(tally.admin_shaped)
     return out.row(
         name="Administratively-named accounts with no recorded entitlement", protocol="account",
         role=roles.signin_unmatched_names(n), verdict="unknown",
         flags=[f"{UNMATCHED_SHAPE_FLAG}{n}"], hosts_count=n, usage_count=signins,
-        notes=(f"{n} account(s) named like administrator accounts appear in {signins:,} "
-               f"sign-in attempt(s) {out.period}, successful or not, and none holds a "
-               "directory role in the roster read. "
+        notes=(f"{n} account(s) named like administrator accounts appear in the sign-in log "
+               f"{out.period}, with {signins:,} successful sign-in(s) between them (failed "
+               "and interrupted attempts are not counted), and none holds a directory role "
+               "in the roster read. "
                "Either they hold roles granted elsewhere (Azure resource roles, Intune roles "
                "and per-application administrator roles are each granted outside the "
                "directory's role list), or they are only named like administrators. This "

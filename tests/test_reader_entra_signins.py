@@ -154,6 +154,27 @@ def test_admin_named_accounts_and_their_patterns(tmp_path):
     assert not any("roles granted outside" in g for g in result.gaps)
 
 
+def test_admin_named_accounts_count_successful_sign_ins_only(tmp_path):
+    # Two accounts named like administrators, neither holding a role: one
+    # with two successful sign-ins, a failed and an interrupted attempt; one
+    # with failed attempts only. Both are counted as accounts; only the two
+    # successful sign-ins are counted as use.
+    other = "adm-three@example.test"
+    log = write(tmp_path / "s.csv", SIGNIN_COLUMNS, [
+        _signin(1, 1, SERVICE), _signin(2, 2, SERVICE),
+        _signin(3, 3, SERVICE, Status="Failure"),
+        _signin(4, 3, SERVICE, Status="Interrupted"),
+        _signin(5, 4, other, Status="Failure"), _signin(6, 4, other, Status="Failure"),
+    ])
+    result = entra_signins.step(ctx(entra_signins.PLUGIN, log, {"roles": _roles(tmp_path)}))
+    rows = by_name(result.records)
+    row = rows["Administratively-named accounts with no recorded entitlement"]
+    assert (row.hosts_count, row.usage_count) == (2, 2)
+    assert (row.extra["accounts"], row.extra["signins"]) == ("2", "2")
+    assert row.flags == ["signin-unmatched-admin-shape:2"]
+    assert "2 successful sign-in(s)" in row.notes
+
+
 def test_downloads_merge_with_duplicates_counted_once(tmp_path):
     scope = by_name(_run(tmp_path).records)["Sign-in evidence scope"]
     assert scope.extra["exports_merged"] == "3"
