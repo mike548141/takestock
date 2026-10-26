@@ -177,7 +177,8 @@ outside the repository, and the guard then matches those terms case-folded,
 accent-stripped and across line breaks, as whole words (a leading `=` makes a
 term case-sensitive). They can also add a check of their own to both hooks with
 `git config takestock.extraHook "<command>"`; it is called as `<command>
-pre-commit` and `<command> commit-msg FILE`, and a failure blocks the commit.
+pre-commit` (by `tools/extra_hook.py`, one of the floor's local checks) and
+`<command> commit-msg FILE`, and a failure blocks the commit.
 
 The guard is only the floor. It catches exact identifiers (addresses, hostnames,
 IDs, and any denylist terms), which are finite and precise, and nothing else.
@@ -193,13 +194,29 @@ repository and the visibility fact. A line of it that seems wrong is reported
 to atelier, as its *Doctrine problems point up* bullet says, never edited here.
 The floor and the rule above both bind, and neither relaxes the other.
 
-atelier's scan hook and CI floor are not wired here yet, so `tools/guard.py`
-is still this repository's only gate. Wiring them is on the roadmap.
+atelier's floor is wired the way its other public children wire it:
+
+- `.githooks/pre-commit` is atelier's shim, word for word. It names no scanner
+  and runs atelier's `tools/floor.py`, which reads `.atelier-floor.json`.
+- `.atelier-floor.json` holds this repository's decisions: the licence, the
+  checks run advisory while their backlog is cleared (each with a reason and a
+  review date), the leakscan rules turned off because addresses are this
+  tool's content, and two local checks, `guard` (`tools/guard.py`) and
+  `extra-hook` (`tools/extra_hook.py`).
+- `.github/workflows/floor.yml` runs the same floor on every push and pull
+  request, through atelier's reusable workflow.
+- `.secretscanignore` and `.leakscanignore` name the few files whose synthetic
+  values read as secrets or personal data, each with its reason.
+
+`.githooks/commit-msg` is takestock's own: the guard and the extra hook read the
+commit message. **Hooks don't travel**: git carries neither `core.hooksPath`
+nor `hooks.atelierTools`, so a new clone commits unscanned until `make hooks`
+has run in it.
 
 ## Dev loop
 
 ```bash
-make hooks   # once per clone: guard runs on every commit and commit message
+make hooks   # once per clone: atelier's floor and the guard run on every commit
 make check   # guard + tests (standard library only for now)
 ```
 

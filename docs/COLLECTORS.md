@@ -1206,7 +1206,7 @@ written by hand to the shape the script writes.
 ```yaml
 plugins:
   - name: exchange_online
-    input: inbox/exchange-online-settings-2030-01-31T0900Z.zip
+    input: inbox/exchange-online-settings-2030-01-31T0900Z.zip  # secretscan:allow: a file name
 ```
 
 | Cmdlet | What is read from it |

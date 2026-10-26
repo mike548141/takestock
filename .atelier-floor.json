@@ -1,0 +1,34 @@
+{
+  "licence": "Apache-2.0",
+  "advisory": {
+    "datescan": {
+      "why": "adopting the check: the reference guides date their sources as '1 October 2026', the form the sources themselves use; 66 findings to convert to YYYY-MM-DD or mark",
+      "review-by": "2027-01-31"
+    },
+    "spellscan": {
+      "why": "adopting the check: most of the 54 findings are US spellings inside quoted titles and proper names from public standards (NIST, OSCAL), which must stay as published; the rest are to fix",
+      "review-by": "2027-01-31"
+    },
+    "wrapscan": {
+      "why": "adopting the check: 10 long lines in the guides, mostly table rows and links that cannot wrap without breaking the table",
+      "review-by": "2027-01-31"
+    }
+  },
+  "flags": {
+    "leakscan": {
+      "args": ["--disable", "email,ipv6,mac-address"],
+      "why": "addresses are takestock's content: it inventories networks, so its fixtures, examples and data are full of synthetic email, IPv6 and MAC addresses. The local `guard` check below gates email and IP addresses more strictly than leakscan's shapes, passing only reserved names and documentation ranges (RFC 2606, RFC 6761, RFC 3849, RFC 5737). MAC addresses in the tree are locally administered (02:...) or zero-prefixed synthetic values"
+    }
+  },
+  "local": {
+    "guard": {
+      "run": "tools/guard.py",
+      "why": "takestock's own publication guard: no address, host name, email address or GUID outside the reserved and documentation ranges, and no term from a contributor's own denylist, in any tracked file. FORBIDS THE ACT: a public history cannot be recalled"
+    },
+    "extra-hook": {
+      "run": "tools/extra_hook.py",
+      "why": "a contributor's own pre-commit check, named in their clone's git config as takestock.extraHook and kept outside the repository; passes when none is set",
+      "planes": ["hook"]
+    }
+  }
+}

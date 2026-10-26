@@ -22,7 +22,7 @@ sent, and no mailbox content is read.
    ```yaml
    plugins:
      - name: exchange_online
-       input: inbox/exchange-online-settings-2030-01-31T0900Z.zip
+       input: inbox/exchange-online-settings-2030-01-31T0900Z.zip  # secretscan:allow: a file name
    ```
 
 The folder holds one `<cmdlet>.json` per cmdlet, each object exported whole,

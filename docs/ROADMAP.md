@@ -16,15 +16,12 @@ issue.
   still change. Before 1.0, decide which output fields are stable, and record
   every change to them in the changelog until then.
 
-- **Wire atelier's floor checks.** The onramp now carries atelier's floor
-  block, but not its scan hook, its CI floor job or an `.atelier-floor.json`.
-  A run of atelier's floor (CI plane, at `0a2b7a7`) over the tree blocks on six
-  checks: secretscan, leakscan, linkscan, datescan, wrapscan and spellscan;
-  pathscan only warns. The secret and leak findings are test fixtures,
-  documentation examples, algorithm names shaped like email addresses and the
-  package's authorship lines; none reads as a real secret. Decide how the hook
-  sits beside the guard, whether CI runs the floor, and what the repository
-  declares; then clear or declare each finding. Waiting on the maintainer.
+- **Clear the floor's advisory checks by 2027-01-31.** `.atelier-floor.json`
+  runs datescan, spellscan and wrapscan advisory while their findings are
+  cleared: dates in the reference guides to write as YYYY-MM-DD, US spellings
+  outside quoted titles and proper names, and long lines in the guides. Fix
+  each, or mark the ones that must stay (a quoted title, a table row), then
+  drop the advisory entry.
 
 ## Later
 

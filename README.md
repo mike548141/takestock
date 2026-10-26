@@ -180,7 +180,7 @@ Collectors come in three kinds:
   request, so a carry needs the authorisation record too whenever there is
   such a row; without it the carry is refused before anything is sent.
   `summary.json` records the carry under `carried_scan`. See
-  [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#carrying-earlier-probe-rows).
+  [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#carrying-earlier-probe-rows-carrypy).
 - `takestock rerun <target> --from <observation> --plugin <name>` derives a
   new observation from an earlier one: every row is carried as it was
   stored, except the named plug-ins' rows, which are read again from their

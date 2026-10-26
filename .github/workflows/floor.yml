@@ -1,0 +1,96 @@
+name: floor
+
+# The scanner floor for this repo — the CI half of the pre-commit scan hook.
+# The hook only guards the clone it is installed in (git transports neither hooks
+# nor config), so a fresh clone, a teammate's machine, or a web edit can commit
+# unscanned. This job is the backstop: it re-runs the scans on every push + PR, on
+# a runner nobody had to configure.
+#
+# THIS FILE NAMES NO SCANNER, AND THAT IS THE POINT (ADR 0008, 2026-07-25).
+# It used to be a 247-line copy listing every check. That copy went stale the
+# moment atelier added a guard: on 2026-07-25, 12 of 13 children were still
+# running their scaffold-time list and had never executed five of atelier's
+# checks — including one built after a real incident three days earlier.
+#
+# So the list moved to atelier (tools/floor.py) and this became a caller. A new
+# check reaches this repo on its next push, with no edit here and nothing for
+# anyone to remember. Keep it thin: if you find yourself adding a scanner line
+# below, that belongs in atelier's registry instead, where every repo gets it.
+#
+# WHAT THIS REPO STILL DECIDES — in `.atelier-floor.json` at the repo root, not
+# here: where its records live, the licence it asserts, and any check it runs
+# ADVISORY (reports, does not block — for a one-off re-baseline) or DISABLED
+# (with a stated reason). Those declarations are visible estate-wide via
+# `floorfleet`, so a check that is off is a decision on the record rather than an
+# absence nobody can see. Absent that file, everything is enforced.
+#
+# AND ITS OWN CHECKS — the `local` block in that same file, for a rule that is
+# genuinely this repo's and could never be fleet-wide (a tripwire whose blocklist
+# names things that must not leave this repo, say). Declare `run` (a path inside
+# this repo) and `why`; optionally `planes`, `args`, `scope`. It runs beside the
+# fleet checks, blocks the same commit, and shows on the board — but it can never
+# take a fleet check's name, and if the script is missing it BLOCKS rather than
+# passing quietly. A repo-specific rule belongs here; a rule other repos would
+# want belongs in atelier's registry.
+#
+# PINNING THIS REPO TO A FIXED ATELIER IS TWO EDITS, NOT ONE (ADR 0008 cold
+# pass, EP4). The `uses:` line below floats at `@main` on purpose — the scanners
+# are a security floor and newest is safest. If you accept the staleness trade
+# and want reproducible CI, pin BOTH:
+#   uses: mike548141/atelier/.github/workflows/floor.yml@<sha>   # the transport
+#   with:
+#     atelier-ref: <sha>                                        # the policy
+# Pinning only `uses:` freezes the workflow FILE and nothing else: it checks
+# atelier out at `atelier-ref`, which defaults to `main`, so the registry and
+# every scanner still come from atelier's tip. Same SHA in both places, bumped
+# together — a `uses:` pin on its own is not a frozen floor, however it reads.
+#
+# ADOPTING THIS ON AN OLDER REPO? Expect a first red — that red is the signal, not
+# a defect. Work through it, or declare the hygiene checks advisory in
+# `.atelier-floor.json` while you do, which keeps the finding visible instead of
+# silencing it.
+#
+# FALSE POSITIVE in this repo's own tree (a deliberate fake-secret test fixture, a
+# committed build-output dir full of generated markdown)? Two hatches, both
+# travelling with the repo — reach for these before `--no-verify`, which scans
+# nothing at all:
+#   - append the scanner's allow-marker to the flagged line:
+#     `secretscan:allow: <reason>` / `leakscan:allow:` / `linkscan:allow:` …
+#   - or add a root-relative path glob to `.secretscanignore` /
+#     `.leakscanignore` / `.linkscanignore` (etc.) at the repo root.
+# The failing run's output prints the same options. A hatch is per-finding and
+# stays visible in the diff; `.atelier-floor.json` is for a whole check.
+
+# Every push, not just main (2026-07-11 review N4) — the RATIONALE and the COST
+# differ by visibility:
+#   - PUBLIC repo: a push to ANY branch IS publication, so every-push is the
+#     primary gate — and it is free.
+#   - PRIVATE repo: a push is not yet publication, so every-push is a BACKSTOP
+#     over the hook (a --no-verify bypass, a hook-less clone), re-scanning the
+#     whole tree at each pushed tip — trees that publish WHOLESALE the day the
+#     repo goes public. It runs on METERED Actions minutes (billed per job,
+#     rounded up), so trimming to main-only trades minutes now against feature
+#     tips left unscanned until that flip. Default to every-push; scoping down is
+#     an estate-specific call. See atelier docs/method/ECONOMICS.md.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# Least privilege: the floor only reads trees (contents:read also lets the
+# signature step's gh-api plane read commit verification state).
+permissions:
+  contents: read
+
+# Cost hygiene — a newer push to the same ref cancels the superseded run.
+concurrency:
+  group: floor-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  floor:
+    uses: mike548141/atelier/.github/workflows/floor.yml@main
+    with:
+      # The last UNSIGNED commit, if this repo was retrofitted onto commit
+      # signing. Leave empty for a repo born signed — that verifies all history.
+      sign-boundary: ""

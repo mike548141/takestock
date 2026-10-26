@@ -8,8 +8,34 @@ keep to it.
 
 ```bash
 make venv    # once: .venv with takestock in editable mode, plus ruff, mypy and pytest
-make hooks   # once per clone: the guard runs on every commit and commit message
+make hooks   # once per clone: the floor and the guard on every commit
 make check   # the whole gate: guard, lint, type checks and tests
+```
+
+`make hooks` needs a clone of [atelier](https://github.com/mike548141/atelier)
+beside this one (or `make hooks ATELIER=/path/to/atelier`). The pre-commit hook
+in `.githooks/` is atelier's floor: it runs atelier's publication scanners
+(secrets, personal data, broken links and more) and then takestock's own
+checks, which `.atelier-floor.json` declares. The guard is one of them. The
+hook fails closed: with no atelier tools to run, it refuses the commit rather
+than scan nothing. The same floor runs in continuous integration
+(`.github/workflows/floor.yml`), so a commit made without the hook is still
+scanned when it is pushed.
+
+The personal-data scanner also matches a list of your own sensitive strings,
+kept outside every repository, and refuses a commit until the list exists:
+
+```bash
+cp ../atelier/tools/leakscan-terms.example.txt ~/.claude/leakscan-terms.txt
+# then fill it in
+```
+
+To check the hook is live, the first command must print `.githooks` and the
+second the list of checks:
+
+```bash
+git config --get core.hooksPath
+python3 "$(git config --get hooks.atelierTools)/floor.py" --list --plane hook
 ```
 
 `make check` runs, in order:
@@ -90,8 +116,9 @@ git config takestock.extraHook "<command>"
 
 The denylist is one term per line, matched case-folded, accent-stripped and
 across line breaks, as whole words; a leading `=` makes a term
-case-sensitive. The extra hook is called as `<command> pre-commit` and
-`<command> commit-msg FILE`, and a failure blocks the commit.
+case-sensitive. The extra hook is called as `<command> pre-commit` (through
+`tools/extra_hook.py`, a local check of the floor) and `<command> commit-msg
+FILE`, and a failure blocks the commit.
 
 The guard is the floor, not the check. It catches exact identifiers, which
 are finite, and nothing else. Reading for meaning is the check.

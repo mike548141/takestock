@@ -1,0 +1,5 @@
+# leakscan path allowances — root-relative globs.
+# A JSON record of TLS handshakes with loopback stub servers: long runs of hex
+# digits that read as phone- and card-number shapes to a structural scanner.
+# JSON cannot carry a line marker, so the file is named here.
+tests/fixtures/probes/tls-handshakes.json
