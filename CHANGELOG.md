@@ -119,6 +119,25 @@ command line or a file format, and its entry says how.
 - **IP address plan page**: the VLANs and segments table has a *Mode and
   notes* column, and a segment's name shows its location.
 
+- **IP address plan page**: a headline of the address blocks by kind
+  (subnets, ranges a site holds, single addresses, container-platform
+  internal networks), sites, VLANs, addresses and actions, also returned by
+  `ipam_view.headline(plan)`. One search over the subnet table takes an
+  address, a subnet, a MAC address or words (machine names, purposes, notes,
+  segment names), with `site:`, `env:`, `conf:`, `vlan:`, `source:` and
+  `action:`, filter buttons, a count, a CSV of the rows shown and a link to
+  the view; an address in no subnet says which special-purpose range holds
+  it, or that it is public. Every subnet opens to its
+  detail: the subnet holding it and those it holds, what its confidence
+  means, how its addresses are given out, its routing, each source with its
+  age at the build, its segments, a map of the addresses in use and every
+  address with its MAC addresses. Actions take optional `kind` and `who`
+  and are grouped by kind. The VLAN table has a filter, marks a VLAN
+  carrying several subnets and explains `segment_codes`; public addresses
+  are grouped by the autonomous system announcing them; the checks open
+  with a card each and list sources a whole calendar month or more old at the build; and
+  Sources gains each source's age and how the plan was built.
+
 - **Readers library**: `exchange_online` reads an export of Exchange Online
   settings (accepted domains, DKIM signing, anti-phishing policies and
   rules, preset security policy rules, inbound and outbound connectors,

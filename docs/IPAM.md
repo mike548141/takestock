@@ -91,7 +91,7 @@ workspace's `targets/` beside the target profile. Top-level keys:
 | `segment_codes` | What the parts of segment names mean |
 | `segment_location` | Where in a segment's name its location is written, and what each location is |
 | `exposure_chains` | The path a request takes from the internet to a service |
-| `actions` | Follow-up items tied to subnets |
+| `actions` | Follow-up items tied to subnets, each with an optional `kind` and `who` |
 | `asn_lookup` | Settings for internet-registry lookups |
 
 ### Sites
@@ -322,10 +322,18 @@ actions:
     title: Confirm whether the spare public block is still held
     subnets: [203.0.113.16/28]
     detail: The network diagram lists it, and no export shows anything using it.
+    kind: confirm
+    who: Network team
 ```
 
 Each action is listed on its own, and its id is written against every
-subnet it names.
+subnet it names. Two keys are optional and only change how the page shows
+the action:
+
+| Key | Meaning |
+|---|---|
+| `kind` | What closing it takes. `collect` (a gap in what the sources can see), `confirm` (a fact the sources disagree on or only imply), `decide` (a choice someone has to make) and `tidy` (housekeeping) are listed in that order under their own headings; any other word is listed after them under itself |
+| `who` | The role that holds the answer, shown on the action |
 
 ## Placing addresses
 
@@ -550,31 +558,70 @@ into the register unless it is named that way.
 ## The page
 
 The page is drawn entirely from the plan, so it cannot disagree with the
-JSON and CSV beside it. Its sections:
+JSON and CSV beside it. It opens with a headline: the address blocks by kind
+(subnets; ranges a site holds as a whole, /16 or wider for IPv4 and /48 or
+wider for IPv6; single addresses; and container-platform internal networks,
+`addressing: overlay`), the sites holding them, the VLANs and how many of the
+segments sources report carry one, the addresses seen in use and those only
+named, and the actions. `takestock.ipam_view.headline(plan)` returns the same
+counts for a caller that wants them. Its sections:
 
-- **Overview**: the summary, headline counts, the date range of the evidence,
-  an address finder, and links to every check that found something;
-- **Sites**, **Subnets** (with a filter), **Addresses** (per subnet, with
-  every source and flag);
-- **VLANs and segments**, **Mirrored sites**, **Public ranges** and
+- **Overview**: the summary, the date range of the evidence, an address
+  finder, the first actions, links to every check that found something, and
+  how to use the page;
+- **Sites**: each site's kind, ranges, subnets, addresses and newest
+  evidence, with a link that filters the subnet table to it;
+- **Subnets**: every address block, with how many of its usable addresses
+  were found (or, for a range holding other subnets, how many they hold),
+  its confidence and its actions;
+- **Addresses**: every subnet opens to its detail: where it sits (the subnet
+  holding it and the ones it holds), what its confidence word means, how its
+  addresses are given out (from its `addressing`; at a site of kind `cloud`,
+  by the platform), its internet routing, each source behind it with its date
+  and its age when the plan was built, its segments, a map of which
+  addresses are in use (IPv4 subnets from /23 to /30), and every address with
+  the sources that reported it, its flags and its MAC addresses;
+- **VLANs and segments** (with a filter, and a mark on a VLAN carrying
+  several subnets at one site), **Mirrored sites**, **Public ranges** and
   **Actions**, each drawn only when there is something to show. A segment's
   row shows its location, its access or trunk mode, and, for a VLAN kept
-  from an older source, which source stated it and that source's date;
-- **To look at**: every check;
+  from an older source, which source stated it and that source's date. When
+  the plan file has `segment_codes`, a table says what each code means.
+  Public ranges open with every public address's routing grouped by the
+  autonomous system announcing it. Actions are grouped by `kind` and show
+  `who`;
+- **To look at**: a card for each check with its count, then every check in
+  full, plus the sources read from a system that were a whole calendar month or more old
+  when the plan was built (documents are left out: their date is when they
+  were written);
 - **Set aside**: every sighting not placed, by source and reason;
-- **Sources**: each source's kind, evidence class, date and notes.
+- **Sources**: each source's kind, evidence class, date, age at the build
+  and notes, then how the plan was built: where the data comes from, how an
+  address finds its subnet, what the confidence words and dates mean, what
+  the plan cannot see, and what the files beside the page hold.
 
 Without scripts the page reads as one long document and prints that way.
-With them, the sections become tabs, the subnet table can be filtered, and
-the address finder answers *which subnet holds this address?* in the
-browser, naming the subnet, its site and purpose, and the names the plan
-holds for the address. Given a MAC address (in any of the usual spellings:
-`02:00:00:00:00:10`, `02-00-00-00-00-10`, `0200.0000.0010`) it lists every
-address a source saw that MAC address at, and the subnet holding each.
+With them, the sections become tabs, and one search over the subnet table
+takes anything: an address (the table shows the subnet holding it, and a
+note says which subnet that is, which names the plan holds for the address,
+who reported it and when it was last seen, or, for an address in no subnet,
+which special-purpose range holds it: private, a provider's shared range,
+link-local, loopback, multicast, documentation, reserved, or an IPv4 address
+written in IPv6 form; otherwise, that it is public); a
+subnet in CIDR form (every block overlapping it); a MAC address (in any of
+the usual spellings: `02:00:00:00:00:10`, `02-00-00-00-00-10`,
+`0200.0000.0010`); or words, matched against machine names, purposes, notes,
+segment names, sites and source fields, with the matching addresses listed.
+`site:`, `env:`, `conf:`, `vlan:`, `source:` and `action:` narrow a search,
+and so do buttons for each site, environment and confidence word, and for
+blocks with an action, with no address found, or with a VLAN. The rows shown
+can be saved as a CSV. The overview's address finder answers the same
+question for one address or MAC address. Opening a subnet draws its map.
 
 The view is kept in the page's address, so a copied link opens where it was
 copied: `#subnets` opens a section, `#find=192.0.2.10` runs the address
-finder, and `#filter=printer` filters the subnet table. A document preview
+finder, and `#filter=printer` searches the subnet table (with `&site=`,
+`&env=`, `&conf=` and `&flag=` for the buttons pressed). A document preview
 may show the page inside a sandboxed frame where the address cannot be
 changed; there the page works the same, and only the address stays as it
 was. Every value from the data is escaped before it reaches the page.
