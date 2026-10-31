@@ -33,6 +33,9 @@ openssl-library.org
 adoptium.net
 endoflife.date
 techdocs.broadcom.com
+# Microsoft's Exchange Team blog, where Microsoft announces Exchange Online
+# retirement timelines, cited by the exo_client_access reader.
+techcommunity.microsoft.com
 # Reference-data files whose purpose is to list public vendor domains. Only the
 # hostname check is lifted for these files; every row is still reviewed.
 hostname-data src/takestock/data/vendor-domains.csv

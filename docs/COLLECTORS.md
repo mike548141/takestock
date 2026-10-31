@@ -972,6 +972,9 @@ plugins:
 | `entra_audit` | `general` | The Microsoft Entra audit log: how directory roles were granted and removed, and repeating failures | none: name it with `input:` |
 | `entra_privileged_groups` | `general` | The membership of groups holding directory roles, with the role assignments: everyone who can act with a role, counted once | none: name it with `input:` or `settings: members:` |
 | `entra_app_credentials` | `general` | CSVs of Microsoft Entra application credentials: client secret or certificate, lifetime, expiry and permissions | none: name it with `input:` |
+| `exo_client_access` | `general` | Exchange Online mailbox access switches (IMAP, POP, ActiveSync, MAPI, Outlook on the web, EWS) per protocol, and the organisation's authenticated SMTP switch | none: name it with `input:` or `settings: mailboxes:` |
+| `exo_connector_messages` | `mail-transport` | A per-message Exchange Online mail transport CSV: the TLS version each message negotiated, by direction and path, and mail with government organisations | none: name it with `input:` |
+| `exo_outbound_protection` | `general` | Exchange Online outbound message counts by security type (DANE, MTA-STS, TLS alone) | none: name it with `input:` |
 
 A reader with no default input still runs when the profile gives it none,
 and records in its own coverage gap that no export was read. A profile that
@@ -1898,3 +1901,165 @@ write permissions: the scope row is flagged `scope-directory-write-only`.
 
 **Coverage gaps.** No export read; key strength (always, with the credential
 rows); dates that could not be read.
+
+### The Exchange Online mail readers
+
+Three readers read Exchange Online exports about mail: which ways into a
+mailbox are switched on (`exo_client_access`), what transport encryption each
+message negotiated (`exo_connector_messages`), and whether outbound mail
+authenticated the receiving domain (`exo_outbound_protection`). They read
+CSV files and complement `exchange_online`, which reads the platform's
+DKIM, DMARC and quarantine settings. None has a default input; with none
+given, each still runs and records in its own coverage gap what was not read.
+No row lists a mailbox or an address: rows count them.
+
+```yaml
+plugins:
+  - name: exo_client_access
+    settings:
+      mailboxes: inbox/exchange/mailboxes-*.csv
+      transport: inbox/exchange/transport-*.csv
+      policies: inbox/exchange/authentication-policies-*.csv
+  - name: exo_connector_messages
+    input: inbox/exchange/message-transport.csv
+  - name: exo_outbound_protection
+    input: inbox/exchange/outbound-security-types.csv
+    settings: {messages: inbox/exchange/message-transport.csv}
+```
+
+### `exo_client_access`
+
+**Reads** three CSVs that this Exchange Online PowerShell script writes, each
+with the day it ran in its name. It was written from Microsoft's
+ExchangeOnlineManagement documentation and has not been run here. It reads
+settings only. The authentication policy file is written only when a policy
+exists, so where `policies:` is named and no file is found, the reader takes
+it that there is no policy. Where `policies:` is not named, policies were not
+read, and the SMTP row is `unknown` rather than `weak`, as when a policy is
+read but which mailboxes it covers is not known: name `policies:` (a pattern
+is fine) for the SMTP row to be graded.
+
+```powershell
+Connect-ExchangeOnline
+$day = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd')
+$kind = @{}
+Get-EXOMailbox -ResultSize Unlimited -Properties RecipientTypeDetails |
+    ForEach-Object { $kind[[string]$_.PrimarySmtpAddress] = $_.RecipientTypeDetails }
+Get-EXOCasMailbox -ResultSize Unlimited -Properties PrimarySmtpAddress,SmtpClientAuthenticationDisabled |
+    ForEach-Object {
+        [pscustomobject]@{
+            PrimarySmtpAddress = $_.PrimarySmtpAddress
+            RecipientTypeDetails = $kind[[string]$_.PrimarySmtpAddress]
+            ImapEnabled = $_.ImapEnabled; PopEnabled = $_.PopEnabled
+            ActiveSyncEnabled = $_.ActiveSyncEnabled; MAPIEnabled = $_.MAPIEnabled
+            OWAEnabled = $_.OWAEnabled; EwsEnabled = $_.EwsEnabled; ECPEnabled = $_.ECPEnabled
+            SmtpClientAuthenticationDisabled = $_.SmtpClientAuthenticationDisabled
+            Cmdlet = 'Get-EXOCasMailbox'
+        }
+    } | Export-Csv -NoTypeInformation -Path "mailboxes-$day.csv"
+Get-TransportConfig | Select-Object SmtpClientAuthenticationDisabled |
+    Export-Csv -NoTypeInformation -Path "transport-$day.csv"
+$policies = @(Get-AuthenticationPolicy)
+if ($policies.Count) {
+    $policies | Select-Object Name, AllowBasicAuthSmtp, AllowBasicAuthImap, AllowBasicAuthPop |
+        Export-Csv -NoTypeInformation -Path "authentication-policies-$day.csv"
+}
+```
+
+| File | Setting | Columns read |
+|---|---|---|
+| Mailboxes | `input:` or `mailboxes:` | `RecipientTypeDetails`, `ImapEnabled`, `PopEnabled`, `ActiveSyncEnabled`, `MAPIEnabled`, `OWAEnabled`, `EwsEnabled`, `ECPEnabled`, `Cmdlet`, and `SmtpClientAuthenticationDisabled` when present (blank: the mailbox follows the organisation setting) |
+| Organisation | `transport:` | `SmtpClientAuthenticationDisabled` (the first row) |
+| Authentication policies | `policies:` | one row per policy; only the count is used |
+
+A setting may be a path, a list or a pattern. With a pattern, the mailbox
+file read is the one with the latest date in its name, and the organisation
+and policy files are those with the same date; when none has it, none is
+read, because another day's setting describes a different moment. A setting
+naming one file is read as it is.
+
+**Rows.** `Mailbox access — <protocol>` for IMAP, POP, Exchange ActiveSync,
+MAPI (Outlook for Windows), Outlook on the web, Exchange Web Services and ECP:
+how many mailboxes have it on, off or unrecorded, split by mailbox kind.
+`Mail submission by password — organisation setting`, and `Mailbox access
+settings — scope`. Data state `identity`.
+
+**Grading.** Microsoft has retired password-only sign-in for IMAP, POP,
+ActiveSync, MAPI and Exchange Web Services, so those rows are `acceptable`.
+Outlook on the web is not on Microsoft's list; it is used in a browser,
+which Conditional Access counts as a modern authentication client, and its
+row is `acceptable` on that basis and says so. IMAP and POP switched on are
+flagged `exo-legacy-protocol-enabled:<protocol>`: Microsoft calls them legacy
+protocols, security defaults switch them off, and on is the default for every
+mailbox. ECP is `unknown`: Microsoft documents its switch as on-premises
+only. Authenticated SMTP submission on for the organisation is
+`weak`, flagged `exo-smtp-auth-enabled-tenant-wide`: until the end of
+December 2026 Microsoft accepts a password alone on that path, and NZISM v3.9
+16.7.42.C.01 (MUST) requires multifactor authentication for user accounts on
+cloud-based services. It is `unknown` instead when an authentication policy
+exists, or when the export is dated after 2026-12-31, when Microsoft's default
+changes. The export's date is the date in the mailbox file's name or, without
+one, the file's modification date; the scope row states both, each labelled,
+and each row's `collected_at` is the modification date. Off for the
+organisation is `acceptable`.
+
+**Coverage gaps.** No mailbox file read; the organisation file not read;
+mailbox SMTP overrides not in the file; the organisation-level Exchange Web
+Services switch; which clients use these protocols (the sign-in logs').
+
+### `exo_connector_messages`
+
+**Reads** a CSV with one row per message, both directions, in the columns
+`date_utc`, `direction` (`Inbound` or `Outbound`), `sender_address`,
+`recipient_address`, `connector_name` (blank for mail delivered without a
+connector), `connector_type` and `tls_version` (`TLS1.3`, `TLS1.2`, `TLS1.1`,
+`TLS1.0`, or `No Tls`), plus `message_id` and `tls_cipher`, which are not
+read. The reader was written to the columns of a per-message report
+downloaded from the Exchange admin centre; Microsoft's documentation does not
+list them, so check a file's heading row against this list. The file may be
+UTF-16 with or without a byte-order mark, or UTF-8.
+
+**Rows.** `<Direction> mail — <connector>` (or `direct (no connector)`) for
+each path, with the message count, the TLS versions seen, the counterparty
+domain count and, for each message delivered in clear, its date and the
+counterparty's domain; and `Per-message mail transport scope` with the
+dates covered. Addresses are read for their domain and never kept. The
+reader's kind is `mail-transport`, so every row's source is
+`mail_transport` and the [Secure Government Email reading](SGE-NOTE.md) reads
+them.
+
+**Grading.** TLS 1.3 `strong`, TLS 1.2 `acceptable`, TLS 1.1, TLS 1.0 and no
+TLS `weak`; a path takes its weakest. Flags: `mail-cleartext-delivery:<count>`,
+`mail-legacy-tls:<version>`, `ungraded:mail-tls-version:<versions>`.
+
+**Settings.** `government_suffixes`: the domain endings that mark a
+counterparty as a government organisation, for SGE-ITLS-01 (default
+`.govt.nz`, `.mil.nz` and `.parliament.nz`). The profile's own domains
+(`discovery.domains` and `discovery.email_domains`) are never counted as one.
+The count is a lower bound: a government organisation mailing from another
+domain is missed.
+
+**Coverage gaps.** No export read.
+
+### `exo_outbound_protection`
+
+**Reads** a CSV of outbound message counts, one row per hour and security
+type, in the columns `Date`, `SecurityType` (`DANE`, `MTA-STS`, both, or
+`TLS-only`) and `CountOfSecuredMessages`, exported from the Exchange admin
+centre's outbound mail reports. `settings: messages:` names the per-message
+export `exo_connector_messages` reads, if there is one.
+
+**Row.** `Outbound mail — delivery protection by recipient policy`, `n/a`:
+how many messages were delivered under a policy the receiving domain
+publishes (MTA-STS or DANE) and how many were encrypted without that check.
+With the per-message export, it counts how many outbound messages on the same
+dates went through a connector, where the connector's settings, not the
+recipient's policy, decide whether the receiver is authenticated, so "TLS
+alone" is not read as "unauthenticated". How much of "TLS alone" that
+explains is stated as holding only if both exports count the same messages.
+How the combined DANE and MTA-STS value is spelt is not documented: the
+reader places `DANE and MTA-STS` and `DANE+MTA-STS`, and any other value,
+another spelling of it included, is counted apart and flagged
+`ungraded:mail-security-type:<types>`.
+
+**Coverage gaps.** No export read.

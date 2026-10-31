@@ -534,3 +534,38 @@ def application_credential_absent(directory_write: bool = False) -> str:
 def application_credential_scope() -> str:
     """The scope row for an application credential export."""
     return "What the export of applications' sign-in credentials covers, and what it cannot show"
+
+
+def mail_flow(direction: str, path: str, messages: int, direct: str = "") -> str:
+    """One mail path: which way the mail went, by which route, and how much of it."""
+    verb = {"Outbound": "sent", "Inbound": "received"}.get(direction, "moved")
+    via = "directly, with no connector" if path == direct else f'through "{path}"'
+    return f"Mail {verb} {via}, {messages:,} message(s) in the period read"
+
+
+def mail_flow_scope() -> str:
+    """The scope row for a per-message mail transport export."""
+    return "What the per-message mail transport export covers, and what it cannot show"
+
+
+def mail_outbound_protection(messages: int) -> str:
+    """Outbound mail by whether the receiving server was checked against a policy it publishes."""
+    return (f"Mail sent, and whether each receiving server was checked against a policy its "
+            f"domain publishes, {messages:,} message(s) in the period read")
+
+
+def mailbox_access_method(what: str, enabled: int, total: int) -> str:
+    """One way into a mailbox, and how many mailboxes have it switched on."""
+    return f"{what}, switched on for {enabled:,} of {total:,} mailbox(es)"
+
+
+def mail_submission_setting() -> str:
+    """The organisation-wide switch for authenticated SMTP submission."""
+    return ("The organisation-wide switch for sending mail by signing in to the mail service "
+            "from a program or device (authenticated SMTP submission)")
+
+
+def mailbox_access_scope() -> str:
+    """The scope row for a mailbox access settings export."""
+    return ("What the mailbox access settings export covers: which mailboxes were read, when, "
+            "by which command, and what it cannot show")

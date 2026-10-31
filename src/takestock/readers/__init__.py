@@ -28,7 +28,8 @@ from ..plugins import Plugin
 MODULES: tuple[str, ...] = ("cyclonedx", "oracle_tde", "commvault", "exchange_online", "vmware",
                             "rvtools", "vsphere_lists", "entra_signins", "entra_auth_methods",
                             "entra_workload_signins", "entra_audit", "entra_privileged_groups",
-                            "entra_app_credentials")
+                            "entra_app_credentials", "exo_client_access",
+                            "exo_connector_messages", "exo_outbound_protection")
 
 
 def _load() -> list[Plugin]:

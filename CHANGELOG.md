@@ -9,6 +9,22 @@ command line or a file format, and its entry says how.
 
 ### Added
 
+- **Readers library: three Exchange Online mail readers.** Each runs when a
+  profile names it in `plugins:` (`docs/COLLECTORS.md`, "The Exchange Online
+  mail readers"). `exo_client_access` reads mailbox access settings exported
+  with Exchange Online PowerShell: one row per protocol (IMAP, POP, Exchange
+  ActiveSync, MAPI, Outlook on the web, Exchange Web Services, ECP) counting
+  the mailboxes that have it switched on, and the organisation's
+  authenticated SMTP switch: on, it is graded `weak` while Microsoft still
+  accepts a password alone on that path and the policy files named show
+  none, and `unknown` otherwise; off, `acceptable`. `exo_connector_messages` reads a per-message
+  transport CSV and writes one `mail_transport` row per direction and path,
+  with deliveries made in clear and mail with government organisations
+  counted for the Secure Government Email reading; the government domain
+  suffixes are a setting. `exo_outbound_protection` reads outbound message
+  counts by security type (DANE, MTA-STS, TLS alone) and, given the
+  per-message export, says how much of "TLS alone" went through a connector
+  if both exports count the same messages.
 - **Readers library: six Microsoft Entra readers.** Each runs when a profile
   names it in `plugins:`, with `input:` and `settings:` naming the exports
   (`docs/COLLECTORS.md`, "The Microsoft Entra readers"). `entra_signins`
