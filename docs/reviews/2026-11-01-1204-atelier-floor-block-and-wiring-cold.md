@@ -2,8 +2,9 @@
 
 **Board item:** `docs/ROADMAP.md` § *Queued reviews*, the ⏳ *"Rule-4 cold
 pass queued: the floor block stamped at atelier `0a2b7a7`"*.
-**Status:** act 1 run 2026-11-01 (UTC), PASS-WITH-FINDINGS (1 MAJOR, 6
-MINOR); act 2 pending.
+**Status:** act 1 and act 2 run 2026-11-01 (UTC). Final verdict
+PASS-WITH-FINDINGS (1 MAJOR, 7 MINOR); decisions are the maintainer's.
+Held-back sibling folded below the verdict.
 
 **Reviewer tier: Fable** (atelier `REVIEW.md` rule 4 and the maintainer's
 standing rule that reviews run on Fable). 🛑 **This pass runs only on the
@@ -16,11 +17,10 @@ neither started nor instructed session `8266042b`, which did. The reviewer
 must not be `8266042b`, a session it started or instructed, or this
 brief-writer.
 
-**Held back:** one sibling file,
-`2026-11-01-1204-atelier-floor-block-and-wiring-cold.deferred.md`, with six
-questions. Open it only after your own findings are written to this file
-(REVIEW.md rule 1). Fold it in below the verdict and delete it when the
-verdict lands.
+**Held back:** one sibling file, with six questions, opened only after
+the reviewer's own findings were written to this file (REVIEW.md rule 1).
+It is folded in below the verdict, at *Deferred sibling, folded below the
+verdict*, and the sibling file is deleted.
 
 ## Subject
 
@@ -385,3 +385,174 @@ PASS-WITH-FINDINGS.** Under REVIEW.md rule 3 these findings are on
 self-authored doctrine by function (a gate and the config that decides what
 it enforces), so the decisions are the maintainer's; the recommendations
 above are the reviewer's counsel, and nothing here has been applied.
+
+## Act 2 — the held-back sibling's questions
+
+Opened after act 1 was committed (`f836875`), as the brief and REVIEW.md
+rule 1 require. Six questions, all the brief-writer's; the authoring session
+seeded none. Act 1 stands as committed; what changes is below, as an
+addendum.
+
+**Q1 — what each advisory and each disabled leakscan rule lets through, and
+whether the guard covers each class.** The three advisories (datescan,
+spellscan, wrapscan) let through relative-time words and non-ISO dates in
+`docs/`, US spellings, and prose lines over the column budget. None is an
+identifier class; the repository's rule is not weakened by them, and none
+was ever a gate for meaning (a date that is an organisation's programme date
+is invisible to datescan and the guard alike — the reading-for-meaning
+check is the only cover there, as `CLAUDE.md` says). The disabled rules, one
+by one: **email** — covered, and more strictly: leakscan flags any address,
+the guard passes only reserved domains; probed with a non-reserved mail
+domain, refused. **ipv6** — covered: the guard refuses anything outside
+`2001:db8::/32`, loopback and unspecified; probed with a unique-local, a
+global and a link-local address, all refused. **mac-address** — not
+covered: the guard has no MAC check, and the probe landed (F2). So "the
+guard gates email and IP addresses more strictly" is true for the two
+classes it names and silent about the third it switched off.
+
+**Q2 — are the path exemptions whole-file, and does a later value pass.**
+Yes and yes. Both ignore files are read by the shared loader as path globs:
+a matching file is skipped whole, line by line is not an option. Probed in
+act 1 for secretscan (F3: a token-shaped string appended to an exempt test
+module landed). Probed in act 2 for leakscan: the documentation IBAN from
+the ISO example, appended to a copy of `tests/fixtures/probes/
+tls-handshakes.json` under a copy of `.leakscanignore`, passes clean; with
+the ignore file removed it is a `high` finding. The guard still reads every
+one of these files, so an address, host name, email address or GUID would be
+refused; a credential or a personal-data shape would not. F3's
+recommendation stands; the JSON exemption is sound for its reason (JSON
+cannot carry a marker) and the gap it leaves is personal-data shapes in one
+fixture file, acceptable if named.
+
+**Q3 — what `extra-hook` protects on CI and on a fresh clone, and whether
+the docs describe it.** On CI: nothing, and visibly so — the board prints
+`skipped · local (not declared on the ci plane)`; it could not run there,
+because the command lives in a clone's own config. On a fresh clone:
+nothing until `make hooks` runs (no hook at all) and then nothing until the
+contributor sets `takestock.extraHook`; "passes when none is set" is the
+design, and the check prints `nothing to run` on every such run. The docs
+describe the calling convention as it behaves (both halves verified in act
+1, with the arguments and working directory as documented). Neither
+`CLAUDE.md` nor `CONTRIBUTING.md` says the check is hook-only, and both say
+CI runs "the same floor"; see Q5. One thing neither plane does is scan the
+commit message in CI: addendum F8 below.
+
+**Q4 — what trace a narrow exception leaves, and what enforces "narrow".**
+In this repository, none: the exception lives in the contributor's own
+check, outside every repo; `tools/extra_hook.py` relays an exit code and
+nothing else; the floor board shows a tick or a cross. The only repo-side
+record is the ruling itself, in the session record (F7). What a later pin
+bump finds is the loud half of the mechanism: a bump that trips the
+contributor's check blocks, and the block is the trace; an exception made
+stale by atelier rewording the line simply stops mattering, silently, which
+is harmless because it then excuses nothing. Nothing enforces "narrow": the
+floor cannot read a check it does not ship, and "one word for one file" is a
+convention the contributor keeps. That is the right shape for a check whose
+contents must never enter the repository. Addition to F7's recommended
+sentence: say the exception is keyed to the file and to the atelier pin it
+was added for, so that a bump is a deliberate re-test rather than an
+accident. No severity change.
+
+**Q5 — do the docs and records agree with what runs, plane by plane.** On
+*what* runs, yes: `guard` on both planes and `extra-hook` on the hook only
+(`.atelier-floor.json` and the wiring record say so); the three advisories
+on both planes with the same reasons; the shim and `floor.yml` unchanged
+from atelier's. On *how much it covers*, the prose overstates CI twice:
+`CLAUDE.md` ("runs the same floor on every push and pull request") and
+`CONTRIBUTING.md` ("The same floor runs in continuous integration"). CI runs
+the same registry with two declared differences: the extra hook is skipped,
+and leakscan runs structural-only with no term list (the board renders it
+🟡 partial, by atelier's design). And one surface runs on no CI plane at
+all: the commit message (F8). The records agree with the files except where
+act 1 already said (F4's "fails if there is none"); `CLAUDE.md`'s dev-loop
+line is F6. Note **N3**: when F6's line is edited, change the two "same
+floor" sentences to "the same checks, with leakscan structural-only and the
+extra hook skipped".
+
+**Q6 — the drift check's layout, and which stamp is the subject.** The
+check assumes atelier at `../atelier` relative to the repository root. It
+does not resolve from a worktree (this pass ran in one, and `../atelier`
+there is not a clone), and in CI there is no sibling clone at all; the
+reusable workflow checks atelier out itself and never runs a stamp check.
+So the drift check works from a primary clone beside atelier and nowhere
+else. The hook already knows where atelier is (`hooks.atelierTools`) and the
+Makefile has `ATELIER`; a `make drift` target running the block's two
+commands from `$(ATELIER)` would make the check layout-independent while
+leaving the stamped text verbatim, which the floor rules require. A note,
+not a finding on the subject: the placeholder and its relative-path
+convention are atelier's, and the value is the one the brief names. On the
+second half: the subject is the stamp as made at `0a2b7a7`, and it is also
+the stamp as it should now read — atelier's `origin/main` has moved past
+the pin, and the `floor` region is byte-identical at both (act 1, V2). No
+bump is owed for the floor text. Whether the pin should bump for the rest of
+what moved is a session-start act under the block's own *Source & drift*
+bullet, and outside this pass.
+
+### Addendum
+
+**F8 — MINOR — commit messages are scanned by the local `commit-msg` hook
+and by nothing in CI.** `CLAUDE.md`'s rule names commit messages as records
+that must carry no organisation's data, and says the guard scans "every
+commit message". It does, on the hook. `.github/workflows/ci.yml` runs `make
+check` (the guard over the tree) and `floor.yml` runs tree scanners; neither
+reads a message. A hook-less clone (which `CONTRIBUTING.md` admits commits
+unscanned), a `--no-verify`, or a web edit lands a message in the public
+history with every CI check green. **Recommendation:** a step in `ci.yml`
+that runs `tools/guard.py --msg` over each message in the pushed range
+(`git log --format=%B` per commit; `github.event.before` to the pushed SHA
+on push, base to head on a pull request) and fails on a hit; `ci.yml` is
+this repository's own, so it is the right home, not the thin floor caller.
+Found while answering Q3 and Q5; no act 1 finding changes.
+
+**Final verdict: PASS-WITH-FINDINGS.** Tally: 1 MAJOR (F1), 7 MINOR
+(F2–F8), 2 notes (N2, N3); N1 closed on reconcile. The decisions on every
+finding are the maintainer's (REVIEW.md rule 3); nothing has been applied.
+
+## Deferred sibling, folded below the verdict (orchestrator, 2026-11-01)
+
+The text below is the held-back sibling, copied verbatim by the
+orchestrating session `d9664696` once act 2 was saved. It was removed from
+the worktree before the reviewer started, held outside the repository
+through act 1, and released to the reviewer only after act 1 was committed
+(`f836875`). The orchestrator formed no finding and changed
+no word of it; its questions are answered in *Act 2* above. The sibling
+file itself is deleted in the same commit as this fold.
+
+<!-- folded verbatim: begin -->
+
+# Deferred — the atelier floor block and its wiring, cold review
+
+🛑 **Open only after your own findings are written** to
+`2026-11-01-1204-atelier-floor-block-and-wiring-cold.md` (REVIEW.md rule 1).
+A floor, never a fence: answer each, then fold this file in below your
+verdict and delete it.
+
+All six are the brief-writer's; the authoring session seeded none.
+
+Q1. For each advisory scanner and each leakscan rule switched off: what
+class of value can now reach a commit with every blocking check green, and
+does the guard really cover each class the disabled rules covered (email
+addresses, IPv6 addresses and MAC addresses each, not only "addresses")?
+
+Q2. The path exemptions in `.secretscanignore` and `.leakscanignore`: are
+they whole-file, and would a value added to an exempt file later pass with
+nothing red?
+
+Q3. `extra-hook` passes when no command is set, and runs on the hook plane
+only. On CI and on a fresh clone, what does that check protect, and do
+`CLAUDE.md` and `CONTRIBUTING.md` describe it as it behaves?
+
+Q4. The 2026-10-27 ruling: when a contributor adds a narrow exception in
+their own check, what leaves a trace a later pin bump can find, and does
+anything enforce "narrow"?
+
+Q5. Do `CLAUDE.md`'s account of the wiring, `CONTRIBUTING.md` and the
+session records agree with what `.atelier-floor.json`, the shim and
+`floor.yml` actually run, plane by plane?
+
+Q6. The stamped block's drift check assumes atelier at `../atelier`. Does it
+work in another layout (a worktree, CI), and with atelier's mainline now past
+`0a2b7a7`, what is the subject: the stamp as made, or the stamp as it should
+now read?
+
+<!-- folded verbatim: end -->
