@@ -30,7 +30,7 @@ issue.
 
 ## Queued reviews
 
-- ⏳ **Rule-4 cold pass queued: the floor block stamped at atelier
+- [~] ⏳ **Rule-4 cold pass queued: the floor block stamped at atelier
   `0a2b7a7`.** Refs only. Delta: the commit that adds this item (resolve with
   `git log -S'floor block stamped at atelier' -- docs/ROADMAP.md`). Intent
   record: `docs/sessions/*-adopt-atelier-floor.md`. Doctrine
@@ -42,3 +42,9 @@ issue.
   `docs/reviews/2026-11-01-1204-atelier-floor-block-and-wiring-cold.md`,
   with a held-back sibling of six questions; it also takes in the wiring
   that followed (`8e1e83d`, `1f7254a`).
+  **Claimed 2026-11-01T13:49Z** for the cold pass, run under the maintainer's
+  approval of Fable work for the weekly budget (2026-11-02). Orchestrator:
+  headless session `d9664696` on Opus, an off-tier orchestrator under rule 4 that
+  holds the context partition and forms no finding; it was started by
+  session `c87c4ee0`, which only launched it. Reviewer: Fable 5.1. The
+  held-back sibling is held outside the repository until act 1 is committed.
