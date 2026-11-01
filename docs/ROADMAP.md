@@ -36,6 +36,9 @@ issue.
   record: `docs/sessions/*-adopt-atelier-floor.md`. Doctrine
   surface: atelier `PROPAGATION.md` § *The standard child doctrine block*
   (the `floor` region) at `0a2b7a7`, and its stamp rules. For a non-author to
-  take; the taker writes the brief. Tier at selection: Fable, so it waits for
-  the maintainer's approval of Fable work. **Not takeable by session
-  `8266042b`**, which authored the adoption.
+  take. Tier at selection: Fable, so it waits for the maintainer's approval
+  of Fable work. **Not takeable by session `8266042b`**, which authored the
+  adoption. **Brief ready (2026-11-02):**
+  `docs/reviews/2026-11-01-1204-atelier-floor-block-and-wiring-cold.md`,
+  with a held-back sibling of six questions; it also takes in the wiring
+  that followed (`8e1e83d`, `1f7254a`).
