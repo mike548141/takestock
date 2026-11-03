@@ -22,6 +22,21 @@ command line or a file format, and its entry says how.
   says whether every one contributed rows. Settings name other column
   headings (`columns`) and shapes that split long disk names
   (`disk_name_shapes`).
+- **Readers library: Windows drive encryption and recovery-key escrow.**
+  `m365_bitlocker` runs when a profile names it in `plugins:`
+  (`docs/COLLECTORS.md`, "`m365_bitlocker`"). It reads a CSV of
+  Intune-managed Windows devices joined to the BitLocker recovery keys held in
+  Microsoft Entra ID (a Microsoft Graph PowerShell script for it is given)
+  and grades each device: `strong` when encrypted with a key held there,
+  `weak` when encrypted with no key held there or not encrypted. Copies kept
+  elsewhere (Active Directory Domain Services, a file, paper, a data recovery
+  agent) are not read. With `settings:` it also
+  reads the Intune encryption report (TPM version, readiness, profile state,
+  and an operating-system volume encrypted by a method other than policy's,
+  capped at `acceptable`), Intune's device list, Microsoft Entra ID's device
+  objects, and another product's drive-encryption export
+  (`cross_check:`); where two sources disagree about a device it is graded
+  `unknown`. A scope row states how each register counts the devices.
 - **Readers library: three Exchange Online mail readers.** Each runs when a
   profile names it in `plugins:` (`docs/COLLECTORS.md`, "The Exchange Online
   mail readers"). `exo_client_access` reads mailbox access settings exported

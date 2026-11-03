@@ -602,3 +602,29 @@ def cloud_resource_scope() -> str:
     """The scope row for an Azure Resource Graph export."""
     return ("What the Azure Resource Graph export covers: which resource types and "
             "subscriptions were read, and what it cannot show")
+
+
+def key_custody(device: str) -> str:
+    """One device's drive encryption, and whether a copy of its recovery key is held."""
+    if not device:
+        return ""
+    return ("Drive encryption on this device, and whether a copy of its recovery key is held "
+            "elsewhere: what keeps a stolen device unreadable and a failed one recoverable")
+
+
+def endpoint_at_rest_population() -> str:
+    """The scope row reconciling the device registers that count the same devices."""
+    return ("How many devices each device register counts, and which register answers which "
+            "question about drive encryption")
+
+
+def key_storage_hardware() -> str:
+    """The TPM versions the devices report."""
+    return ("The security chip (TPM) in each device that holds its drive-encryption key so "
+            "the key cannot be copied off the device")
+
+
+def unassessed_device_encryption() -> str:
+    """Managed devices whose encryption the reader cannot check."""
+    return ("Managed devices that are not Windows, whose own report that their storage is "
+            "encrypted cannot be checked here")

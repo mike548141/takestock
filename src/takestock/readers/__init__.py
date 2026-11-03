@@ -30,7 +30,7 @@ MODULES: tuple[str, ...] = ("cyclonedx", "oracle_tde", "commvault", "exchange_on
                             "entra_workload_signins", "entra_audit", "entra_privileged_groups",
                             "entra_app_credentials", "exo_client_access",
                             "exo_connector_messages", "exo_outbound_protection",
-                            "azure_resource_graph")
+                            "azure_resource_graph", "m365_bitlocker")
 
 
 def _load() -> list[Plugin]:

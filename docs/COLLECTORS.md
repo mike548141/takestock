@@ -976,6 +976,7 @@ plugins:
 | `exo_connector_messages` | `mail-transport` | A per-message Exchange Online mail transport CSV: the TLS version each message negotiated, by direction and path, and mail with government organisations | none: name it with `input:` |
 | `exo_outbound_protection` | `general` | Exchange Online outbound message counts by security type (DANE, MTA-STS, TLS alone) | none: name it with `input:` |
 | `azure_resource_graph` | `general` | Azure Resource Graph query results: stored-data encryption key source for storage accounts, managed disks and snapshots, storage accounts' TLS floors and public exposure settings, key vaults' authorisation model | none: name it with `input:` |
+| `m365_bitlocker` | `general` | A CSV of Intune-managed Windows devices joined to the BitLocker recovery keys held in Microsoft Entra ID, with the Intune encryption report, device lists and an optional second drive-encryption source: whether each drive is encrypted and whether its recovery key is held | none: name it with `input:` |
 
 A reader with no default input still runs when the profile gives it none,
 and records in its own coverage gap that no export was read. A profile that
@@ -2201,3 +2202,157 @@ the types queried, so the storage answer is not the database answer.
 **Cannot see.** Network rules and private endpoints; who holds key vault
 roles or access policies; customer-managed keys' own properties; databases;
 any type the query does not name.
+
+### `m365_bitlocker`
+
+Whether each Windows device's drive is encrypted, and whether a copy of its
+BitLocker recovery key is held in Microsoft Entra ID. Microsoft's *BitLocker
+recovery overview* (learn.microsoft.com) lists, among the events that put a
+device into BitLocker recovery, clearing the TPM and a new motherboard with a
+new TPM; without a recovery copy, the drive's data may then not be
+recoverable, so the reader grades the two together. The same page says a
+recovery password may also be kept in Active Directory Domain Services (AD
+DS), in a text file or on paper, and that a data recovery agent certificate
+can unlock a drive. This reader reads none of those: "no key held" below
+means no copy in Microsoft Entra ID.
+
+```yaml
+plugins:
+  - name: m365_bitlocker
+    input: inbox/intune/bitlocker-escrow.csv
+    settings:
+      encryption_report: inbox/intune/encryption-report.csv
+      managed_devices: inbox/intune/devices.csv
+      directory_devices: inbox/entra/devices.csv
+      escrow_missing: inbox/intune/bitlocker-escrow-no-key.csv   # optional
+      cross_check:                                              # optional
+        file: inbox/other-tool/drive-encryption.csv
+        name: othertool
+        label: Other Tool
+        host_column: Computer
+        status_column: Disk protection
+        encrypted: Encrypted
+```
+
+**Reads**, as `input:`, a CSV with one row per Intune-managed Windows device,
+which this Microsoft Graph PowerShell script writes. It was written from
+Microsoft's documentation (*List managedDevices*, *List recoveryKeys*, *List
+devices* and the *managedDevice*, *bitlockerRecoveryKey* and *device* resource
+types, on learn.microsoft.com) and has not been run here. It lists recovery
+keys with `BitlockerKey.ReadBasic.All`, which Microsoft's *List recoveryKeys*
+page names as the least privileged permission; that operation does not return
+the key itself. Signed in with delegated permissions, as here, the same page
+requires the account to be the registered owner of the device a key was backed
+up from, or to hold one of these Microsoft Entra roles: Cloud device
+administrator, Helpdesk administrator, Intune service administrator, Security
+administrator, Security reader or Global reader. Run it with one of those
+roles: an account without one may be refused, or may see only the keys of
+devices it owns; in the second case every other device would read as having
+no key held. Keys are listed for every
+volume type; the script keeps only operating-system volume keys (`volumeType`
+1, `operatingSystemVolume`, on the *bitlockerRecoveryKey* page), so
+`EscrowRecordCount` and `EscrowRecordFound` describe the OS drive.
+`CreatedDateTime` is when a key was backed up to Microsoft Entra ID.
+
+```powershell
+Connect-MgGraph -Scopes 'DeviceManagementManagedDevices.Read.All','BitlockerKey.ReadBasic.All'
+$keys = @{}
+Get-MgInformationProtectionBitlockerRecoveryKey -All |
+    Where-Object { [string]$_.VolumeType -in @('1', 'operatingSystemVolume') } |
+    ForEach-Object {
+        $id = [string]$_.DeviceId
+        if (-not $keys.ContainsKey($id)) { $keys[$id] = @() }
+        $keys[$id] += $_
+    }
+Get-MgDeviceManagementManagedDevice -All |
+    Where-Object { $_.OperatingSystem -eq 'Windows' } |
+    ForEach-Object {
+        $id = [string]$_.AzureAdDeviceId
+        $held = if ($id -and $keys.ContainsKey($id)) { @($keys[$id]) } else { @() }
+        $newest = $held | Sort-Object CreatedDateTime -Descending | Select-Object -First 1
+        $risk = if (-not $_.IsEncrypted) { 'NotEncryptedOrUnknown' }
+                elseif ($held.Count) { 'EncryptedEscrowConfirmed' }
+                else { 'EncryptedNoEscrowRecord' }
+        [pscustomobject]@{
+            DeviceName = $_.DeviceName
+            IsEncrypted = $_.IsEncrypted
+            EscrowRecordFound = [bool]$held.Count
+            EscrowRecordCount = $held.Count
+            NewestEscrowDateUtc = if ($newest) {
+                $newest.CreatedDateTime.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ') } else { '' }
+            RiskState = $risk
+            OSVersion = $_.OsVersion
+            SerialNumber = $_.SerialNumber
+            Manufacturer = $_.Manufacturer
+            Model = $_.Model
+            ComplianceState = $_.ComplianceState
+            ManagementAgent = $_.ManagementAgent
+        }
+    } | Export-Csv -NoTypeInformation -Path 'bitlocker-escrow.csv'
+```
+
+The device objects for `directory_devices:` (`Device.Read.All`), with the
+headings the reader reads:
+
+```powershell
+Get-MgDevice -All |
+    Select-Object @{n='operatingSystem';e={$_.OperatingSystem}},
+                  @{n='isManaged';e={$_.IsManaged}},
+                  @{n='isCompliant';e={$_.IsCompliant}},
+                  @{n='trustType';e={$_.TrustType}} |
+    Export-Csv -NoTypeInformation -Path 'directory-devices.csv'
+```
+
+| File | Setting | Columns read |
+|---|---|---|
+| Devices and their keys | `input:` or `escrow:` | `DeviceName`, `IsEncrypted`, `EscrowRecordFound`, `EscrowRecordCount`, `NewestEscrowDateUtc` (ISO 8601, or a slash date whose order the column settles), `RiskState` (corroborates only), `SerialNumber`, `Manufacturer`, `Model`, `OSVersion`, `ComplianceState`, `ManagementAgent` |
+| Intune encryption report, exported as CSV from the admin centre | `encryption_report:` | `Device name`, `TpmSpecificationVersion`, `Encryption readiness`, `Encryption status`, `Profile state summary`, `BitLocker State` |
+| Intune device list | `managed_devices:` | `Device name`, `OS`, `SkuFamily` (the edition, when present) |
+| Microsoft Entra ID device objects | `directory_devices:` | `operatingSystem`, `isManaged`, `isCompliant`, `trustType` (counts only) |
+| The main file filtered to devices with no key held in Microsoft Entra ID | `escrow_missing:` | `DeviceName`, checked against the main file |
+| Another product's drive-encryption status | `cross_check:` | the `host_column` and `status_column` it names |
+
+A user principal name or display name in any file is never read into a row.
+
+**Rows.** One per device, `Disk encryption and key custody <DEVICE>`:
+`strong` when the drive is encrypted and a key is held in Microsoft Entra ID;
+`weak` and `key-escrow-missing` when encrypted with no key held there (the
+note says first that the encryption is not the finding); `weak` and
+`drive-unencrypted`, or `drive-unencrypted-or-unknown` where the `RiskState`
+label itself admits the state may be unknown, when not encrypted; `unknown`
+with an `ungraded:` flag when a column holds a value the reader does not
+recognise. A device found only in the encryption report is graded from its
+`Encryption status`: `Encrypted`, `Not encrypted`, or, for any other value,
+`unknown` with `ungraded:device-encryption:<value>`; on a device that is also
+in the main file, such a value is flagged
+`encryption-report-status-unread:<value>` and not compared. A device whose
+operating-system volume is encrypted by a method other than policy's
+(Microsoft's encryption report page lists "The encryption method of the OS
+volume doesn't match the BitLocker policy.") is flagged
+`fde-cipher-policy-drift` and capped at `acceptable`. Where two sources
+disagree about whether a drive is encrypted, the row is `unknown` and flagged
+`encryption-source-conflict:<source>`. Flags also name a TPM version below
+2.0, readiness other than *Ready*, and a profile state other than
+*Compliant*. A scope row, `Endpoint at-rest population reconciliation`
+(`n/a`), states each register's count and the disagreements between them;
+`Endpoint key-storage hardware` (`n/a`) counts TPM versions; `Managed
+non-Windows device encryption` (`unknown`) counts enrolled devices that are
+not Windows, whose own report that they are encrypted cannot be checked
+here.
+
+**`cross_check:`** compares each device with another product's
+drive-encryption export: `file`; `name` (default `cross_check`), used in the
+conflict flag and the scope row's `<name>_hosts` and `<name>_only_hosts`;
+`label` for sentences; `row_key` (default `<name>_drive_encryption`), the
+`extra` key carrying that source's status on each device row;
+`host_column` (a heading or a list, default `Device name`, `DeviceName`,
+`Computer`, `Computer name`); `status_column` (default
+`Encryption status`); and `encrypted`, the value or values meaning
+encrypted (default `Encrypted`). `file` may be a path, a list or a pattern,
+like the other settings. Device names are matched ignoring case. The other
+source's devices with no row here are counted on the scope row and not graded;
+a reader of that source can use `escrowed_devices(path)` in the module, which
+gives the device names this one covers, to avoid counting them twice.
+
+**Coverage gaps.** No main export read; the encryption report not named or
+not readable; a `cross_check:` file that cannot be read.
