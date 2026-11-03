@@ -37,6 +37,11 @@
 # To extend it: add one row per binary, keep the binary column unique, cite in notes the
 # public document that gives the name, and mark the name ambiguous if more than one product
 # ships it.
+#
+# An organisation's own rows do not belong here. A target profile names them in its
+# <stem>.daemon-dictionary.yaml overlay, which is merged over this table (a row there replaces
+# the row here for the same binary). Those rows keep these columns and words but are the
+# organisation's own, so they need no public document (docs/TARGET-PROFILE.md).
 # Lines starting with # are comments and are skipped by the reader.
 binary,product,vendor,category,confidence,notes
 sshd,OpenSSH server,OpenBSD project,remote-access,certain,OpenSSH sshd(8) manual page

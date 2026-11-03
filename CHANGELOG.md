@@ -9,6 +9,18 @@ command line or a file format, and its entry says how.
 
 ### Added
 
+- **A profile's own daemon-dictionary rows.** A target profile may sit
+  beside a `<stem>.daemon-dictionary.yaml` overlay naming process binaries
+  the bundled table lacks, or naming one differently, under one key,
+  `daemon_dictionary:` (`docs/TARGET-PROFILE.md`). Its rows are merged over
+  the bundled table, and an overlay row replaces the bundled row for the same
+  binary whole. The merged table is what plug-ins receive as `ctx.dictionary`
+  and what names a row's product in `observe` and `rerun`. Rows keep the
+  bundled table's columns, categories and confidence words but need no public
+  source. A malformed overlay stops `observe` and `rerun` (code
+  `rerun-dictionary`) before anything is written.
+  `config.load_dictionary()` takes the target as an optional argument; with
+  none it returns the bundled table as before.
 - **Readers library: an Azure Resource Graph reader.** `azure_resource_graph`
   runs when a profile names it in `plugins:` (`docs/COLLECTORS.md`,
   "`azure_resource_graph`", which gives the queries). It reads a CSV of

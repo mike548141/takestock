@@ -594,7 +594,7 @@ class Host:
         self._loaded = True
         self.baseline = config.load_baseline()
         self.policy = Policy(self.baseline)
-        self.dictionary = config.load_dictionary()
+        self.dictionary = config.load_dictionary(self.target)
         self.port_table = config.load_port_encryption()
 
     def _runnable(self, phase: str) -> list[Declared]:

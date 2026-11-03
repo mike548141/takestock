@@ -226,7 +226,8 @@ The result is a *derived* observation, and its record says so.
    redirect nothing stops being stripped, HTTP readings carried onto the TLS
    row for the same endpoint, certificate expiry from a live handshake in
    preference to a log;
-4. **software names** from the daemon dictionary;
+4. **software names** from the daemon dictionary, with the profile's own
+   rows (`<stem>.daemon-dictionary.yaml`) merged over it;
 5. **grading** by `policy.Policy` against `data/baseline.yaml`, and a
    **disposition** from the organisation's decisions and the generic rules
    (`disposition.py`);
@@ -392,7 +393,7 @@ standard can change without a code change. Each is read through
 | `secure-government-email.yaml` | The Secure Government Email requirement set |
 | `dns-services.yaml` | Public resolvers, a DNSSEC validation control, a certificate-transparency endpoint, CAA issuers and takeover namespaces; shipped empty |
 | `port-encryption.csv` | Each well-known port's posture (`encrypted`, `opportunistic` or `cleartext`), exposure and remedy |
-| `daemon-dictionary.csv` | Process binary names mapped to products |
+| `daemon-dictionary.csv` | Process binary names mapped to products. A profile adds its own rows in `<stem>.daemon-dictionary.yaml` |
 | `vendor-domains.csv` | Public vendor domains, for naming the operator of an outside service |
 | `windows-lifecycle.yaml`, `software-lifecycle.yaml` | Vendor support dates, filled from public sources |
 | `crypto-software.csv` | Cryptographic libraries, and the highest TLS version a release line can negotiate, from public sources. Read by `software_inventory` |

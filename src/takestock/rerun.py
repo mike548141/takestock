@@ -83,6 +83,8 @@ Each is raised as :class:`RerunRefused`, and leaves nothing behind:
   row, so a full run would merge them;
 * a named plug-in did not run (its input is missing, or its step stopped
   with an error), so its earlier rows would go with nothing in their place;
+* the profile's daemon-dictionary overlay is malformed
+  (:func:`takestock.config.load_dictionary_overlay`);
 * the new observation's directory already exists.
 """
 
@@ -417,6 +419,10 @@ def rerun(target: dict, base_ref: str | Path, options: Options | None = None) ->
     options = options or Options()
     options.now = options.now or datetime.now(UTC)
     say = options.announce
+    try:
+        config.load_dictionary(target)
+    except ValueError as exc:
+        raise RerunRefused("rerun-dictionary", str(exc)) from exc
     observations = config.observations_dir()
     base, summary, stored = _base(base_ref, target, observations)
     declared = _declared(target)
@@ -471,7 +477,7 @@ def rerun(target: dict, base_ref: str | Path, options: Options | None = None) ->
     rules = load_dispositions_for_target(target)
     # The passes an observation's grading makes, in the same order, over every row.
     graded, passes = normalise.finalise([*carried_assets, *new_rows], policy,
-                                        config.load_dictionary(), dispositions=rules,
+                                        config.load_dictionary(target), dispositions=rules,
                                         lifecycle=target.get("lifecycle") or {})
     later = host.annotate(graded, run=_run_info(block, offline=True))
     later += host.summarise(graded)

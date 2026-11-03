@@ -229,6 +229,14 @@ class DaemonDictionaryTest(unittest.TestCase):
             self.assertIn(r["category"], self.CATEGORIES, r["binary"])
             self.assertIn(r["confidence"], {"certain", "likely", "ambiguous"}, r["binary"])
 
+    def test_an_overlay_is_held_to_the_same_columns_and_words(self) -> None:
+        from takestock import config
+
+        header, _ = read_csv("daemon-dictionary.csv")
+        self.assertEqual(list(config.DICTIONARY_COLUMNS), header)
+        self.assertEqual(config.DICTIONARY_CATEGORIES, self.CATEGORIES)
+        self.assertEqual(config.DICTIONARY_CONFIDENCES, {"certain", "likely", "ambiguous"})
+
     def test_runtimes_are_marked_ambiguous(self) -> None:
         _, rows = read_csv("daemon-dictionary.csv")
         by_name = {r["binary"]: r for r in rows}

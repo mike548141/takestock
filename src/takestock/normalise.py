@@ -269,7 +269,8 @@ def finalise(assets: list[CryptoAsset], policy: Policy, dictionary: Mapping[str,
     """Merge, annotate, grade and place every row; return the rows and what each pass did.
 
     ``dictionary`` maps a process binary to its product
-    (:func:`takestock.config.load_dictionary`). ``dispositions`` defaults to
+    (:func:`takestock.config.load_dictionary`, given the target so that the
+    profile's own rows are merged in). ``dispositions`` defaults to
     the bundled generic rules. ``lifecycle`` is the target profile's
     ``lifecycle:`` block, with optional ``migration_strategy`` and
     ``support_status`` mappings and optional ``replaced_by`` and

@@ -27,6 +27,8 @@ from __future__ import annotations
 
 import csv
 import os
+import re
+from collections.abc import Mapping
 from pathlib import Path
 
 import yaml
@@ -77,13 +79,16 @@ IPAM_PLAN_SUFFIX = ".ipam.yaml"
 #: sits beside a profile (see :func:`takestock.cmdb.apply_overlay`).
 CMDB_SCHEMA_OVERLAY_SUFFIX = ".cmdb-schema-overlay.yaml"
 
+#: The suffix of a profile's own daemon-dictionary rows (see :func:`load_dictionary`).
+DAEMON_DICTIONARY_SUFFIX = ".daemon-dictionary.yaml"
+
 # Files beside a target profile that extend it rather than being a profile.
 # The ones the package itself writes about are listed here, so the list does
 # not depend on which modules happen to have been imported. Any other module
 # that reads an overlay of its own registers the suffix with
 # register_overlay_suffix().
 OVERLAY_SUFFIXES: list[str] = [".dispositions.yaml", ".derived-ports.yaml", IPAM_PLAN_SUFFIX,
-                               CMDB_SCHEMA_OVERLAY_SUFFIX]
+                               CMDB_SCHEMA_OVERLAY_SUFFIX, DAEMON_DICTIONARY_SUFFIX]
 
 
 def register_overlay_suffix(*suffixes: str) -> None:
@@ -328,17 +333,112 @@ def _csv_rows(f) -> csv.DictReader:
     return csv.DictReader(line for line in f if not line.lstrip().startswith("#"))
 
 
-def load_dictionary() -> dict[str, dict]:
-    """The daemon dictionary (process binary name to product), keyed by ``binary``."""
+#: The daemon dictionary's columns, in file order.
+DICTIONARY_COLUMNS = ("binary", "product", "vendor", "category", "confidence", "notes")
+#: The words the dictionary's ``category`` column may hold.
+DICTIONARY_CATEGORIES = frozenset({
+    "remote-access", "web-server", "proxy", "app-server", "database", "cache", "message-broker",
+    "directory", "authentication", "dns", "dhcp", "time", "logging", "monitoring", "container",
+    "orchestration", "virtualisation", "cloud-agent", "endpoint-security", "vulnerability-scanner",
+    "endpoint-management", "backup", "vpn-client", "ztna-client", "file-sharing", "mail", "print",
+    "secrets", "runtime", "os-component", "desktop-app",
+})
+#: The words the dictionary's ``confidence`` column may hold.
+DICTIONARY_CONFIDENCES = frozenset({"certain", "likely", "ambiguous"})
+#: The one top-level key of a daemon-dictionary overlay.
+DAEMON_DICTIONARY_KEY = "daemon_dictionary"
+_BINARY_NAME = re.compile(r"^[A-Za-z0-9_.+-]+$")
+
+
+def load_dictionary(target: Mapping | None = None) -> dict[str, dict]:
+    """The daemon dictionary (process binary name to product), keyed by ``binary``.
+
+    With ``target`` (a loaded profile), the rows of its
+    ``<stem>.daemon-dictionary.yaml`` overlay are merged over the table: an
+    overlay row replaces the table's row for the same binary whole, and a
+    binary the table lacks is added. Raises :class:`ValueError` when the
+    overlay is malformed (:func:`load_dictionary_overlay`).
+    """
     path = data_file("daemon-dictionary.csv")
     out: dict[str, dict] = {}
-    if not path.exists():
-        return out
-    with path.open(newline="") as f:
-        for row in _csv_rows(f):
-            key = str(row.get("binary") or "").strip()
-            if key:
-                out[key] = row
+    if path.exists():
+        with path.open(newline="") as f:
+            for row in _csv_rows(f):
+                key = str(row.get("binary") or "").strip()
+                if key:
+                    out[key] = row
+    if target is not None:
+        out.update(load_dictionary_overlay(target))
+    return out
+
+
+def dictionary_overlay_path_for_target(target: Mapping) -> Path | None:
+    """The daemon-dictionary overlay beside a loaded target, or None if there is none."""
+    tpath = target.get("_path")
+    if not tpath:
+        return None
+    p = Path(str(tpath))
+    if not p.suffix:
+        return None
+    cand = p.with_name(p.name[: -len(p.suffix)] + DAEMON_DICTIONARY_SUFFIX)
+    return cand if cand.exists() else None
+
+
+def load_dictionary_overlay(target: Mapping) -> dict[str, dict[str, str]]:
+    """A profile's own daemon-dictionary rows, keyed by binary; {} when it has none.
+
+    The overlay holds one key, ``daemon_dictionary:``, a mapping from each
+    binary name to its ``product``, ``vendor``, ``category``, ``confidence``
+    and, optionally, ``notes``. The columns and their words are the bundled
+    table's. Unlike a bundled row, an overlay row needs no public document in
+    ``notes``: it is the profile's own. Raises :class:`ValueError` on anything
+    else, with the file named, and the binary when one row is at fault.
+    """
+    path = dictionary_overlay_path_for_target(target)
+    if path is None:
+        return {}
+    try:
+        doc = load_yaml_strict(path)
+    except yaml.YAMLError as exc:
+        raise ValueError(f"{path}: not readable as YAML: {exc}") from exc
+    if not isinstance(doc, dict):
+        raise ValueError(f"{path}: must be a mapping with one key, `{DAEMON_DICTIONARY_KEY}:`")
+    other = sorted(str(k) for k in doc if k != DAEMON_DICTIONARY_KEY)
+    if other:
+        raise ValueError(f"{path}: unexpected top-level key(s) {', '.join(other)}; "
+                         f"the only key is `{DAEMON_DICTIONARY_KEY}:`")
+    rows = doc.get(DAEMON_DICTIONARY_KEY) or {}
+    if not isinstance(rows, dict):
+        raise ValueError(f"{path}: `{DAEMON_DICTIONARY_KEY}:` must be a mapping from binary "
+                         f"name to its row, not {type(rows).__name__}")
+    out: dict[str, dict[str, str]] = {}
+    fields = DICTIONARY_COLUMNS[1:]
+    for binary, row in rows.items():
+        name = str(binary)
+        where = f"{path}: `{name}`"
+        if not isinstance(binary, str) or not _BINARY_NAME.match(name):
+            raise ValueError(f"{where}: a binary name is letters, digits and _ . + - only")
+        if not isinstance(row, dict):
+            raise ValueError(f"{where}: must be a mapping of {', '.join(fields)}")
+        unknown = sorted(str(k) for k in row if k not in fields)
+        if unknown:
+            raise ValueError(f"{where}: unknown field(s) {', '.join(unknown)}; "
+                             f"the fields are {', '.join(fields)}")
+        cells = {k: row.get(k) for k in fields}
+        for k, v in cells.items():
+            if v is not None and not isinstance(v, str):
+                raise ValueError(f"{where}: `{k}` must be text, not {type(v).__name__}")
+        values = {k: str(v or "").strip() for k, v in cells.items()}
+        missing = [k for k in fields[:-1] if not values[k]]
+        if missing:
+            raise ValueError(f"{where}: missing {', '.join(missing)}")
+        if values["category"] not in DICTIONARY_CATEGORIES:
+            raise ValueError(f"{where}: category {values['category']!r} is not one of the "
+                             f"table's ({', '.join(sorted(DICTIONARY_CATEGORIES))})")
+        if values["confidence"] not in DICTIONARY_CONFIDENCES:
+            raise ValueError(f"{where}: confidence {values['confidence']!r} is not one of "
+                             f"{', '.join(sorted(DICTIONARY_CONFIDENCES))}")
+        out[name] = {"binary": name, **values}
     return out
 
 

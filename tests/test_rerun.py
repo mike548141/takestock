@@ -358,6 +358,16 @@ def test_a_plugin_whose_input_has_gone_is_refused_and_nothing_left(workspace):
     assert _observations(workspace) == {"2030-01-31T0930Z"}
 
 
+def test_a_malformed_dictionary_overlay_is_refused_and_nothing_left(workspace):
+    _base()
+    (workspace / "targets" / "example-widgets.daemon-dictionary.yaml").write_text(
+        "daemon_dictionary:\n  widgetsrv:\n    product: Widget Server\n")
+    with pytest.raises(rerun.RerunRefused) as exc:
+        _rerun("disks")
+    assert exc.value.code == "rerun-dictionary" and "missing vendor" in str(exc.value)
+    assert _observations(workspace) == {"2030-01-31T0930Z"}
+
+
 def test_a_shared_source_is_refused(workspace, monkeypatch):
     def step(ctx: Context) -> StepResult:
         return StepResult()

@@ -14,8 +14,8 @@ its overlays can carry. The sample organisation in
   what to collect for one organisation.
 - **Overlay**: a file beside a profile, named after it, that adds to it:
   `<stem>.dispositions.yaml`, `<stem>.derived-ports.yaml`,
-  `<stem>.cmdb-schema-overlay.yaml` and `<stem>.ipam.yaml`. An overlay is
-  never read as a profile.
+  `<stem>.cmdb-schema-overlay.yaml`, `<stem>.ipam.yaml` and
+  `<stem>.daemon-dictionary.yaml`. An overlay is never read as a profile.
 - **Inbox**: the directory supplied exports are read from.
 - **Observation**: one run's output directory, named by its UTC time stamp.
 
@@ -28,6 +28,7 @@ its overlays can carry. The sample organisation in
     example-widgets.dispositions.yaml     overlay: the organisation's own decisions
     example-widgets.derived-ports.yaml    overlay: a cleartext probe plan (optional)
     example-widgets.ipam.yaml             overlay: the IP address plan file
+    example-widgets.daemon-dictionary.yaml  overlay: the organisation's own process names (optional)
   inbox/                                  exports supplied by hand
   observations/
     2030-01-31T0930Z/                     one observation
@@ -81,7 +82,9 @@ how anything is graded.
 
 A copy replaces the bundled file whole; nothing is merged. The register
 schema can instead be reworded by a schema overlay, which the profile's
-`cmdb:` block names (see [`cmdb`](#cmdb)).
+`cmdb:` block names (see [`cmdb`](#cmdb)), and the daemon dictionary can be
+extended row by row by a profile's
+[`<stem>.daemon-dictionary.yaml`](#stemdaemon-dictionaryyaml).
 
 ### Observations
 
@@ -532,6 +535,51 @@ derived_ports:
 A plan is refused if its budget does not match, a host is claimed by two
 sections, or it would stop probing a pair the profile's own
 `plaintext_ports` authorises. UDP ports are listed but not probed.
+
+### `<stem>.daemon-dictionary.yaml`
+
+Rows the profile adds to the daemon dictionary, the table that turns a
+process's binary name into the product behind it. Use it for software the
+bundled table does not hold, or to name a binary differently in this
+organisation (an in-house build, say). One key, a mapping from each binary
+name to its row:
+
+```yaml
+daemon_dictionary:
+  widgetsrv:
+    product: Widget Server
+    vendor: Example Co
+    category: app-server
+    confidence: certain
+    notes: the line-of-business server for the order desk
+```
+
+| Field | Means |
+|---|---|
+| the key | The exact process or executable name, case included: letters, digits and `_ . + -` |
+| `product`, `vendor` | The product and who publishes it. Required |
+| `category` | One of the bundled table's categories (listed in the head of `daemon-dictionary.csv`). Required |
+| `confidence` | `certain`, `likely` or `ambiguous`, as in the bundled table. Required |
+| `notes` | Anything worth keeping with the row. Optional |
+
+The rows are merged over the bundled table (or over a workspace's own
+`data/daemon-dictionary.csv`, when there is one). **An overlay row replaces
+the table's row for the same binary whole**: no cell of the replaced row is
+kept, so give every field. A binary the table lacks is added. The merged
+table is what every plug-in receives as `ctx.dictionary` and what names a
+row's product when its reader left the product empty.
+
+The bundled table admits a row only when a public document names the
+binary, and cites it in `notes`. An overlay row is the organisation's own
+and is not held to that: it may name software no public document lists, and
+`notes` may be empty. It keeps the bundled table's columns and words, so a
+reader sees one vocabulary whichever table a row came from.
+
+A malformed overlay (not valid YAML, another top-level key, a field the
+table does not have, a missing field, a category or confidence outside the
+table's words, or a binary named twice) stops `takestock observe` and
+`takestock rerun` before anything is written, with the file named, and the
+binary when one row is at fault.
 
 ### `<stem>.cmdb-schema-overlay.yaml`
 

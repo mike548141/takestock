@@ -630,12 +630,14 @@ def observe(target: dict, options: Options | None = None) -> Result:
     when ``scan`` is asked for and the profile's authorisation stanza is
     missing or incomplete, when both ``scan`` and ``offline`` are asked for,
     when the profile's ``collectors:`` block is malformed or names a
-    collector that is not registered, or when the observation directory
-    already exists. With ``carry_scan``, it also raises when the earlier
-    observation may not be carried (:func:`takestock.carry.load`), when
-    ``scan`` or ``offline`` is asked for too, when the earlier observation ran
-    an active collector the profile turns off, and when a carried row would be
-    re-checked and the authorisation stanza is missing or incomplete.
+    collector that is not registered, when its daemon-dictionary overlay is
+    malformed (:func:`takestock.config.load_dictionary_overlay`), or when
+    the observation directory already exists. With ``carry_scan``, it also
+    raises when the earlier observation may not be carried
+    (:func:`takestock.carry.load`), when ``scan`` or ``offline`` is asked for
+    too, when the earlier observation ran an active collector the profile
+    turns off, and when a carried row would be re-checked and the
+    authorisation stanza is missing or incomplete.
     """
     options = options or Options()
     if options.scan and options.offline:
@@ -649,6 +651,7 @@ def observe(target: dict, options: Options | None = None) -> Result:
                              "rows over the network; choose one")
     try:
         off = collectors.disabled(target)
+        config.load_dictionary(target)  # a malformed daemon-dictionary overlay stops here
     except ValueError as exc:
         raise ObserveRefused(str(exc)) from exc
     if options.scan:
@@ -714,7 +717,7 @@ def observe(target: dict, options: Options | None = None) -> Result:
     baseline = config.load_baseline()
     policy = Policy(baseline)
     rules = load_dispositions_for_target(target)
-    assets, passes = normalise.finalise(run.assets, policy, config.load_dictionary(),
+    assets, passes = normalise.finalise(run.assets, policy, config.load_dictionary(target),
                                         dispositions=rules,
                                         lifecycle=target.get("lifecycle") or {})
     run.gaps += host.annotate(assets, run=run_info(run))

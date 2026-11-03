@@ -178,7 +178,7 @@ copies, so a step that changes them changes nothing outside itself.
 | `collected_on` | The input file's modification date, or the observation's date: the default date on every row |
 | `target`, `settings` | The loaded target profile, and the declaration's `settings:` |
 | `policy`, `baseline` | The grader over the algorithm baseline, and the baseline itself |
-| `dictionary` | The daemon dictionary: process binary names mapped to products |
+| `dictionary` | The daemon dictionary: process binary names mapped to products. The bundled table with the profile's own rows merged over it ([`<stem>.daemon-dictionary.yaml`](TARGET-PROFILE.md#stemdaemon-dictionaryyaml)); a profile row replaces a bundled row for the same binary |
 | `port_table` | The port-encryption table, indexed as `takestock.plaintext` reads it |
 | `assets` | The rows collected so far. Empty for an ordinary step; filled for a late step, a coverage check and an annotation |
 | `run` | How the observation has gone so far, as a `RunInfo` (below). `None` for an ordinary step; filled for a late step, a coverage check and an annotation |
