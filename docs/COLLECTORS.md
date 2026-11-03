@@ -980,6 +980,7 @@ plugins:
 | `falcon_connections` | `general` | A CrowdStrike Falcon LogScale export of outbound connections by destination port: which unencrypted protocols the estate's machines use, and how often | none: name it with `input:` |
 | `falcon_http` | `general` | A CrowdStrike Falcon LogScale export of plain HTTP requests the sensor recorded: destinations spoken to in plain HTTP, and proxy tunnels against plain requests | none: name it with `input:` |
 | `falcon_tls_clienthello` | `general` | A CrowdStrike Falcon LogScale export of outbound TLS handshakes: which programs ask for a lower TLS version value than the newest | none: name it with `input:` |
+| `falcon` | `general` | CrowdStrike Falcon listening-socket events: each machine's listening ports graded by the port encryption table, the program and product behind them, how much each is used, and the machine's type | none: name it with `input:` |
 
 A reader with no default input still runs when the profile gives it none,
 and records in its own coverage gap that no export was read. A profile that
@@ -2619,3 +2620,181 @@ path, a list or a pattern; the last match in name order is read.
 **Coverage gaps.** No export read; and, while `version_names` is not set, one
 gap saying the versions are unnamed, with where a mapping is published.
 **Cannot see:** what the server chose; handshakes the sensor did not record.
+
+### `falcon`
+
+**Reads** a CSV of the network services listening on each machine that runs
+a CrowdStrike Falcon sensor, from the sensor's `NetworkListenIP4` and
+`NetworkListenIP6` events: one row per machine, port, address family and
+bind scope. With `settings:` it also reads the inbound connections those
+services accepted (`accepts`), one row per sensor saying what kind of machine
+it is on (`hosts`), and further exports that type the machines
+(`host_types`, a list).
+
+```yaml
+plugins:
+  - name: falcon
+    input: inbox/falcon/listeners.csv
+    settings:
+      accepts: inbox/falcon/accepts.csv
+      hosts: inbox/falcon/hosts.csv
+      # Optional: other exports typing each sensor's machine, read in order.
+      # host_types: [inbox/falcon/host-list.csv]
+      # Only for exports written with other headings: export: {field: heading}.
+      # A field may name a list of headings; the first holding a value is read.
+      # columns: {listeners: {port: "Port"}, host_types: {sensor_id: ["Sensor", "aid"]}}
+      # Optional, with their defaults:
+      # row_limit: 20000
+      # dynamic_port_run: 20
+      # loopback_binds_reported: false   # true or false, only once established for these sensors
+```
+
+These three queries write the files. They were written from CrowdStrike's
+public query examples and the CrowdStrike Query Language reference (both
+listed below) and have not been run here: run each in Falcon's event search
+over the period wanted and download the results as CSV. The join keeps a
+listener whose program it cannot find (`mode=left`); the reference does not
+say whether `groupBy()` then keeps it with the program blank, so check that
+on a first run. The first query keeps every port. A filter such as
+`LocalPort<49152` leaves out the dynamic range RFC 6335 sets aside (49152 to
+65535); the reader counts the short-lived ports that remain without listing
+them.
+
+```
+// Listening sockets, one row per machine, port, address family and bind scope
+in(field="#event_simpleName", values=[NetworkListenIP4, NetworkListenIP6])
+| case {
+    #event_simpleName=NetworkListenIP6 | address_family:="ipv6" | bind_address:=LocalAddressIP6;
+    * | address_family:="ipv4" | bind_address:=LocalAddressIP4;
+  }
+| case {
+    bind_address=/^(0\.0\.0\.0|::|0:0:0:0:0:0:0:0)$/ | bind_scope:="all-interfaces";
+    bind_address=/^(127\.|::1$|0:0:0:0:0:0:0:1$)/ | bind_scope:="localhost";
+    bind_address=* | bind_scope:="interface";
+    * | bind_scope:="unknown";
+  }
+| case { Protocol=6 | transport:="tcp"; Protocol=17 | transport:="udp"; * | transport:=Protocol; }
+| port:=format("%s/%s", field=[LocalPort, transport])
+| join({#event_simpleName=ProcessRollup2}, field=[aid, ContextProcessId],
+       key=[aid, TargetProcessId], include=[ImageFileName], mode=left, limit=200000)
+| regex("(?<program>[^\\/|\\\\]*)$", field=ImageFileName, strict=false)
+| match(file="aid_master_main.csv", field=aid, include=[ComputerName], strict=false)
+| groupBy([aid, ComputerName, port, program, address_family, bind_scope],
+          function=count(as=events), limit=max)
+```
+
+```
+// Inbound connections accepted, one row per machine, port and program
+in(field="#event_simpleName", values=[NetworkReceiveAcceptIP4, NetworkReceiveAcceptIP6])
+| case { Protocol=6 | transport:="tcp"; Protocol=17 | transport:="udp"; * | transport:=Protocol; }
+| port:=format("%s/%s", field=[LocalPort, transport])
+| join({#event_simpleName=ProcessRollup2}, field=[aid, ContextProcessId],
+       key=[aid, TargetProcessId], include=[ImageFileName], mode=left, limit=200000)
+| regex("(?<program>[^\\/|\\\\]*)$", field=ImageFileName, strict=false)
+| match(file="aid_master_main.csv", field=aid, include=[ComputerName], strict=false)
+| groupBy([aid, ComputerName, port, program], function=count(as=events), limit=max)
+```
+
+```
+// One row per sensor: its machine name, operating system and machine type
+readFile("aid_master_main.csv")
+| select([aid, ComputerName, Version, ProductType])
+```
+
+| Export | Field | Default heading | What it holds |
+|---|---|---|---|
+| listeners, accepts | `host`, `sensor_id` | `ComputerName`, `aid` | the machine name and the sensor ID |
+| listeners, accepts | `port` | `port` | `port/transport` (`443/tcp`); a bare port takes `transport` |
+| listeners, accepts | `transport` | `transport` | `tcp`, `udp`, or the protocol number (`6`, `17`) |
+| listeners, accepts | `program` | `program` | the listening program's file name |
+| listeners, accepts | `events` | `events` | how many events the row stands for |
+| listeners | `bind_scope` | `bind_scope` | `all-interfaces`, `interface`, `localhost` or `unknown` |
+| listeners | `address_family` | `address_family` | `ipv4` or `ipv6` (also `4`, `6`, or the event name) |
+| listeners | `bind_address`, `bound_v4`, `bound_v6` | `bind_address`, `LocalAddressIP4`, `LocalAddressIP6` | the bound address, read when `bind_scope` is not given |
+| hosts | `sensor_id`, `host` | `aid`, `ComputerName` | the sensor and its machine name |
+| hosts | `os`, `machine_type` | `Version`, `ProductType` | the operating system, and the machine type: `1` Desktop, `2` Domain Controller, `3` Server, or those words (`Workstation` is read as a desktop) |
+| host_types | `sensor_id`, `machine_type` | `aid`, `ProductType` | as in `hosts` |
+
+Headings match ignoring case, spaces and hyphens; `settings: columns:` names
+another heading, or a list of them, for any field of any export.
+
+Where the field names come from (read on 4 November 2026, New Zealand time):
+
+- CrowdStrike's public query collection,
+  [`CrowdStrike/logscale-community-content`](https://github.com/CrowdStrike/logscale-community-content)
+  on GitHub: *Listening Programs with low port numbers* (`NetworkListenIP4`,
+  `LocalPort`, `Protocol`, `aid`, `ComputerName`, `ContextProcessId`,
+  `ProcessRollup2`, `TargetProcessId`, `ImageFileName`, and
+  `aid_master_main.csv` with `ProductType` and `Version`);
+  *Process Events - Identify Low Port Bindings* (the join from a listener's
+  `ContextProcessId` to the process's `TargetProcessId`, `LocalAddressIP4`,
+  and the program's file name taken from `ImageFileName`); *Scope Network
+  Accept Events* (`NetworkReceiveAcceptIP4`); *zCommunityId*
+  (`LocalAddressIP6`); *Show Sensor Update Policies* (`readFile` of
+  `aid_master_main.csv`); and the Cool Query Friday `mappings.csv`
+  (`ProductType` 1 Desktop, 2 Domain Controller, 3 Server; `Protocol` 6 TCP,
+  17 UDP).
+- Elastic's public CrowdStrike integration,
+  [`elastic/integrations`](https://github.com/elastic/integrations),
+  `packages/crowdstrike/data_stream/fdr`: its event categorisation names
+  `NetworkListenIP6` and `NetworkReceiveAcceptIP6`, and its sample events
+  show `NetworkListenIP6` carrying `LocalAddressIP6`, `LocalPort`,
+  `Protocol` and `ContextProcessId` (`_dev/test/pipeline/test-fdr.log`). The
+  same samples write the IPv6 wildcard address long-hand
+  (`0:0:0:0:0:0:0:0`), so the query and the reader match both spellings.
+- The CrowdStrike Query Language reference at library.humio.com:
+  [`groupBy()`](https://library.humio.com/crowdstrike-query-language/functions-groupby.html)
+  (its `limit` defaults to 20,000 groups, at most 1,000,000 or `max`, and at
+  the limit it "may return incomplete results") and `join()` (several fields
+  in `field` and `key`, `mode=left` keeps every event of the main query,
+  and the subquery holds at most 200,000 rows).
+
+**Which listeners become rows.** A listening port is a row when the port has
+a row in takestock's port encryption table (`port-encryption.csv`), or when
+the program behind it is named. The program is the listener row's own; else
+the accept export's for the same machine and port; else the one program the
+accept export names for that port across every machine, unless the daemon
+dictionary marks it `ambiguous` (a runtime such as `java`, which names no
+service). A port with neither is counted, not listed. A program holding more
+unrecognised ports on one machine than `dynamic_port_run` is read as giving
+each session a port of its own, and those ports are one row.
+
+**Rows.**
+
+| Row | Data state | Grade |
+|---|---|---|
+| `<product> on <machine>:<port>/<transport>` (`listener` when no product is known) | in transit | by the port encryption table, as a host listener: a cleartext protocol `weak` with `plaintext:<protocol>`; an out-of-band management port seen only on the host has its exposure recorded as unmeasured; `loopback-only` when every sighting was bound to loopback |
+| `<product> on <machine> — <n> dynamically allocated ports` | in transit | not graded; no cryptographic claim is made about these ports |
+| `Unclassified listener binds (<n> across <m> computers)` | discovery | `n/a`: the count of ports not listed |
+| `Loopback-only listeners: none in the CrowdStrike export` | discovery | `n/a`, written when no listener in the export is bound to loopback only; with `loopback_binds_reported: true` it says the sensors report such listeners and none was seen, and otherwise that whether they report them was not established |
+| `Loopback-only listeners are not observable through CrowdStrike` | discovery | `n/a`, written instead when `loopback_binds_reported: false` |
+
+Each listener row's `extra` holds the `service`, the dictionary's
+`confidence`, the widest `bind_scope` and every scope seen
+(`bind_scopes_seen`), the `address_family` (`dual-stack` when seen on both),
+the event count (`binds`), the sensor ID (`aid`), the machine's `os` and
+`host_type`, and, where only a total across every machine is known, its
+`estate_connections`. `usage_count` is the accepted connections on that
+machine and port; a total across every machine is never written as one
+machine's. A machine name shared by several sensors is shown with the start
+of each sensor ID.
+
+**Bind scope.** A listener seen several ways keeps the widest scope:
+`all-interfaces`, then `interface`, `unknown`, `localhost`. Without a
+`bind_scope` column the reader works the scope out from the address, reading
+only the field of the row's own address family.
+
+**Machine types.** Where every `host_types` export gives a sensor the same
+type, compared ignoring case, and it differs from `hosts`, theirs is kept.
+
+**Coverage gaps.** No listener export; one cut short (its row count equals
+`row_limit`, or is a whole multiple of 10,000 at or above it); rows with no
+readable address; no address family; IPv4 rows only; no accept export, one
+cut short, or one with no machine column; machines in `hosts` with no
+listener row; and, optional, no `hosts` export.
+
+**Cannot see.** A listener bound to loopback only, where the sensors do not
+report them; listeners outside the query's period; what a port actually
+negotiates (the table gives the protocol's convention, and an active probe
+settles it); the product behind a program the daemon dictionary does not
+know.

@@ -36,6 +36,9 @@ techdocs.broadcom.com
 # Microsoft's Exchange Team blog, where Microsoft announces Exchange Online
 # retirement timelines, cited by the exo_client_access reader.
 techcommunity.microsoft.com
+# CrowdStrike's query language reference (LogScale documentation), cited by the
+# falcon reader for groupBy() and join() limits.
+library.humio.com
 # Reference-data files whose purpose is to list public vendor domains. Only the
 # hostname check is lifted for these files; every row is still reviewed.
 hostname-data src/takestock/data/vendor-domains.csv

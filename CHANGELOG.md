@@ -30,6 +30,20 @@ command line or a file format, and its entry says how.
     values; until then a gap says so and cites CrowdStrike's community
     mapping. Optional `distribution` (is the export the whole event
     population?) and `platforms` (the machines' operating systems) exports.
+- **Readers library: CrowdStrike Falcon listening ports.** `falcon` runs
+  when a profile names it in `plugins:` (`docs/COLLECTORS.md`, "`falcon`",
+  which gives the queries). It reads an export of the sensor's listening-socket
+  events, one row per machine and port, and grades each listener by takestock's
+  port encryption table as a host listener, named by the daemon dictionary
+  (with any profile overlay). With `settings:` it also reads the inbound
+  connections each service accepted (a use count, and the program behind a
+  port), the sensors' machine names and types, and further exports that type
+  the machines. A program holding many unrecognised ports on one machine is
+  one row; ports it can say nothing about are counted on one row; an export
+  at a query's row limit is read as cut short; and machines with a sensor but
+  no listener row are a coverage gap. Settings name other column headings
+  (`columns`), the row limit, the dynamic-port threshold and whether the
+  sensors report loopback binds.
 - **A profile's own daemon-dictionary rows.** A target profile may sit
   beside a `<stem>.daemon-dictionary.yaml` overlay naming process binaries
   the bundled table lacks, or naming one differently, under one key,

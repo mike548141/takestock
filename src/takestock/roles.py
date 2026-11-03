@@ -695,3 +695,55 @@ def outbound_tls_scope() -> str:
     """The scope row for an export of outbound TLS handshakes."""
     return ("What the estate's machines asked for when they opened encrypted connections out: "
             "which machines are counted, and what the export cannot say")
+
+
+_MACHINE_KINDS = {
+    "workstation": "{os} laptop or desktop",
+    "desktop": "{os} laptop or desktop",
+    "server": "{os} server",
+    "domain controller": ("Windows domain controller — one of the machines that holds the "
+                          "organisation's staff accounts and passwords"),
+}
+
+
+def machine_kind(os_name: str, machine_type: str) -> str:
+    """A machine described by its operating system and type (workstation, server, ...)."""
+    template = _MACHINE_KINDS.get((machine_type or "").strip().lower(), "")
+    if not template:
+        return f"{os_name} machine" if os_name else ""
+    return template.format(os=os_name or "").strip()
+
+
+def dynamic_port_run(product: str, host: str, ports: int) -> str:
+    """One program on one machine holding many short-lived ports, counted as one row."""
+    if not (product and host and ports):
+        return ""
+    return (f"{product} on this computer, holding {ports:,} ports the port table does not "
+            "list — the pattern of a program that gives each session a port of its own — "
+            "counted here as one entry rather than listed individually")
+
+
+def unclassified_binds(binds: int, hosts: int) -> str:
+    """The count of listening ports that could not be matched to a known service."""
+    if not binds:
+        return ""
+    return (f"A count of {binds:,} listening ports across {hosts:,} computers that could "
+            "not be matched to any known service — listed as a single total so they are "
+            "accounted for without crowding out the real findings")
+
+
+def loopback_listeners_unseen(hosts: int, reported: bool | None) -> str:
+    """The note on services reachable only from their own machine: unseeable (``reported``
+    False), reported and none seen (True), or not established either way (None)."""
+    if reported is False:
+        return (f"A note that services which accept connections only from the machine they run "
+                f"on cannot be seen by the endpoint software this inventory reads, across all "
+                f"{hosts:,} computers — so none appear above, and that is a limit of the "
+                "measurement rather than a statement that none exist")
+    if reported:
+        return (f"A note that no service accepting connections only from its own machine was "
+                f"reported across {hosts:,} computers, by endpoint software that does report "
+                "such services")
+    return (f"A note that no service accepting connections only from its own machine was "
+            f"reported across {hosts:,} computers, and that whether the endpoint software "
+            "reports such services was not established")
