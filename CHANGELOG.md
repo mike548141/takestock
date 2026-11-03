@@ -9,6 +9,27 @@ command line or a file format, and its entry says how.
 
 ### Added
 
+- **Readers library: CrowdStrike Falcon drive encryption and coverage**, each
+  run when a profile names it in `plugins:` (`docs/COLLECTORS.md`, "The
+  CrowdStrike Falcon drive encryption and coverage readers", which gives the
+  heartbeat query, the default headings and the public source of each name).
+  - `falcon_disk_encryption`: one row per machine from a drive encryption
+    export, graded from a status compared whole (`encrypted:` and
+    `unencrypted:` words) and the volume counts, partly encrypted machines
+    flagged; with `settings: escrow:` the machines the `m365_bitlocker`
+    reader's export names are left to it and every other machine is flagged
+    `key-custody-unknown`; a scope row.
+  - `falcon_estate_coverage`: sensored machines against every asset
+    discovery reports, discovered vendors (folded across spellings, a
+    floor), sensor versions, criticality (`criticality_unset:`), reduced
+    functionality mode, sensors gone quiet (`silent_days:`) and discovered
+    devices that cannot take the sensor (`unreviewed:`), each further list
+    named in `settings:`; and, when `settings: environment:` names words, how
+    many machines the host groups place as production or not.
+  - `falcon_environment`: an annotation putting each machine's production or
+    non-production label, from the same `environment:` words, on the other
+    readers' rows as `extra.environment`, which the configuration register
+    reads.
 - **Readers library: five CrowdStrike Falcon platform and software
   readers**, each run when a profile names it in `plugins:`
   (`docs/COLLECTORS.md`, "The CrowdStrike Falcon platform and software

@@ -991,6 +991,9 @@ plugins:
 | `falcon_logon_events` | `general` | CrowdStrike Falcon LogScale exports of sign-in and local group change events: which machines take remote desktop sign-ins or received a logon type 8 sign-in, and where local group membership changed | none: name it with `input:` |
 | `falcon_endpoint_events` | `general` | CrowdStrike Falcon LogScale exports of USB and removable storage events, and of sensor tampering and unsigned credential-process access (held as a gap) | none: name it with `input:` |
 | `falcon_zta` | `general` | CrowdStrike Falcon Zero Trust Assessment events: each machine's boot verification, code-signing enforcement, in-memory key protection and DMA protection | none: name it with `input:` |
+| `falcon_disk_encryption` | `general` | A CrowdStrike Falcon export of drive encryption per machine: encrypted, unencrypted or partly encrypted, with machines a key-custody export covers left to `m365_bitlocker` | none: name it with `input:` |
+| `falcon_estate_coverage` | `general` | CrowdStrike Falcon host, discovered asset, heartbeat and unsupported asset exports: sensored machines against everything discovery sees, sensor versions, reduced functionality mode, silent sensors, criticality, and machines placed as production or not from host groups | none: name it with `input:` |
+| `falcon_environment` | `annotation` | The CrowdStrike Falcon host list's host groups: each machine's production or non-production label, put on the other readers' rows that name it | none: name it with `input:` |
 
 A reader with no default input still runs when the profile gives it none,
 and records in its own coverage gap that no export was read. A profile that
@@ -3443,3 +3446,178 @@ sensor one other type (ignoring case), with the assessment's kept as
 carrying no graded item, by platform. **Cannot see.** Machines without the
 sensor; what each item tests beyond its name (no public definition was
 found); disk encryption, which these items do not cover.
+
+### The CrowdStrike Falcon drive encryption and coverage readers
+
+`falcon_disk_encryption`, `falcon_estate_coverage` and the annotation
+`falcon_environment` read what the Falcon console and sensor say about the
+machines themselves: whether their drives are encrypted, how many machines
+carry the sensor against everything discovery sees, how far the "covered"
+count can be trusted, and, from host groups, which machines are production.
+
+**Headings.** Most of these inputs are console list exports, and no public
+description of the console's headings was found, so their default headings
+are plain names of takestock's own; name an export's own with `settings:
+columns:`. The host list's defaults are the field names of the API's host
+record as Elastic's integration shows it, except `groups` and
+`criticality`: that record's `groups` holds group IDs, not names, and it
+carries no criticality. Headings match ignoring case, spaces and hyphens,
+and a cell holding `--` is read as blank.
+
+Where each name comes from (read on 4 November 2026, New Zealand time):
+
+| Name | Public source |
+|---|---|
+| Host record fields: `hostname`, `device_id`, `agent_version`, `product_type_desc`, `platform_name`, `reduced_functionality_mode` (shown as `no`), and `groups` holding group IDs | Elastic's CrowdStrike integration on GitHub (`elastic/integrations`, `packages/crowdstrike/data_stream/host`), sample record `_dev/test/pipeline/test-host.log` |
+| `SensorHeartbeat` event, carrying `aid` | the same integration's Falcon Data Replicator samples (`data_stream/fdr/_dev/test/pipeline/test-fdr.log`) and its event categorisation (`elasticsearch/ingest_pipeline/categorize.yml`) |
+| `@timestamp` (milliseconds since 1 January 1970, UTC); `_count`, `groupBy()`, `selectLast()` (`selectLast([@timestamp])` is equivalent to `max(@timestamp)`) | the LogScale documentation (*Event Fields*, and the *CrowdStrike Query Language* function pages at library.humio.com) |
+| `could-not-test`, `not-measured` | takestock's configuration register schema (`cmdb-schema.yaml`, `absence_reason`) |
+
+No public CrowdStrike description of reduced functionality mode was found,
+so these readers say only that such a machine counts as covered.
+The value `yes` meaning a sensor is in the mode is read as the opposite of
+the sample's `no` (`settings: rfm_yes:` names others).
+
+### `falcon_disk_encryption`
+
+**Reads** a CSV with one row per machine (or per machine and network
+adapter) giving its drive encryption state, such as the console's drive
+encryption view.
+
+```yaml
+plugins:
+  - name: falcon_disk_encryption
+    input: inbox/falcon/drive-encryption.csv
+    settings:
+      # Optional: the m365_bitlocker reader's main export, so its devices are not reported twice.
+      # escrow: inbox/intune/bitlocker-keys.csv
+      # encrypted: [encrypted]       # status words meaning encrypted (the default)
+      # unencrypted: [unencrypted]   # and not encrypted (the default)
+      # columns: {machine: "<heading>", status: "<heading>"}
+```
+
+| Field | Default heading |
+|---|---|
+| `machine` | `hostname` |
+| `platform` | `platform` |
+| `status` | `encryption_status` |
+| `encrypted_count` | `encrypted_drives_count` |
+| `unencrypted_count` | `unencrypted_drives_count` |
+| `encrypted_drives` | `encrypted_drives` |
+| `unencrypted_drives` | `unencrypted_drives` |
+
+The status is compared whole, ignoring case, so `Unencrypted` is never read
+as encrypted.
+
+| Row | Grade |
+|---|---|
+| `Drive encryption <machine>` (at rest, `fde`) | `strong` when the status is encrypted and no volume is unencrypted; `weak` with `drive-unencrypted` when the status is unencrypted, or volumes are unencrypted and none encrypted; `weak` with `drive-partially-encrypted:<n>` when both; `unknown` with `ungraded:drive-encryption:<status>` otherwise. `key-custody-unknown` when an `escrow` export is read and does not name the machine |
+| `Drive encryption scope` | `n/a`, `scope-platform-limited`; `scope-yielded-to-key-custody:<n>` for the rows left to the key-custody reader. `extra.machines` and `hosts_count` are the export's row count, rows with no machine name included; `extra.distinct_hosts` is the machines |
+
+**Recovery keys.** A machine the `escrow` export names is left to
+`m365_bitlocker`, which reports its encryption and recovery keys together;
+it is counted on the scope row. The informational flags are
+`key-custody-unknown`, `scope-platform-limited` and
+`scope-yielded-to-key-custody:`. **Coverage gaps.** No export read; and,
+without an `escrow` export, the recovery-key half unanswered. **Cannot
+see.** Machines and platforms the export does not list; where a recovery
+key is held, without `escrow`.
+
+### `falcon_estate_coverage`
+
+**Reads** the sensor-managed host list (`input:`) and, each optional, the
+lists named in `settings:` below. Every row is `n/a` (data state
+`discovery`, protocol `inventory`).
+
+```yaml
+plugins:
+  - name: falcon_estate_coverage
+    input: inbox/falcon/hosts.csv
+    settings:
+      discovered: inbox/falcon/discovered-assets.csv   # every asset discovery reports
+      # rfm: inbox/falcon/hosts-with-rfm.csv          # when the host list lacks the mode
+      heartbeats: inbox/falcon/heartbeats.csv          # the query below
+      unsupported: inbox/falcon/unsupported-assets.csv
+      # silent_days: 7
+      # criticality_unset: [<the console's word for no criticality>]
+      # unreviewed: [<the review status meaning not yet reviewed>]
+      environment: &environment
+        production: [live]
+        non_production: [pre live, sandbox]
+      # columns: {hosts: {groups: "<heading>"}, discovered: {manufacturer: "<heading>"}}
+  - name: falcon_environment
+    input: inbox/falcon/hosts.csv
+    settings:
+      environment: *environment
+```
+
+| Export | Field | Default heading |
+|---|---|---|
+| `hosts` (and `rfm`) | `machine`, `sensor_id` | `hostname`, `device_id` |
+| `hosts` | `sensor_version`, `machine_type`, `platform` | `agent_version`, `product_type_desc`, `platform_name` |
+| `hosts` | `groups`, `criticality` | `host_groups`, `criticality` (takestock's own) |
+| `hosts` (and `rfm`) | `rfm` | `reduced_functionality_mode` |
+| `discovered` | `manufacturer` | `manufacturer` |
+| `heartbeats` | `sensor_id`, `timestamp`, `count` | `aid`, `@timestamp`, `_count` |
+| `unsupported` | `name`, `manufacturer`, `confidence`, `review_status`, `last_seen` | the same names |
+
+The heartbeat query, one row per sensor with its latest heartbeat:
+
+```
+#event_simpleName=SensorHeartbeat
+| groupBy([aid], function=[selectLast([@timestamp]), count()], limit=max)
+```
+
+It was written from the sources above and has not been run here; adapt it
+if a field is named differently in your tenant.
+
+| Row | Flags |
+|---|---|
+| `Estate coverage` | `estate-coverage:<percent>`: sensored machines (counted by sensor ID, else name) against discovered assets |
+| `Discovered device vendors` | `vendor-unattributed:<n>`: rows naming no manufacturer, so every vendor count is a floor; names are folded across company suffixes and punctuation |
+| `Sensor version spread` | `sensor-versions:<n>`, with how many sensors are not on the newest version present (versions compared number by number), and the machine types and platforms |
+| `Asset criticality assignment` | `criticality-unassigned:<n>`: values listed in `criticality_unset` (no default) |
+| `Environment labelling`, when `environment` names words | `environment-census:<n>` machines placed; `environment-contested:<n>` |
+| `Sensor reduced-functionality mode` | `sensor-rfm:<n>`, naming the machines; read from `rfm`, else from the host list when it has the column |
+| `Sensor heartbeat recency` | `sensor-silent:<n>`: latest heartbeat more than `silent_days` (default 7) before the newest in the file; with sensors not in the host list, and host-list machines that sent none |
+| `Discovered devices that cannot take the sensor` | `unsupported-discovered:<n>`, with vendors, confidence values, and how many were reviewed when `unreviewed` is set |
+
+Every flag but `criticality-unassigned:` is informational.
+
+**Environments.** A group name is compared as lower-case words (anything not
+a letter or digit separates them), and each word or phrase in `environment`
+matches whole words. Non-production phrases are matched first and taken
+out, so `pre live` marks `Pre-Live Kiosks` non-production without its
+`live` counting as well. A machine in groups on both sides resolves to production
+and is marked contested: labelling a live machine non-production would move
+it down a remediation queue. Group names are what the console's operators
+chose, so the label is inferred, never reported. With no words named there
+is no environment row and no label.
+
+**Coverage gaps.** Neither the host list nor the discovered list read; the
+discovered assets that carry no sensor (`extent-unknown`), when there are
+any; and each of `rfm`, `heartbeats` and `unsupported` not read. **Cannot
+see.** Inside any machine without the sensor; what a sensor still does in
+reduced functionality mode; which discovered devices belong to the
+organisation; the heartbeat query's start (the file holds each sensor's
+latest heartbeat only).
+
+### `falcon_environment`
+
+An **annotation** ([`PLUGINS.md`](PLUGINS.md)): it writes no rows, and after
+grading puts `extra.environment` on every other reader's row that names a
+machine in the host list, from the same `environment` setting as
+`falcon_estate_coverage` (share it with a YAML anchor, as above). takestock's
+configuration register reads the key as each machine's `environment`.
+
+A row is matched by its `extra.aid` (sensor ID), then by its `host`,
+ignoring case; a name worn by several sensors whose labels disagree matches
+nothing. Rows that are not about a machine are never labelled: certificates,
+credentials (`key-material`), third parties, mail authentication, declared
+asset classes (`estate`) and `ct_dns` name rows.
+
+The label holds `value` (`production`, `non-production` or blank),
+`absent` (for a blank value: `could-not-test` for a machine in no group,
+`not-measured` for one whose groups name no environment), `note`,
+`contested` (`yes` or blank), `valid_at` (the host list's file date),
+`source` and `source_name`. **Coverage gap:** a host list that gives no rows.

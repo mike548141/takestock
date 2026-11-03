@@ -932,3 +932,59 @@ def platform_integrity(host: str, machine: str) -> str:
     name = f" {host}" if host else ""
     return (f"{who}{name}: whether it checks what it starts, insists on signed code and "
             "protects the passwords and keys held in its memory")
+
+
+def drive_encryption(machine: str) -> str:
+    """One machine's drive encryption, as an endpoint sensor reports it."""
+    if not machine:
+        return ""
+    return ("Drive encryption on this computer: whether what is stored on it stays "
+            "unreadable if it is lost or stolen")
+
+
+def drive_encryption_scope() -> str:
+    """The scope row for a drive encryption export."""
+    return "What the record of drive encryption covers, and what it cannot say"
+
+
+def estate_coverage() -> str:
+    """Discovered assets against the machines an endpoint sensor runs on."""
+    return "How much of everything on the network the endpoint sensor has looked inside"
+
+
+def discovered_vendors() -> str:
+    """The manufacturers discovery names."""
+    return "What kinds of equipment are on the network, as far as discovery can tell"
+
+
+def sensor_version_spread() -> str:
+    """The versions of the endpoint sensor in service."""
+    return "How current the measuring instrument itself is, not a finding about the estate"
+
+
+def asset_criticality() -> str:
+    """Whether machines carry a criticality value."""
+    return "Whether machines are ranked by what an attacker would gain from taking them"
+
+
+def environment_label() -> str:
+    """How many machines can be told apart as production or not."""
+    return ("How many machines can be told apart into live and not live, so remediation "
+            "can be ordered live-first")
+
+
+def sensor_rfm() -> str:
+    """Sensors in reduced functionality mode."""
+    return ("Which covered machines report their sensor in reduced functionality mode, "
+            "counted as covered all the same")
+
+
+def sensor_heartbeat() -> str:
+    """How recently each sensor reported."""
+    return ("Which covered machines are still reporting in, and which sensors the host "
+            "list no longer carries")
+
+
+def unsupported_devices() -> str:
+    """Discovered devices an endpoint sensor cannot run on."""
+    return "Which devices on the network the endpoint sensor cannot be put on at all"
