@@ -9,6 +9,19 @@ command line or a file format, and its entry says how.
 
 ### Added
 
+- **Readers library: an Azure Resource Graph reader.** `azure_resource_graph`
+  runs when a profile names it in `plugins:` (`docs/COLLECTORS.md`,
+  "`azure_resource_graph`", which gives the queries). It reads a CSV of
+  Resource Graph results over storage accounts, managed disks, snapshots,
+  Recovery Services vaults and key vaults: one at-rest row per resource with
+  the key custody as a flag, a second row per storage account with its
+  configured TLS floor for the baseline to grade (a floor not set is graded
+  as TLS 1.0, which Microsoft documents an unset floor to permit), flags for anonymous blob access, public
+  network access, HTTPS-only off and key vault access policies, and a scope
+  row by type and subscription. A second export listing the subscriptions
+  says whether every one contributed rows. Settings name other column
+  headings (`columns`) and shapes that split long disk names
+  (`disk_name_shapes`).
 - **Readers library: three Exchange Online mail readers.** Each runs when a
   profile names it in `plugins:` (`docs/COLLECTORS.md`, "The Exchange Online
   mail readers"). `exo_client_access` reads mailbox access settings exported

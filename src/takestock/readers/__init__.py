@@ -29,7 +29,8 @@ MODULES: tuple[str, ...] = ("cyclonedx", "oracle_tde", "commvault", "exchange_on
                             "rvtools", "vsphere_lists", "entra_signins", "entra_auth_methods",
                             "entra_workload_signins", "entra_audit", "entra_privileged_groups",
                             "entra_app_credentials", "exo_client_access",
-                            "exo_connector_messages", "exo_outbound_protection")
+                            "exo_connector_messages", "exo_outbound_protection",
+                            "azure_resource_graph")
 
 
 def _load() -> list[Plugin]:

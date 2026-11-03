@@ -975,6 +975,7 @@ plugins:
 | `exo_client_access` | `general` | Exchange Online mailbox access switches (IMAP, POP, ActiveSync, MAPI, Outlook on the web, EWS) per protocol, and the organisation's authenticated SMTP switch | none: name it with `input:` or `settings: mailboxes:` |
 | `exo_connector_messages` | `mail-transport` | A per-message Exchange Online mail transport CSV: the TLS version each message negotiated, by direction and path, and mail with government organisations | none: name it with `input:` |
 | `exo_outbound_protection` | `general` | Exchange Online outbound message counts by security type (DANE, MTA-STS, TLS alone) | none: name it with `input:` |
+| `azure_resource_graph` | `general` | Azure Resource Graph query results: stored-data encryption key source for storage accounts, managed disks and snapshots, storage accounts' TLS floors and public exposure settings, key vaults' authorisation model | none: name it with `input:` |
 
 A reader with no default input still runs when the profile gives it none,
 and records in its own coverage gap that no export was read. A profile that
@@ -2063,3 +2064,140 @@ another spelling of it included, is counted apart and flagged
 `ungraded:mail-security-type:<types>`.
 
 **Coverage gaps.** No export read.
+
+### `azure_resource_graph`
+
+**Reads** a CSV of Azure Resource Graph query results, one row per resource,
+covering storage accounts, managed disks, disk snapshots, Recovery Services
+vaults and key vaults: whose key encrypts the stored data, each storage
+account's TLS floor and HTTPS-only setting, anonymous blob access, public
+network access, and each key vault's authorisation model. `settings:
+subscriptions:` names a second export listing the subscriptions, so the
+scope row can say whether every subscription contributed a row.
+
+```yaml
+plugins:
+  - name: azure_resource_graph
+    input: inbox/azure/resources.csv
+    settings:
+      subscriptions: inbox/azure/subscriptions.csv
+      # Only for an export written with other headings: field: heading.
+      # columns: {tls_floor: "TLS minimum"}
+      # Optional: shapes that split a long disk name into three parts.
+      # disk_name_shapes: ['(?P<machine>.+?)_(?P<role>disk\d+)_(?P<uid>[0-9a-f]{32})']
+```
+
+These two queries write the files. They were written from Microsoft's
+resource reference pages and have not been run here. Run each in Resource
+Graph Explorer in the Azure portal and download the results as CSV. The
+queries only read. Microsoft's *Overview of Azure Resource Graph* says a
+query needs "at least `read` access to the resources you want to query".
+The subscription list runs under the same access, so it cannot show
+subscriptions the caller cannot read; what it adds is the listed
+subscriptions that contributed no row, because they hold none of the
+queried types or were not read.
+
+```kusto
+resources
+| where type in~ ('microsoft.storage/storageaccounts', 'microsoft.compute/disks',
+                  'microsoft.compute/snapshots', 'microsoft.recoveryservices/vaults',
+                  'microsoft.keyvault/vaults')
+| project name, type, subscriptionId,
+          minimumTlsVersion = tostring(properties.minimumTlsVersion),
+          supportsHttpsTrafficOnly = tostring(properties.supportsHttpsTrafficOnly),
+          publicNetworkAccess = tostring(properties.publicNetworkAccess),
+          allowBlobPublicAccess = tostring(properties.allowBlobPublicAccess),
+          keySource = tostring(properties.encryption.keySource),
+          encryptionType = tostring(properties.encryption.type),
+          diskEncryptionSetId = tostring(properties.encryption.diskEncryptionSetId),
+          enableRbacAuthorization = tostring(properties.enableRbacAuthorization)
+```
+
+```kusto
+resourcecontainers
+| where type == 'microsoft.resources/subscriptions'
+| project name, subscriptionId
+```
+
+| Field | Default heading | Read from |
+|---|---|---|
+| `name`, `type`, `subscription` | `name`, `type`, `subscriptionId` | every resource |
+| `tls_floor` | `minimumTlsVersion` | storage account: `TLS1_0` to `TLS1_3` (the reference lists `TLS1_3`, and says a minimum of TLS 1.3 is not supported) |
+| `https_only` | `supportsHttpsTrafficOnly` | storage account |
+| `public_network` | `publicNetworkAccess` | every type; on a disk or snapshot it controls exporting the disk |
+| `anonymous_blob` | `allowBlobPublicAccess` | storage account |
+| `key_source` | `keySource` | storage account: `Microsoft.Storage` or `Microsoft.Keyvault` |
+| `disk_encryption` | `encryptionType` | disk or snapshot: `EncryptionAtRestWithPlatformKey`, `…WithCustomerKey`, `…WithPlatformAndCustomerKeys` |
+| `disk_encryption_set` | `diskEncryptionSetId` | disk or snapshot |
+| `rbac` | `enableRbacAuthorization` | key vault |
+
+Headings match ignoring case, spaces and hyphens; `settings: columns:` names
+another heading for any field. A blank cell, or one holding `null`, is read
+as not set.
+
+**Rows.**
+
+| Row | Data state, protocol | Grade |
+|---|---|---|
+| `Azure storage account <name>` | at rest, `azure-storage` | `strong` with `key-custody:platform-managed` or `customer-managed`; another key source `unknown`, `ungraded:storage-key-source:<value>`. Flags `blob-public-access` (anonymous blob access allowed), `public-network-access:enabled` or `:unset` |
+| `Azure storage account <name> TLS floor` | in transit, `tls` | the configured floor, by the baseline's TLS version table; not set is graded as TLS 1.0, what Microsoft documents an unset floor to permit, and flagged `tls-floor-unset`; HTTPS-only off flagged `https-only-off` |
+| `Azure managed disk <name>`, `Azure disk snapshot <name>` | at rest, `azure-disk` | `strong` with `key-custody:platform-managed`, `customer-managed` or `platform-and-customer`; another type `unknown`, `ungraded:disk-encryption-type:<value>` |
+| `Azure backup vault <name>` | at rest, `azure-backup` | `unknown`, `not-assessed:backup-vault-encryption`: the query reads no encryption property for this type |
+| `Azure key vault <name>` | key material, `azure-keyvault` | `n/a`; access policies flagged `kv-access-policy-authorisation`, not set `not-assessed:key-vault-authorisation` |
+| `Azure resource <name>` | at rest, `azure-at-rest` | any other type: `unknown`, `ungraded:azure-resource-type:<type>` |
+| `Azure resource-graph encryption scope` | at rest, `azure-at-rest` | `n/a`, `scope-queried-types-only`: counts by type and subscription, and the custody and exposure totals |
+
+What the grades rest on, from Microsoft's documentation (learn.microsoft.com,
+read on 4 November 2026, New Zealand time):
+
+- *Azure Storage encryption for data at rest*: data in Azure Storage is
+  encrypted with 256-bit AES, and "You can't disable Azure Storage
+  encryption". *Server-side encryption of Azure managed disks*: data in
+  managed disks is encrypted with 256-bit AES, and snapshots are encrypted
+  with platform-managed keys by default. The export carries the key source,
+  not the cipher, so `strong` rests on these pages.
+- *Microsoft.Storage/storageAccounts* (resource reference): the minimum TLS
+  version's "default interpretation is TLS 1.0", and "Minimum TLS version 1.3
+  version is not supported"; HTTPS-only's "default value is true since API
+  version 2019-04-01".
+- *Enforce a minimum required version of Transport Layer Security (TLS)*:
+  "The storage account permits requests sent with TLS version 1.0 or greater
+  if the property isn't set", and "When a storage account requires a minimum
+  TLS version, any request that uses an older version fails". The same page
+  says "Azure Storage supports two versions of the TLS protocol: 1.2 and
+  1.3", so the TLS floor row records the configured floor and what Microsoft
+  documents it to mean, not what the service negotiates.
+- *Firewall rules and network access for Azure Blob, Data Lake, Queue, and
+  Table Storage*: "By default, storage accounts allow connections from any
+  network". The export carries no network rules, so public network access
+  not set is flagged rather than read as either value.
+- *Remediate anonymous read access to blob data*: "When a container is
+  configured for anonymous access, any client can read data in that
+  container", and a container can be so configured only where the account
+  allows anonymous access.
+- *Microsoft.Compute/disks* and *Microsoft.Compute/snapshots* (resource
+  reference): a disk's `publicNetworkAccess` is the "Policy for controlling
+  export on the disk", so it is recorded, never graded.
+- *Azure role-based access control (Azure RBAC) vs. access policies*: "Azure
+  RBAC is the recommended authorization system for the Azure Key Vault data
+  plane", and "The access policy model is a legacy authorization system".
+
+**Disk names.** `settings: disk_name_shapes:` lists regular expressions with
+the named groups `machine`, `role` and `uid`. A disk or snapshot whose name
+matches one in full is shown with the three parts separated by spaces, and
+`extra` keeps each part (`azure_disk_machine`, `azure_disk_role`,
+`azure_disk_uid`), so the name can be rebuilt exactly. A long name joining
+words, digits and a hexadecimal suffix can read to a secret scanner as a
+credential; split, it is less likely to. A shape that is not a regular expression, or
+lacks a group, is ignored, and the scope row says how many were.
+
+**Dates.** The export carries no date, so each row is dated by the file's
+modification date.
+
+**Coverage gaps.** No export read: one gap. An export read: one gap saying
+that no database (and so no database's transparent data encryption) is among
+the types queried, so the storage answer is not the database answer.
+
+**Cannot see.** Network rules and private endpoints; who holds key vault
+roles or access policies; customer-managed keys' own properties; databases;
+any type the query does not name.

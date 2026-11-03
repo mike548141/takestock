@@ -569,3 +569,36 @@ def mailbox_access_scope() -> str:
     """The scope row for a mailbox access settings export."""
     return ("What the mailbox access settings export covers: which mailboxes were read, when, "
             "by which command, and what it cannot show")
+
+
+def cloud_resource_encryption(kind: str, ident: str) -> str:
+    """One Azure resource's stored-data record, said by what the resource is."""
+    if not ident:
+        return ""
+    return {
+        "storage account": (f"Stored-data encryption for the Azure storage account {ident}: "
+                            "whose key encrypts what it holds, and whether it can be read "
+                            "anonymously or reached from any network"),
+        "managed disk": (f"Stored-data encryption for the Azure managed disk {ident}, a "
+                         "virtual machine's drive, and whose key protects it"),
+        "disk snapshot": (f"Stored-data encryption for the Azure disk snapshot {ident}, a "
+                          "point-in-time copy of a drive with its own encryption setting"),
+        "backup vault": (f"The Azure Recovery Services vault {ident}, where backup copies "
+                         "are kept"),
+        "key vault": (f"The Azure key vault {ident}, and how access to the keys and secrets "
+                      "it holds is authorised"),
+    }.get(kind, "")
+
+
+def cloud_storage_tls_floor(ident: str) -> str:
+    """The configured TLS floor of an Azure storage account (a setting, not a handshake)."""
+    if not ident:
+        return ""
+    return (f"The oldest TLS version the Azure storage account {ident} is configured to "
+            "accept")
+
+
+def cloud_resource_scope() -> str:
+    """The scope row for an Azure Resource Graph export."""
+    return ("What the Azure Resource Graph export covers: which resource types and "
+            "subscriptions were read, and what it cannot show")
