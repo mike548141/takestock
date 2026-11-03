@@ -842,3 +842,93 @@ def sha1_signed_software(machines: int) -> str:
     """Machines loading software whose signing data carries SHA-1."""
     return (f"Software whose signing data carries the SHA-1 algorithm, loaded on "
             f"{machines:,} machine{'' if machines == 1 else 's'}")
+
+
+# ── CrowdStrike Falcon sign-ins, accounts, endpoint events and platform integrity ──
+
+def signin_activity_cleartext(records: int) -> str:
+    """Sign-ins of logon type 8, which hand the receiving machine a password it can read."""
+    return (f"Sign-ins that handed the receiving computer a readable password (Windows logon "
+            f"type 8): {records:,} record{'' if records == 1 else 's'}")
+
+
+def signin_activity_concentration() -> str:
+    """How much of all sign-in activity the busiest accounts carry."""
+    return ("How much of all sign-in activity a handful of accounts carry, which is where a "
+            "stolen password is worth most")
+
+
+def signin_activity_account_kind() -> str:
+    """Sign-ins by local accounts against domain accounts."""
+    return ("Whether the accounts people and programs sign in with can be disabled from the "
+            "directory (domain accounts) or only on each computer (local accounts)")
+
+
+def signin_activity_paths() -> str:
+    """The kinds of sign-in in use."""
+    return "The kinds of sign-in in use: at the keyboard, remote desktop, services and others"
+
+
+def signin_activity_failures() -> str:
+    """Failed sign-ins and the export's own suspicious marking."""
+    return "Failed sign-ins, and how many the security platform itself marked suspicious"
+
+
+def signin_activity_scope() -> str:
+    """The scope row for sign-in activity exports."""
+    return ("What this record of sign-in activity covers: computers running the endpoint "
+            "sensor, not every sign-in")
+
+
+def account_population(what: str) -> str:
+    """A population of observed accounts, described by ``what``."""
+    return f"Accounts seen signing in on computers with the endpoint sensor: {what}" if what else ""
+
+
+def account_population_scope() -> str:
+    """The scope row for an account export."""
+    return ("What this list of accounts covers: accounts seen signing in, a sample of the "
+            "directory rather than all of it")
+
+
+def signin_events_remote(machines: int) -> str:
+    """Computers that accepted remote desktop sign-ins."""
+    return (f"Computers that accepted remote desktop sign-ins, where a stolen password gives "
+            f"hands-on control: {machines:,}")
+
+
+def signin_events_cleartext(machines: int) -> str:
+    """Computers that received a sign-in of logon type 8."""
+    return (f"Computers that received a sign-in handing over a readable password (Windows "
+            f"logon type 8): {machines:,}")
+
+
+def signin_events_scope() -> str:
+    """The scope row for sign-in event exports."""
+    return "What the per-computer record of sign-in events covers, and what it cannot show"
+
+
+def signin_events_groups(machines: int) -> str:
+    """Computers whose local group membership changed."""
+    return (f"Computers where membership of local groups, where administrator rights are "
+            f"granted, changed: {machines:,}")
+
+
+def removable_storage(machines: int) -> str:
+    """Computers where removable storage was mounted."""
+    return (f"Computers where removable storage such as a USB stick was mounted: {machines:,} "
+            "(evidence it is used, not of whether it is allowed)")
+
+
+def usb_devices(machines: int) -> str:
+    """Computers where USB devices were connected."""
+    return (f"Computers where USB devices were connected, of whatever kind, not only "
+            f"storage: {machines:,}")
+
+
+def platform_integrity(host: str, machine: str) -> str:
+    """One computer's own report on its start-up, code-signing and memory protections."""
+    who = machine or "Computer"
+    name = f" {host}" if host else ""
+    return (f"{who}{name}: whether it checks what it starts, insists on signed code and "
+            "protects the passwords and keys held in its memory")

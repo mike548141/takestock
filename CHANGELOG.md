@@ -31,6 +31,33 @@ command line or a file format, and its entry says how.
   - `falcon_sha1_signed_modules`: one row for the machines loading software
     whose signing data carries SHA-1, and a gap saying where in the chain it
     sits is not established.
+- **Readers library: five CrowdStrike Falcon identity, endpoint-event and
+  assessment readers**, each run when a profile names it in `plugins:`
+  (`docs/COLLECTORS.md`, "The CrowdStrike Falcon identity, endpoint-event and
+  assessment readers", which gives the LogScale queries and the public source
+  of each event and field name). `settings: columns:` names other headings
+  for any export.
+  - `falcon_logins`: CSV exports of successful and failed sign-in activity.
+    A logon type 8 (NetworkCleartext) record is `weak`; where activity
+    concentrates (accounts ranked, never named), local against domain
+    accounts, the sign-in paths in use and the failed sign-ins are rows of
+    their own, with a scope row.
+  - `falcon_accounts`: a CSV of the accounts the sensor saw sign in, one row
+    per population: where administrative privilege sits, password age in
+    buckets (`fresh_days`, `stale_days`, `date_format` settings; a missing
+    date is unknown, never old), service accounts, and a scope row.
+  - `falcon_logon_events`: sign-in and local group change events by machine:
+    machines taking remote desktop sign-ins, machines that received a logon
+    type 8 sign-in, the logon type mix, and group membership changes, with a
+    gap when no row names the group. Every row `n/a`.
+  - `falcon_endpoint_events`: USB devices connected and removable storage
+    mounted, one `n/a` row each; sensor tampering and unsigned access to the
+    credential process are counted in a gap, never reported as readings.
+  - `falcon_zta`: Zero Trust Assessment events, one row per machine graded on
+    seventeen boot, code-signing, in-memory key and DMA protection items
+    (`settings: controls:` replaces them), with legacy BIOS called out, every
+    item kept in `extra`, and the machine type taken from further exports
+    where they agree (`host_types`). JSON or CSV.
 - **Readers library: three CrowdStrike Falcon traffic readers**, each run
   when a profile names it in `plugins:` (`docs/COLLECTORS.md`, "The
   CrowdStrike Falcon traffic readers", which gives the LogScale queries and

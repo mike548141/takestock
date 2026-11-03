@@ -986,6 +986,11 @@ plugins:
 | `falcon_system_resources` | `general` | A CrowdStrike Falcon export of machines' firmware: BIOS and UEFI versions, and machines behind the estate's own newest on the same hardware | none: name it with `input:` |
 | `falcon_windows_os_security` | `general` | A CrowdStrike Falcon export of Windows platform protections (Secure Boot, virtualisation-based security, Credential Guard, device-memory protections): readings per protection, with an optional second reading compared | none: name it with `input:` |
 | `falcon_sha1_signed_modules` | `general` | A CrowdStrike Falcon LogScale export of module-signature events carrying SHA-1, by machine | none: name it with `input:` |
+| `falcon_logins` | `general` | CSV exports of sign-in activity on machines with the CrowdStrike Falcon sensor: logon type 8 sign-ins, where sign-in activity concentrates, local against domain accounts, the sign-in paths in use and failed sign-ins | none: name it with `input:` |
+| `falcon_accounts` | `general` | A CSV of the accounts the CrowdStrike Falcon sensor saw sign in: where administrative privilege sits, and how old the passwords are | none: name it with `input:` |
+| `falcon_logon_events` | `general` | CrowdStrike Falcon LogScale exports of sign-in and local group change events: which machines take remote desktop sign-ins or received a logon type 8 sign-in, and where local group membership changed | none: name it with `input:` |
+| `falcon_endpoint_events` | `general` | CrowdStrike Falcon LogScale exports of USB and removable storage events, and of sensor tampering and unsigned credential-process access (held as a gap) | none: name it with `input:` |
+| `falcon_zta` | `general` | CrowdStrike Falcon Zero Trust Assessment events: each machine's boot verification, code-signing enforcement, in-memory key protection and DMA protection | none: name it with `input:` |
 
 A reader with no default input still runs when the profile gives it none,
 and records in its own coverage gap that no export was read. A profile that
@@ -3116,3 +3121,325 @@ that export lists (each machine once). **Coverage gaps:** no export read; and
 always one saying where SHA-1 sits in the chain is not established. **Cannot
 see:** whether SHA-1 is a module's own signature, the older half of a double
 signature, or a certificate higher in the chain; which modules or publishers.
+
+### The CrowdStrike Falcon identity, endpoint-event and assessment readers
+
+`falcon_logins`, `falcon_accounts`, `falcon_logon_events`,
+`falcon_endpoint_events` and `falcon_zta` read what CrowdStrike's Falcon
+endpoint sensor records about sign-ins, accounts, devices and each
+machine's own protections. Two of them read exports from the Falcon
+console's lists; the other three read the results of LogScale (Falcon
+Next-Gen SIEM) queries, given in each reader's section. The queries were
+written from the public sources below and have not been run here; adapt
+them to your tenant if a field is named differently there.
+
+**Headings.** Each reader keeps, per export, the fields it reads and a
+default heading for each. `settings: columns: {<export>: {<field>:
+<heading>}}` names another heading, or a list of headings of which the
+first holding a value is read. Headings match ignoring case, spaces and
+hyphens. No public description of the console exports' headings was found,
+so the console readers' default headings are plain names of takestock's
+own, and an export from the console is read by naming its headings. The
+query readers' defaults are the sensor's own field names, and `_count` for
+the count column (`groupBy()` with no function counts into `_count`, as the
+traffic readers' section above cites).
+
+**Logon types** are read by Microsoft's number or name, as Microsoft lists
+them for security event 4624 (*4624(S) An account was successfully logged
+on*, learn.microsoft.com): 0 `System`, 2 `Interactive`, 3 `Network`,
+4 `Batch`, 5 `Service`, 7 `Unlock`, 8 `NetworkCleartext`, 9 `NewCredentials`,
+10 `RemoteInteractive`, 11 `CachedInteractive`, 12 `CachedRemoteInteractive`,
+13 `CachedUnlock`. A name matches ignoring
+case, spaces, hyphens and underscores, so `Remote interactive` is type 10.
+For type 8 the same page says the user's password "was passed to the
+authentication package in its unhashed form", that "the built-in
+authentication packages all hash credentials before sending them across the
+network", and that "the credentials don't traverse the network in plaintext".
+So a type 8 sign-in handed the receiving machine a password it could read.
+Whether that password crossed the network readable is a separate question,
+which turns on the protocol that carried it (an inference here, not
+Microsoft's statement); none of these exports shows the protocol.
+
+**Machines** are counted by name ignoring case, or by sensor ID (`aid`)
+where a row has no name; accounts are counted, never named, except that
+`falcon_logon_events` names the machines that received a type 8 sign-in.
+
+Where each event and field name comes from (read on 4 November 2026, New
+Zealand time):
+
+| Name | Public source |
+|---|---|
+| `ZeroTrustHostAssessment` events (`event_type`), with `aid` and `scores.os`, `scores.sensor`, `scores.overall`; `selectFromMax()` | CrowdStrike's community content repository on GitHub, `CrowdStrike/logscale-community-content`: *Zero Trust Host Assessment Scores* (`Queries-Only/Helpful-CQL-Queries`) |
+| `assessments.firmware_is_uefi` on that event | the same repository's Cool Query Friday of 29 October 2021, *CPU, RAM, Disk, Firmware, TPM 2.0, and Windows 11* |
+| the event's `hostname`, `os_version`, `product_name`, `product_type_desc`, `event_platform`, and its `assessments` and `scores` objects | Elastic's CrowdStrike integration on GitHub (`elastic/integrations`, `packages/crowdstrike/data_stream/fdr`): its sample `ZeroTrustHostAssessment` event, from a macOS machine |
+| the Windows assessment item names `falcon_zta` grades (`secure_boot_enabled`, `uefi_memory_protection`, `hsti_available`, `smm_protections`, `hvci_enabled`, `hvci_strict_mode`, `kmci_enabled`, `test_signing_disabled`, `secure_kernel_running`, `credential_guard_running`, `vsm_available`, `secure_mor_available`, `dma_guard_enabled`, `iommu_available`, `iommu_in_use`, `mbec_available`) | a sample Windows `ZeroTrustHostAssessment` event in the security vendor Sekoia's public integration documentation on GitHub (`SEKOIA-IO/documentation`: the raw event samples of its *CrowdStrike Falcon Telemetry* integration, `_shared_content/operations_center/integrations/generated/10999b99-9a8d-4b92-9fbd-01e3fac01cd5_sample.md`). This is a third party's sample, not CrowdStrike's documentation, and no public definition of each item was found: what each one tests is read from its name |
+| `@timestamp` (milliseconds since 1 January 1970, UTC) and `@rawstring` (the event's original text) | the LogScale documentation, *Event Fields* (library.humio.com) |
+| `UserLogon` and `UserLogonFailed2` events, with `UserName`, `LogonType`, `aid`, and `ComputerName` on `UserLogon` | the community repository's *Failed and Successful User Logon Events* (`Queries-Only/Helpful-CQL-Queries`); Elastic's sample `UserLogon` and `UserLogonFailed2` events (`_dev/test/pipeline/test-fdr.log`) |
+| `UserAccountAddedToGroup`, with `GroupRid`, `UserRid` and `ComputerName` | the community repository's *User Added to Group* (`Queries-Only/Helpful-CQL-Queries`) |
+| `DcUsbDeviceConnected`, with `DeviceManufacturer` and `DeviceProduct` | the community repository's FLTR device control package (*USB Device Control Activity* dashboard) and the FLTR core package's `zUsbNormalize` query |
+| the event names `UserLogonFailed`, `UserAccountRemovedFromGroup`, `UserGroupDeleted`, `SensorTampering`, `LsassHandleFromUnsignedModule` and `RemovableMediaVolumeMounted` | Elastic's CrowdStrike integration's event categorisation (`packages/crowdstrike/data_stream/fdr/elasticsearch/ingest_pipeline/categorize.yml`), which lists each by name |
+| `aid_master_main.csv` with `ComputerName`, read with `match()` | as in `falcon`'s section above |
+
+The community repository says its content is "not meant as replacements for
+the official documentation". No public source was found placing `GroupRid`
+or `UserRid` on `UserAccountRemovedFromGroup` or `UserGroupDeleted`,
+`DeviceManufacturer` or `DeviceProduct` on `RemovableMediaVolumeMounted`, or
+`ComputerName` on the group, device and sensor events; so the queries add the
+machine name from `aid_master_main.csv`, and a row without the group or the
+device is read as not naming it. The LogScale reference for `groupBy()` does
+not say whether it keeps an event that lacks a grouped field; check that on
+a first run.
+
+### `falcon_logins`
+
+**Reads** two CSVs of sign-in activity on machines with the sensor, one row
+per account and sign-in record, such as the Falcon console's successful and
+failed login lists: `input:` the successful sign-ins, `settings: failed:`
+the failed ones. Either may be given alone.
+
+```yaml
+plugins:
+  - name: falcon_logins
+    input: inbox/falcon/logins-successful.csv
+    settings:
+      failed: inbox/falcon/logins-failed.csv
+      columns:
+        successful: {account: "<heading>", account_type: "<heading>",
+                     logon_type: "<heading>", attempts: "<heading>"}
+        failed: {account: "<heading>", account_type: "<heading>",
+                 logon_type: "<heading>", attempts: "<heading>",
+                 suspicious: "<heading>"}
+      # ranks: 5     # how many of the busiest accounts get a share
+```
+
+| Field | Default heading | What it holds |
+|---|---|---|
+| `account` | `account` | the account name (counted, never written to a row) |
+| `account_type` | `account_type` | `Local` or `Domain` |
+| `logon_type` | `logon_type` | the logon type, by Microsoft's number or name |
+| `attempts` | `attempts` | how many sign-in attempts the record stands for |
+| `suspicious` (failed only) | `suspicious` | whether the export marks the record suspicious (yes, true or 1) |
+
+**Rows** (data state `identity`, protocol `login`):
+
+| Row | Grade |
+|---|---|
+| `Cleartext network logons`, written when any record is logon type 8 | `weak`, `cleartext-credential-logon`; `extra` the successful and failed records and the attempts |
+| `Authentication concentration` | `n/a`, `identity-concentration:<the two busiest accounts' share, %>`; `extra` the accounts, attempts and each of the busiest accounts' share (`rank_<n>_share`) |
+| `Local versus domain authentication` | `weak` and `local-authentication-majority:<attempts>` when local accounts made more successful attempts than domain accounts; else `acceptable` |
+| `Authentication paths in use` | `n/a`; `extra` the attempts per logon type as the export writes it |
+| `Failed authentication` | `n/a`, and `suspicious-failed-logins:<n>` when the export marks any record suspicious, carried through and not re-judged |
+| `Login activity scope` | `n/a`, `scope-observed-not-enumerated` |
+
+**Cannot see.** A sign-in that never touched a machine with the sensor, such
+as a program signing in to a cloud service; the protocol a type 8 sign-in
+travelled over. **Coverage gap:** neither export read.
+
+### `falcon_accounts`
+
+**Reads** a CSV of accounts the sensor saw sign in, one row per account,
+such as the Falcon console's account list. One row per population, never per
+account.
+
+```yaml
+plugins:
+  - name: falcon_accounts
+    input: inbox/falcon/accounts.csv
+    settings:
+      columns:
+        accounts: {account_type: "<heading>", last_logon: "<heading>",
+                   password_set: "<heading>", admin: ["<heading>", "<another>"]}
+      # Optional, with their defaults:
+      # fresh_days: 90
+      # stale_days: 365
+      # date_format: ""    # a strptime format; ISO 8601 when not set
+```
+
+| Field | Default heading | What it holds |
+|---|---|---|
+| `account_type` | `account_type` | `Local` or `Domain` |
+| `last_logon` | `last_logon_type` | the logon type of the account's last successful sign-in |
+| `password_set` | `password_last_set` | when its password was last set |
+| `admin` | `admin` | whether it holds administrative privilege (yes, true or 1) |
+
+**Rows** (data state `identity`, protocol `account`; never `strong`):
+
+| Row | Grade |
+|---|---|
+| `Privileged accounts` | `weak` and `privilege-outside-directory:<n>` when more administrative accounts are local than domain accounts; else `acceptable`. Always `privileged-accounts:<n>`; `admin-remote-interactive:<n>` for those whose last sign-in was remote interactive |
+| `Privileged account credential age`, `Account credential age (all observed accounts)` | each account in one bucket by password age at the file's date: within `fresh_days`, within `stale_days`, older, or no date (`extra.age_fresh`, `age_within_year`, `age_stale`, `age_unknown`; they add up to the population). `weak` and `password-stale:<n>` when any is older; `credential-age-unknown:<n>` for those with no date |
+| `Service accounts` (last sign-in a service logon), written when there are any | `unknown` when at least half carry no password date, since the export cannot tell a password that rotates from one that never changed; else `acceptable` |
+| `Account inventory scope` | `n/a`, `scope-observed-not-enumerated` |
+
+A blank date, or one that cannot be read, is an unknown age, never an old
+one. **Cannot see.** Accounts that never signed in on a machine with the
+sensor: the domain accounts here are a sample of the directory, not an
+enumeration of it. **Coverage gap:** no export read.
+
+### `falcon_logon_events`
+
+**Reads** three LogScale exports that say where sign-ins landed: successful
+sign-ins (`input:`), failed sign-ins (`settings: failures:`) and local group
+membership changes (`settings: group_changes:`). Every row is `n/a`: the
+cleartext finding is graded once, by `falcon_logins`.
+
+```yaml
+plugins:
+  - name: falcon_logon_events
+    input: inbox/falcon/logons.csv
+    settings:
+      failures: inbox/falcon/logon-failures.csv
+      group_changes: inbox/falcon/group-changes.csv
+```
+
+```
+// Successful sign-ins, one row per machine, account and logon type
+#event_simpleName=UserLogon
+| match(file="aid_master_main.csv", field=aid, include=[ComputerName], strict=false)
+| groupBy([aid, ComputerName, UserName, LogonType], limit=max)
+```
+
+```
+// Failed sign-ins, grouped the same way
+#event_simpleName=/^UserLogonFailed2?$/
+| match(file="aid_master_main.csv", field=aid, include=[ComputerName], strict=false)
+| groupBy([aid, ComputerName, UserName, LogonType], limit=max)
+```
+
+```
+// Local group membership changes, one row per event, machine, account and group
+in(field="#event_simpleName",
+   values=[UserAccountAddedToGroup, UserAccountRemovedFromGroup, UserGroupDeleted])
+| match(file="aid_master_main.csv", field=aid, include=[ComputerName], strict=false)
+| groupBy([#event_simpleName, aid, ComputerName, UserRid, GroupRid], limit=max)
+```
+
+| Export | Field | Default heading |
+|---|---|---|
+| sign-ins, failures | `sensor_id`, `machine`, `account`, `logon_type`, `count` | `aid`, `ComputerName`, `UserName`, `LogonType`, `_count` |
+| group changes | `event`, `sensor_id`, `machine`, `account`, `group`, `count` | `#event_simpleName`, `aid`, `ComputerName`, `UserRid`, `GroupRid`, `_count` |
+
+The exports are `logons`, `failures` and `group_changes` under `settings:
+columns:`.
+
+**Rows** (data state `identity`, all `n/a`):
+
+| Row | Flag and `extra` |
+|---|---|
+| `Machines accepting remote interactive sign-ins` (logon type 10) | `remote-interactive-hosts:<n>`; the machines, accounts and events, and the machines with any sign-in |
+| `Machines receiving cleartext sign-ins` (logon type 8), written at zero too | `cleartext-logon-receivers:<n>`; the succeeded and failed events and the receiving machines by name |
+| `Sign-in event scope` | `scope-observed-not-enumerated`; the events per logon type, the machines that recorded a network logon (type 3), and the failures with no logon type |
+| `Local group membership changes` | `local-group-changes:<machines>`; the events and machines per event name, the rows identifying the account, whether any row names the group, and `standard` NZISM v3.9 16.6.10.C.02 (SHOULD: log "system user and group additions, deletions and modification to permissions") |
+
+**Coverage gaps.** No sign-in export; no group change export; and a group
+change export in which no row names the group, since then how many changes
+touched an administrators group is unknown. **Cannot see.** Sign-ins to
+machines without the sensor or to cloud services; the time of each event
+(the exports hold counts, and the period is the query's).
+
+### `falcon_endpoint_events`
+
+**Reads** USB devices connected and removable storage mounted (`input:`),
+and sensor tampering and unsigned access to the credential process
+(`settings: sensor_events:`), each a LogScale export.
+
+```yaml
+plugins:
+  - name: falcon_endpoint_events
+    input: inbox/falcon/devices.csv
+    settings:
+      sensor_events: inbox/falcon/sensor-events.csv
+```
+
+```
+// USB devices and removable storage, one row per event, machine and device
+in(field="#event_simpleName", values=[DcUsbDeviceConnected, RemovableMediaVolumeMounted])
+| match(file="aid_master_main.csv", field=aid, include=[ComputerName], strict=false)
+| groupBy([#event_simpleName, aid, ComputerName, DeviceManufacturer, DeviceProduct], limit=max)
+```
+
+```
+// Sensor tampering and unsigned access to the credential process, per event and machine
+in(field="#event_simpleName", values=[SensorTampering, LsassHandleFromUnsignedModule])
+| match(file="aid_master_main.csv", field=aid, include=[ComputerName], strict=false)
+| groupBy([#event_simpleName, aid, ComputerName], limit=max)
+```
+
+| Export | Field | Default heading |
+|---|---|---|
+| devices | `event`, `sensor_id`, `machine`, `manufacturer`, `product`, `count` | `#event_simpleName`, `aid`, `ComputerName`, `DeviceManufacturer`, `DeviceProduct`, `_count` |
+| sensor_events | `event`, `sensor_id`, `machine`, `count` | `#event_simpleName`, `aid`, `ComputerName`, `_count` |
+
+**Rows** (data state `discovery`, protocol `endpoint-event`, all `n/a`):
+
+| Row | Flag and `extra` |
+|---|---|
+| `Removable storage mounted` | `removable-storage-mounted:<machines>`; the events, machines, rows, rows naming the device, and `standard` NZISM v3.9 13.3.6.C.02 (MUST: "prevent unauthorised media from connecting to a system") |
+| `USB devices connected` | `usb-devices-connected:<machines>`; the events, machines and named makers. Whatever kind of USB device the event records, not only storage |
+
+**The sensor event counts are a gap, not rows.** Either event type is what
+interference or credential theft would produce, and either may also have an
+ordinary cause; the export carries nothing that tells them apart, so the
+counts go into one
+`not-measured` gap until the events are triaged against the platform's
+detections. **Coverage gaps:** no device export; no sensor event export; the
+counts. **Cannot see.** Whether a device was authorised or blocked, what was
+copied, or whether the media was encrypted: the rows are evidence of use,
+not of a device control.
+
+### `falcon_zta`
+
+**Reads** the sensor's `ZeroTrustHostAssessment` events: each machine's
+answers, `yes` or `no`, to the assessment's items. One row per machine, from
+its latest event.
+
+```yaml
+plugins:
+  - name: falcon_zta
+    input: inbox/falcon/zero-trust.json
+    settings:
+      # Optional: other exports typing each sensor's machine, read as falcon reads them.
+      # host_types: [inbox/falcon/host-list.csv]
+      # columns: {host_types: {sensor_id: "<heading>", machine_type: "<heading>"}}
+      # controls: {<item>: <flag>}   # replaces the graded items below
+```
+
+```
+// Each machine's latest assessment, as its raw event
+event_type=ZeroTrustHostAssessment
+| groupBy([aid], function=selectFromMax(field="@timestamp", include=[@timestamp, @rawstring]),
+          limit=max)
+```
+
+Download the results as JSON (an array, or one object per line) or CSV. A
+row may hold the event as JSON under `@rawstring`, be the event itself, or
+hold it flattened as `assessments.<item>` and `scores.<name>` columns. More
+than one event per machine is fine: the one with the latest `@timestamp` is
+kept. A row with no readable event or sensor ID is counted in a gap.
+
+**The grade** reads sixteen Windows items and `firmware_is_uefi`, in four
+groups: verifying what the machine boots (`secure_boot_enabled`,
+`firmware_is_uefi`, `uefi_memory_protection`, `hsti_available`,
+`smm_protections`), enforcing code signatures while it runs
+(`hvci_enabled`, `hvci_strict_mode`, `kmci_enabled`,
+`test_signing_disabled`, `secure_kernel_running`), protecting key material
+in memory (`credential_guard_running`, `vsm_available`,
+`secure_mor_available`) and guarding that memory against direct memory
+access (`dma_guard_enabled`, `iommu_available`, `iommu_in_use`,
+`mbec_available`). Each `no` raises its own flag (`no-secure-boot`,
+`test-signing-enabled` and so on; the reader's `CONTROLS` lists them).
+
+| Row | Grade |
+|---|---|
+| `Platform integrity — <machine>` (data state `platform-integrity`) | `weak` when a graded item answers `no`; `acceptable` when every graded item the machine carries answers `yes` (never `strong`: these are switches); `unknown` with `unreadable-assessment:<item>` for an answer that is neither, or with `not-assessed:platform-integrity` when the machine carries no graded item. An item the machine lacks is `not-assessed:<item>`, never a `no`. `firmware_is_uefi` answering `no` adds `secure-boot-impossible-legacy-bios`: Secure Boot needs UEFI, so the remedy is new firmware or hardware |
+
+`extra` holds every assessment item (as `zta.<item>`), the `scores`, the
+sensor ID, the operating system and product, and the machine type: the
+assessment's `product_type_desc`, unless every `host_types` export gives the
+sensor one other type (ignoring case), with the assessment's kept as
+`host_type_reported` and the basis as `host_type_basis`.
+
+**Coverage gaps.** No export read; rows that could not be read; machines
+carrying no graded item, by platform. **Cannot see.** Machines without the
+sensor; what each item tests beyond its name (no public definition was
+found); disk encryption, which these items do not cover.
