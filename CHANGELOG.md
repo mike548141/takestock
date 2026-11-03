@@ -9,6 +9,27 @@ command line or a file format, and its entry says how.
 
 ### Added
 
+- **Readers library: three CrowdStrike Falcon traffic readers**, each run
+  when a profile names it in `plugins:` (`docs/COLLECTORS.md`, "The
+  CrowdStrike Falcon traffic readers", which gives the LogScale queries and
+  the public source of each event and field name). Each reads a CSV of the
+  endpoint sensor's network events grouped and counted by a LogScale query;
+  `settings: columns:` names other headings, and the count column defaults
+  to LogScale's `_count`.
+  - `falcon_connections`: outbound connections by destination port, one row
+    per port graded by the port-encryption table (`cleartext-egress:`,
+    `unverified-egress:`), and a scope row.
+  - `falcon_http`: plain HTTP requests the sensor recorded. A port the table
+    does not call cleartext gets one `weak` row (`cleartext-http:`); every
+    destination gets an `n/a` detail row; a proxy port's requests are split
+    into tunnels and plain requests; loopback and no-Host requests are
+    counted.
+  - `falcon_tls_clienthello`: the TLS version value each program asks for,
+    one `n/a` row per program asking for a lower value than the upper one.
+    No TLS version is named unless `settings: version_names:` maps the
+    values; until then a gap says so and cites CrowdStrike's community
+    mapping. Optional `distribution` (is the export the whole event
+    population?) and `platforms` (the machines' operating systems) exports.
 - **A profile's own daemon-dictionary rows.** A target profile may sit
   beside a `<stem>.daemon-dictionary.yaml` overlay naming process binaries
   the bundled table lacks, or naming one differently, under one key,

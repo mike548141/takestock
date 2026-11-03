@@ -977,6 +977,9 @@ plugins:
 | `exo_outbound_protection` | `general` | Exchange Online outbound message counts by security type (DANE, MTA-STS, TLS alone) | none: name it with `input:` |
 | `azure_resource_graph` | `general` | Azure Resource Graph query results: stored-data encryption key source for storage accounts, managed disks and snapshots, storage accounts' TLS floors and public exposure settings, key vaults' authorisation model | none: name it with `input:` |
 | `m365_bitlocker` | `general` | A CSV of Intune-managed Windows devices joined to the BitLocker recovery keys held in Microsoft Entra ID, with the Intune encryption report, device lists and an optional second drive-encryption source: whether each drive is encrypted and whether its recovery key is held | none: name it with `input:` |
+| `falcon_connections` | `general` | A CrowdStrike Falcon LogScale export of outbound connections by destination port: which unencrypted protocols the estate's machines use, and how often | none: name it with `input:` |
+| `falcon_http` | `general` | A CrowdStrike Falcon LogScale export of plain HTTP requests the sensor recorded: destinations spoken to in plain HTTP, and proxy tunnels against plain requests | none: name it with `input:` |
+| `falcon_tls_clienthello` | `general` | A CrowdStrike Falcon LogScale export of outbound TLS handshakes: which programs ask for a lower TLS version value than the newest | none: name it with `input:` |
 
 A reader with no default input still runs when the profile gives it none,
 and records in its own coverage gap that no export was read. A profile that
@@ -2356,3 +2359,263 @@ gives the device names this one covers, to avoid counting them twice.
 
 **Coverage gaps.** No main export read; the encryption report not named or
 not readable; a `cross_check:` file that cannot be read.
+
+### The CrowdStrike Falcon traffic readers
+
+`falcon_connections`, `falcon_http` and `falcon_tls_clienthello` read the
+network events CrowdStrike's Falcon endpoint sensor records, exported from
+LogScale (Falcon Next-Gen SIEM) as CSV by a query that groups the events and
+counts them. Each reader's section gives its query. The queries were written
+from the public sources below and have not been run here; adapt them to your
+tenant if a field is named differently there.
+
+The grouped columns carry the sensor's own field names, which are each
+reader's default headings. The count column is named by the query:
+`groupBy()` with no function counts the events into `_count` (LogScale
+documentation, *groupBy()*: "The default is to use count() as an aggregate
+function", returned "in the _count field by default"), and `_count` is the
+default heading. `settings: columns:` names another heading for any field,
+so an export from a query of your own is read as it is:
+
+```yaml
+    settings:
+      columns: {count: events}    # field: heading
+```
+
+Headings match ignoring case, spaces and hyphens. A blank or unreadable count
+is read as 1, since a grouped row stands for one event or more. Machines are
+counted and never named in a row.
+
+Where each event and field name comes from (read on 4 November 2026, New
+Zealand time):
+
+| Name | Public source |
+|---|---|
+| `NetworkConnectIP4`, `NetworkConnectIP6` events; `aid`, `RemotePort`, `ImageFileName`, `ComputerName`, `ContextProcessId`, `TargetProcessId` | CrowdStrike's community content repository on GitHub, `CrowdStrike/logscale-community-content`: the FLTR core package's queries (*Network Events - Windows Process Connections to a Specific Port*, which joins a connection's `ContextProcessId` to the process event's `TargetProcessId` to name its `ImageFileName`) and its *Search - By Process Context* dashboard |
+| `HttpRequest` event | the same package's *Search - By IP Address* dashboard |
+| `HttpHost` (the request's Host header), and `HttpRequest` carrying `aid`, `RemotePort` and `ContextProcessId` | Elastic's CrowdStrike integration on GitHub (`elastic/integrations`, `packages/crowdstrike`): the Falcon Data Replicator field list and its sample `HttpRequest` event |
+| `TlsClientHello` event, with `DomainName` | CrowdStrike's *Next-Gen SIEM reference dashboard* in the community repository, which reads the destination name from `DomainName` on `TlsClientHello` events |
+| `TlsVersion` on `TlsClientHello`, and what its values mean | Elastic's sample `TlsClientHello` event carries `TlsVersion`; CrowdStrike's community repository maps its values 0, 1, 2 and 3 to TLS 1.0 to 1.3, in the query transform `Log-Sources/CrowdStrike/FLTR/standalone-content/transforms/TlsVersion.logscale` and in `Queries-Only/Cool-Query-Friday/mappings.csv` |
+| `_count`, `groupBy()`, `in()` | the LogScale documentation's pages on the *CrowdStrike Query Language* functions `count()`, `groupBy()` and `in()` |
+
+The community repository says its content is "not meant as replacements for
+the official documentation". The event and field names it uses are taken as
+names; the meaning of `TlsVersion`'s values is left as a setting
+(`falcon_tls_clienthello` below). No public source was found placing
+`ImageFileName` or `ComputerName` on the `HttpRequest` or `TlsClientHello`
+event itself. So the program column is optional in both readers, and their
+queries below add `ImageFileName` by the process join the community query
+uses; and the queries group by `aid`, not `ComputerName`. CrowdStrike's
+community queries add `ComputerName` with a saved function (for example
+`$"crowdstrike/fltr-core:zComputerName"()` in the FLTR core package), which
+a query can add before its last `groupBy()` to name machines. Each reader
+falls back to `aid` when a row has no machine name.
+
+### `falcon_connections`
+
+Which destination ports the estate's own machines connect out to, how many
+machines and how often: which unencrypted protocols are in use, not merely
+present. One row per destination port, graded by takestock's port-encryption
+table over TCP.
+
+```yaml
+plugins:
+  - name: falcon_connections
+    input: inbox/falcon/connections.csv
+```
+
+```
+#event_simpleName=/^NetworkConnectIP[46]$/
+| in(field="RemotePort", values=["21", "23", "25", "80"])
+| groupBy([aid, RemotePort], limit=max)
+```
+
+List the ports you want graded in `in()`; the port-encryption table's
+`cleartext` and `opportunistic` rows are the useful ones. Without the filter
+every port is read, and a port the table calls encrypted gives an `n/a` row.
+
+| Field | Default heading |
+|---|---|
+| `agent_id` | `aid` |
+| `machine` | `ComputerName` (used when a row has no `aid`) |
+| `port` | `RemotePort` |
+| `count` | `_count` |
+
+**Rows.**
+
+| Row | Grade |
+|---|---|
+| `Outbound <protocol> (<port>/tcp)`, protocol from the table (`port-<n>` when the table has no row) | table posture cleartext: `weak`, `cleartext-egress:<protocol>` and `cleartext-exposure:<what>`; opportunistic: `unknown`, `unverified-egress:<protocol>` (the export cannot say whether the upgrade happened); encrypted: `n/a`; no row: `unknown`, `ungraded:port-encryption:<port>` |
+| `Outbound connection scope` (`egress`) | `n/a`, `scope-cleartext-ports-only` |
+
+`extra` gives the connections, the machines, the machines in the export and
+their share. The flag family is `cleartext-egress:`, not `plaintext:`, which
+counts listening services. **Cannot see:** a share of all traffic (where the
+query selects ports, as the one above does, there is no denominator); where the far end is (no address
+is grouped, so an internal service and one on the internet look alike);
+whether the traffic was readable, which the grade takes from the port's
+convention. **Coverage gap:** no export read.
+
+### `falcon_http`
+
+Plain HTTP requests the sensor recorded. Its `HttpRequest` event carries the
+request's Host header in readable form, which a request inside TLS does not
+expose on the connection, so the reader takes each event as a request sent
+unencrypted. That is an inference from what the event carries; the sources
+above do not say when the sensor writes the event. The Host header also
+names the destination.
+
+```yaml
+plugins:
+  - name: falcon_http
+    input: inbox/falcon/http.csv
+```
+
+```
+(#event_simpleName=HttpRequest) OR (#event_simpleName=ProcessRollup2)
+| #event_simpleName match {
+    ProcessRollup2 => pid := TargetProcessId ;
+    HttpRequest => pid := ContextProcessId ;
+  }
+| selfJoinFilter([aid, pid], where=[{#event_simpleName=HttpRequest},
+                                    {#event_simpleName=ProcessRollup2}], prefilter=true)
+| groupBy([aid, pid], function=[
+    {#event_simpleName=ProcessRollup2 | selectLast([ImageFileName])},
+    {#event_simpleName=HttpRequest | groupBy([HttpHost, RemotePort], limit=max)}
+  ], limit=max)
+| groupBy([aid, HttpHost, RemotePort, ImageFileName],
+          function=sum(_count, as=_count), limit=max)
+```
+
+The process join names the sending program, as the community query does for
+connections. `selfJoinFilter()` keeps only the requests whose process-start
+event (`ProcessRollup2`) falls inside the search's time range, so requests
+from a program started before the range drop out of the joined export. Without it, group the `HttpRequest` events alone by `aid`,
+`HttpHost` and `RemotePort`; the rows then name no program. `HttpPath` is deliberately not
+grouped: a path can carry tokens.
+
+| Field | Default heading |
+|---|---|
+| `agent_id` | `aid` |
+| `machine` | `ComputerName` (used when a row has no `aid`) |
+| `host_header` | `HttpHost` |
+| `port` | `RemotePort` |
+| `program` | `ImageFileName` (optional; the file name at the end of the path is shown) |
+| `count` | `_count` |
+
+Each request is placed in one of four kinds: a **tunnel** (the Host names
+port 443 on a connection to another port, the form of a `CONNECT` request to
+a forward proxy; the export carries no method, so this rests on the target's
+form alone), **loopback** (`localhost`, a name under `.localhost`, which RFC
+6761 reserves for loopback, or a loopback address), **no Host**, or
+**cleartext** (everything else). A link-local destination (RFC 3927 for IPv4,
+RFC 4291 for IPv6) is flagged `http-link-local`.
+
+**Rows.** The grade sits on the port, once: these requests are a subset of
+the connections `falcon_connections` grades by port.
+
+| Row | Grade |
+|---|---|
+| `Cleartext HTTP on <port>/tcp`, for a port the port-encryption table does not call cleartext | `weak`, `cleartext-http:<port>`, `cleartext-exposure:content`; its destinations listed |
+| `Cleartext HTTP to <host>:<port>`, one per destination | `n/a`, `cleartext-http-detail:<port>`; `extra.graded_on` names the row that grades it (`falcon_connections`' for a port the table calls cleartext) |
+| `Proxy traffic on <port>/tcp — tunnelled against plain requests` (`http-proxy`), on each port that carried a tunnel | `n/a`, `http-connect-tunnel:<port>`: tunnels, plain requests, no-Host and loopback requests, with shares |
+| `HTTP on the loopback interface` | `n/a`, `http-loopback` |
+| `HTTP requests with no Host recorded` | `unknown`, `http-host-unrecorded` |
+| `HTTP request export scope` | `n/a`, `scope-observed-not-enumerated` |
+
+The rule reads the port table, not `falcon_connections`' rows, so a port the
+table calls cleartext that the connection export does not hold is graded by
+neither reader; the scope row says so. **Cannot see:** a share of all web
+traffic (the export counts no encrypted request); where a destination is; what a
+request carried. **Coverage gap:** no export read.
+
+### `falcon_tls_clienthello`
+
+The TLS version the estate's own programs ask for when they open an
+encrypted connection, from the sensor's `TlsClientHello` event: the other
+direction from a scan, which reads what a service offers. Which programs ask
+for less than the newest version is the set a raised minimum version would
+affect first.
+
+```yaml
+plugins:
+  - name: falcon_tls_clienthello
+    input: inbox/falcon/tls-clienthello.csv
+    settings:
+      distribution: inbox/falcon/tls-versions.csv     # optional
+      # platforms: {file: inbox/hosts.csv, host_column: Name, os_column: Platform}
+      # version_names: {"0": TLS 1.0, "1": TLS 1.1, "2": TLS 1.2, "3": TLS 1.3}
+```
+
+```
+(#event_simpleName=TlsClientHello) OR (#event_simpleName=ProcessRollup2)
+| #event_simpleName match {
+    ProcessRollup2 => pid := TargetProcessId ;
+    TlsClientHello => pid := ContextProcessId ;
+  }
+| selfJoinFilter([aid, pid], where=[{#event_simpleName=TlsClientHello},
+                                    {#event_simpleName=ProcessRollup2}], prefilter=true)
+| groupBy([aid, pid], function=[
+    {#event_simpleName=ProcessRollup2 | selectLast([ImageFileName])},
+    {#event_simpleName=TlsClientHello | groupBy([DomainName, RemotePort, TlsVersion], limit=max)}
+  ], limit=max)
+| groupBy([aid, DomainName, RemotePort, TlsVersion, ImageFileName],
+          function=sum(_count, as=_count), limit=max)
+```
+
+The join keeps only the handshakes whose process-start event
+(`ProcessRollup2`) falls inside the search's time range, so handshakes from a
+long-running program started before the range drop out. The joined export
+then falls short of the unjoined `distribution` total below, and the scope
+row describes it as a selection of the events, not the whole population.
+
+and, for `distribution`, the same events grouped by version alone:
+
+```
+#event_simpleName=TlsClientHello
+| groupBy([TlsVersion], limit=max)
+```
+
+| Field | Default heading |
+|---|---|
+| `machine` | `ComputerName` (optional; `platforms` matches on it) |
+| `agent_id` | `aid` (used when a row has no machine name) |
+| `server_name` | `DomainName` |
+| `port` | `RemotePort` |
+| `version` | `TlsVersion` |
+| `program` | `ImageFileName` (optional; a program is keyed by its full path) |
+| `count` | `_count` |
+
+**The version values.** `settings: values:` lists the values placed, lowest
+first (default `0`, `1`, `2`, `3`, the values CrowdStrike's community mapping
+covers). The last is the *upper* value and every other listed value is
+*lower*; a value not listed is counted on the scope row and placed nowhere.
+The reader names no TLS version for a value unless `settings:
+version_names:` maps it. CrowdStrike's community repository reads 0 to 3 as
+TLS 1.0 to 1.3 (sources above), and the same repository says its content is
+not a replacement for the official documentation, so adopting that reading
+is the profile's choice: the commented line above does so.
+
+**Rows.**
+
+| Row | Grade |
+|---|---|
+| `Outbound handshakes — <program>`, one per program that asked for a lower value (`software` is the program) | `n/a`, `outbound-tls-lower-tier:<handshakes>`, and `outbound-tls-lower-tier-only` when it asked for nothing at the upper value |
+| `Outbound handshake scope` | `n/a`; `scope-enum-unnamed` while no names are set, `scope-reconciled-to-whole-event-population` when the distribution export's total is within 2 per cent of this export's |
+
+No row is graded: the event records what a client asked for, not what was
+agreed. **`distribution`** says whether the export holds every machine that
+produced the event or a selection. **`platforms`** names any CSV with one row
+per machine and its operating system: `os_column` (required), `host_column`
+(a heading or a list tried in order, default the `machine` heading); names
+are matched ignoring case, in full or by a dotted name's first label, and the
+scope row gives the machines' operating systems. It matches on the machine
+name, so the main export needs a `ComputerName` column, which the query above
+does not group: add it as the shared section describes. Where a row has no
+machine name it is keyed by `aid`, which matches a platform export only if
+`host_column` names a column of agent IDs. Each file setting may be a
+path, a list or a pattern; the last match in name order is read.
+
+**Coverage gaps.** No export read; and, while `version_names` is not set, one
+gap saying the versions are unnamed, with where a mapping is published.
+**Cannot see:** what the server chose; handshakes the sensor did not record.

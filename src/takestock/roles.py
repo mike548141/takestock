@@ -628,3 +628,70 @@ def unassessed_device_encryption() -> str:
     """Managed devices whose encryption the reader cannot check."""
     return ("Managed devices that are not Windows, whose own report that their storage is "
             "encrypted cannot be checked here")
+
+
+def outbound_connections(protocol: str, machines: int, seen: int) -> str:
+    """Connections the estate's machines made out to one kind of service."""
+    if not protocol:
+        return ""
+    who = f"{machines:,} of {seen:,} machines" if seen else f"{machines:,} machines"
+    return f"Connections the estate's own machines made out to a {protocol} service: {who}"
+
+
+def outbound_connections_scope() -> str:
+    """The scope row for an outbound connection export."""
+    return "What the outbound connection export covers, and what it cannot show"
+
+
+def cleartext_web_port(port: str, machines: int) -> str:
+    """Readable web requests sent on one destination port."""
+    if not port:
+        return ""
+    return (f"Readable web requests the estate's machines sent on port {port}: "
+            f"{machines:,} machine{'' if machines == 1 else 's'}")
+
+
+def cleartext_web_destination(host: str, port: str, machines: int) -> str:
+    """Readable web requests sent to one named destination."""
+    if not host:
+        return ""
+    return (f"Readable web requests the estate's machines sent to {host} on port {port}: "
+            f"{machines:,} machine{'' if machines == 1 else 's'}")
+
+
+def web_proxy_split(port: str) -> str:
+    """How a proxy port's requests divide between encrypted tunnels and plain requests."""
+    if not port:
+        return ""
+    return f"How the web requests on port {port} divide between encrypted tunnels and plain requests"
+
+
+def loopback_web_requests(machines: int) -> str:
+    """Web requests that never left the sending machine."""
+    return (f"Web requests that stayed inside the machine that sent them: "
+            f"{machines:,} machine{'' if machines == 1 else 's'}")
+
+
+def unnamed_web_requests(machines: int) -> str:
+    """Web requests recorded with no destination name."""
+    return (f"Web requests recorded without a destination name: "
+            f"{machines:,} machine{'' if machines == 1 else 's'}")
+
+
+def web_requests_scope() -> str:
+    """The scope row for an export of plain HTTP requests."""
+    return "What the export of plain web requests covers, and what it cannot show"
+
+
+def outbound_tls_program(program: str, machines: int) -> str:
+    """One program's outbound encrypted connections."""
+    if not program:
+        return ""
+    return (f"Encrypted connections out from {machines:,} of the estate's machines, made by "
+            f"{program}")
+
+
+def outbound_tls_scope() -> str:
+    """The scope row for an export of outbound TLS handshakes."""
+    return ("What the estate's machines asked for when they opened encrypted connections out: "
+            "which machines are counted, and what the export cannot say")
