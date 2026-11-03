@@ -747,3 +747,98 @@ def loopback_listeners_unseen(hosts: int, reported: bool | None) -> str:
     return (f"A note that no service accepting connections only from its own machine was "
             f"reported across {hosts:,} computers, and that whether the endpoint software "
             "reports such services was not established")
+
+
+# ── CrowdStrike Falcon platform and software readers ────────────────────────
+
+def crypto_library_line(product: str, machines: int) -> str:
+    """One release line of a cryptographic product, installed on some machines."""
+    if not product:
+        return ""
+    return (f"One release line of {product}, software that provides cryptography to the "
+            f"programs that use it, installed on {machines:,} "
+            f"machine{'' if machines == 1 else 's'}")
+
+
+def crypto_library_spread(product: str) -> str:
+    """How many versions of one cryptographic product are in service at once."""
+    if not product:
+        return ""
+    return (f"How many different versions of {product} are in service at once: the more there "
+            "are, the more separate upgrades a change of algorithm needs")
+
+
+def ssh_server_package(machines: int) -> str:
+    """One exact version of the secure-shell server package, with the machines carrying it."""
+    return (f"One exact version of the secure-shell server package, installed on {machines:,} "
+            f"machine{'' if machines == 1 else 's'}, named on the row")
+
+
+def crypto_library_scope_row() -> str:
+    """The scope row for an installed-software export."""
+    return ("What the installed-software reading covers: the cryptographic products its "
+            "register lists, and nothing outside that list")
+
+
+def crypto_product_defects(product: str, machines: int) -> str:
+    """The open vulnerabilities in one product that provides cryptography."""
+    if not product:
+        return ""
+    return (f"The open vulnerabilities in {product}, which provides cryptography, across "
+            f"{machines:,} machine{'' if machines == 1 else 's'}: one upgrade to plan")
+
+
+def catalogued_exploited_defect(machines: int, overdue: bool) -> str:
+    """A vulnerability in the known exploited vulnerabilities catalogue, open on some machines."""
+    return (f"A vulnerability known to be exploited, open on {machines:,} "
+            f"machine{'' if machines == 1 else 's'}, "
+            + ("past the catalogue's due date for fixing it" if overdue else
+               "with a due date for fixing it set by the catalogue"))
+
+
+def operating_system_census(os_name: str, machine_type: str, machines: int) -> str:
+    """How many machines run one operating system in one role."""
+    if not os_name:
+        return ""
+    kind = (machine_type or "").strip().lower()
+    return (f"How many machines run {os_name}"
+            + (f" as a {kind}" if kind and kind != "unknown" else "")
+            + f": {machines:,}, the count an upgrade of that platform is sized against")
+
+
+def vulnerability_export_scope() -> str:
+    """The scope row for a vulnerability export."""
+    return ("What the vulnerability export covers, and that its severities are technical, not "
+            "a ranking by business impact")
+
+
+def firmware_version_population(machines: int) -> str:
+    """How many machines run one firmware version."""
+    return (f"How many machines run this firmware version: {machines:,}, a population rather "
+            "than a finding")
+
+
+def firmware_census_scope() -> str:
+    """The scope row for a firmware export."""
+    return ("What the firmware census covers, and that 'behind' means behind the estate's own "
+            "newest, never behind the manufacturer")
+
+
+def platform_protection_population(subject: str, readings: int) -> str:
+    """How many readings report one Windows platform protection on or off."""
+    if not subject:
+        return (f"Readings of a Windows platform setting whose meaning is not established, "
+                f"across {readings:,} readings, counted but placed against no control")
+    return f"Across {readings:,} readings of Windows machines, {subject}"
+
+
+def platform_protection_scope() -> str:
+    """The scope row for a Windows platform protection export."""
+    return ("What the Windows platform protection export covers, and whether it reaches every "
+            "Windows machine")
+
+
+def sha1_signed_software(machines: int) -> str:
+    """Machines loading software whose signing data carries SHA-1."""
+    return (f"Software whose signing data carries the SHA-1 algorithm, loaded on "
+            f"{machines:,} machine{'' if machines == 1 else 's'}")

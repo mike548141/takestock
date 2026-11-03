@@ -9,6 +9,28 @@ command line or a file format, and its entry says how.
 
 ### Added
 
+- **Readers library: five CrowdStrike Falcon platform and software
+  readers**, each run when a profile names it in `plugins:`
+  (`docs/COLLECTORS.md`, "The CrowdStrike Falcon platform and software
+  readers", which gives the queries, the default headings and the public
+  source of each name). `settings: columns:` names other headings for any
+  field, or a list tried in order.
+  - `falcon_software`: installed cryptographic software by product and
+    release line, graded by a register (takestock's `crypto-software.csv`
+    or one named with `register:`) for capability ceilings, with version
+    spreads and one row per exact secure-shell server package version.
+  - `falcon_vulnerabilities`: a Spotlight vulnerability list read a row at a
+    time; open defects per cryptographic product, catalogued exploited
+    defects with their due dates, an operating-system census, and a gap when
+    machines' criticality is unset.
+  - `falcon_system_resources`: firmware versions by manufacturer, and
+    machines behind the estate's own newest on the same hardware family.
+  - `falcon_windows_os_security`: Windows platform protections, counted per
+    protection, with optional unidentified columns, a second reading
+    compared machine by machine, and a platform export to check coverage.
+  - `falcon_sha1_signed_modules`: one row for the machines loading software
+    whose signing data carries SHA-1, and a gap saying where in the chain it
+    sits is not established.
 - **Readers library: three CrowdStrike Falcon traffic readers**, each run
   when a profile names it in `plugins:` (`docs/COLLECTORS.md`, "The
   CrowdStrike Falcon traffic readers", which gives the LogScale queries and

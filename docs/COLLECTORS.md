@@ -981,6 +981,11 @@ plugins:
 | `falcon_http` | `general` | A CrowdStrike Falcon LogScale export of plain HTTP requests the sensor recorded: destinations spoken to in plain HTTP, and proxy tunnels against plain requests | none: name it with `input:` |
 | `falcon_tls_clienthello` | `general` | A CrowdStrike Falcon LogScale export of outbound TLS handshakes: which programs ask for a lower TLS version value than the newest | none: name it with `input:` |
 | `falcon` | `general` | CrowdStrike Falcon listening-socket events: each machine's listening ports graded by the port encryption table, the program and product behind them, how much each is used, and the machine's type | none: name it with `input:` |
+| `falcon_software` | `general` | A CrowdStrike Falcon export of installed applications: cryptographic software by release line, capability ceilings, how many versions are in service, and secure-shell server package versions | none: name it with `input:` |
+| `falcon_vulnerabilities` | `general` | A CrowdStrike Falcon Spotlight vulnerability list: open defects in cryptographic software, catalogued exploited defects with their due dates, and an operating-system census | none: name it with `input:` |
+| `falcon_system_resources` | `general` | A CrowdStrike Falcon export of machines' firmware: BIOS and UEFI versions, and machines behind the estate's own newest on the same hardware | none: name it with `input:` |
+| `falcon_windows_os_security` | `general` | A CrowdStrike Falcon export of Windows platform protections (Secure Boot, virtualisation-based security, Credential Guard, device-memory protections): readings per protection, with an optional second reading compared | none: name it with `input:` |
+| `falcon_sha1_signed_modules` | `general` | A CrowdStrike Falcon LogScale export of module-signature events carrying SHA-1, by machine | none: name it with `input:` |
 
 A reader with no default input still runs when the profile gives it none,
 and records in its own coverage gap that no export was read. A profile that
@@ -2798,3 +2803,316 @@ report them; listeners outside the query's period; what a port actually
 negotiates (the table gives the protocol's convention, and an active probe
 settles it); the product behind a program the daemon dictionary does not
 know.
+
+### The CrowdStrike Falcon platform and software readers
+
+`falcon_software`, `falcon_vulnerabilities`, `falcon_system_resources`,
+`falcon_windows_os_security` and `falcon_sha1_signed_modules` read what is
+installed on the machines a Falcon sensor runs on, and how those machines are
+set up: cryptographic software, its open vulnerabilities, firmware versions,
+Windows platform protections and SHA-1 in software signing.
+
+Their inputs come from three kinds of source, and each reader's default
+headings follow the one documented publicly:
+
+- **A LogScale query** (`falcon_software`, `falcon_sha1_signed_modules`):
+  the section gives the query. It was written from the public sources below
+  and has not been run here; adapt it if a field is named differently in
+  your tenant. The count column is LogScale's `_count`, as for the traffic
+  readers above.
+- **An API record flattened to CSV** (`falcon_vulnerabilities`,
+  `falcon_system_resources`): the default headings are the field names of
+  the CrowdStrike API's records, with a nested field's path joined by dots
+  (`host_info.hostname`), as Elastic's CrowdStrike integration documents
+  them.
+- **The Falcon console's own export** (`falcon_windows_os_security`, and any
+  of the others when exported from the console): no public list of the
+  console's headings was found, so name them with `settings: columns:`.
+
+In all five, `settings: columns:` names another heading for any field, or a
+list of headings tried in order (the first holding a value is read), and
+headings match ignoring case, spaces and hyphens:
+
+```yaml
+    settings:
+      columns: {machine: [ComputerName, Device], version: "Release"}   # field: heading(s)
+```
+
+Where each name comes from (read on 4 November 2026, New Zealand time):
+
+| Name | Public source |
+|---|---|
+| `InstalledApplication` event; `aid`, `AppName`, `AppVersion`, `AppVendor`; adding `ComputerName` with `$"crowdstrike/fltr-core:zComputerName"()` | CrowdStrike's community content repository on GitHub, `CrowdStrike/logscale-community-content`: the FLTR core package's queries *Installed Application Events - Find SSL Versions* and *Installed Application Events - Heat Map of SSL Versions*, and the FLTR tutorial's *The Basics - Field Extraction* dashboard. The first query's own comment says the event "Requires Discover or Spotlight" |
+| Spotlight vulnerability record fields: `host_info.hostname`, `host_info.os_version`, `host_info.product_type_desc`, `host_info.asset_criticality`, `status`, `created_timestamp`, `cve.id`, `cve.description`, `cve.severity`, `cve.base_score`, `cve.exploit_status`, `cve.cisa_info.is_cisa_kev`, `cve.cisa_info.due_date`, `app.product_name_normalized`, `app.product_name_version` | Elastic's CrowdStrike integration on GitHub (`elastic/integrations`, `packages/crowdstrike/data_stream/vulnerability`): its field list (`fields/fields.yml`) and sample records (`_dev/test/pipeline/test-vulnerability.log`), which show `status` `open` and `cve.severity` `MEDIUM` |
+| Host record fields: `hostname`, `os_version`, `bios_manufacturer`, `bios_version`, `mac_address` | the same integration's `host` data stream, sample record `_dev/test/pipeline/test-host.log` |
+| `ModuleCertificateInfo2` event, a Windows event carrying `aid` | the same integration's Falcon Data Replicator samples (`data_stream/fdr/_dev/test/pipeline/test-fdr-new-events.log`), where the event has `event_platform` `Win` |
+| `sha1RSA`, Windows's name for SHA-1 with RSA (object identifier 1.2.840.113549.1.1.5) | Microsoft Learn, *PKCS #7 EOBO Encoded ASN.1*, which labels that identifier `sha1RSA` in a decoded certificate |
+| A quoted string with no field name matches the text in any field of the event, `@rawstring` included | the LogScale documentation, *Query Filters* (free-text filters) |
+| Searches are case-sensitive by default ("By default, repository queries in LogScale are case-sensitive") | the LogScale knowledge base, *How-To: Case-Insensitive Searches* |
+| `@rawstring`, the field holding an event's original text | the LogScale documentation, *Field Naming and Standards* (its table of metadata fields) |
+| CRITICAL, HIGH, MEDIUM, LOW | CVSS v3.1 specification (FIRST), qualitative severity rating scale |
+
+The community repository says its content is "not meant as replacements for
+the official documentation", and Elastic's integration is a third party's
+reading of CrowdStrike's API. Values whose meaning no public source gave are
+settings with no default meaning: which `cve.exploit_status` values mean an
+exploit is in use (`exploit_in_use`), status words other than `open`
+(`open_statuses`), and criticality words meaning unset
+(`criticality_unset`).
+
+### `falcon_software`
+
+The cryptographic software installed on each machine, one row per product
+and release line: which machines carry a release line that cannot negotiate
+a current protocol at all, and how many versions of each library are in
+service at once.
+
+```yaml
+plugins:
+  - name: falcon_software
+    input: inbox/falcon/installed-apps.csv
+    settings:
+      # register: inbox/my-crypto-software.csv   # default: takestock's crypto-software.csv
+      # weak_below: TLSv1.3                       # default: the baseline's floor
+      # ssh_server_packages: [openssh-server]
+```
+
+```
+#event_simpleName=InstalledApplication
+| $"crowdstrike/fltr-core:zComputerName"()
+| groupBy([aid, ComputerName, AppName, AppVersion], limit=max)
+```
+
+| Field | Default heading |
+|---|---|
+| `agent_id` | `aid` (used when a row names no machine) |
+| `machine` | `ComputerName` |
+| `product` | `AppName` |
+| `version` | `AppVersion` |
+| `last_used` | `last_used` (optional; see below) |
+
+**Matching.** Each application name is matched against the register
+(takestock's `crypto-software.csv`, or the CSV `register:` names, with the
+same columns). The first entry whose `match` expression matches the start of
+the name, ignoring case, names the product. Software no entry matches is not
+reported; the scope row says the register is the limit.
+
+**Release lines.** A version's line is its first component, or its first two
+when the first is `1`, once a packaging epoch (`1:`) and a distribution
+release suffix (`-4.fc99`) are set aside: `1.4.17` is line `1.4`, `7.12.4` is
+line `7`. Note that this differs from `software_inventory`, which grades
+each version against the longest matching `branch`: here a row is one line,
+and it is graded only by a register entry whose `branch` is exactly that
+line.
+
+**Rows.**
+
+| Row | Grade |
+|---|---|
+| `<product> <line>` | `max_tls` below `weak_below`: `weak`, `capability-ceiling:<max_tls>`; below TLS 1.3 but not below `weak_below`: `unknown`, same flag; TLS 1.3: `acceptable`; no entry for the line: `unknown`, `ungraded:crypto-software:<product> <line>` |
+| `<product> version spread`, when a product is found at two or more versions | `n/a`, `version-spread:<n>` |
+| `OpenSSH server <version>`, one per exact version of a package in `ssh_server_packages`, machines named in `extra.hosts` | `unknown`, `sshd-version-census:<n>` and `ungraded:crypto-software:OpenSSH <line>` |
+| `Cryptographic software scope` | `n/a`, `scope-register-limited` |
+
+`extra.installed_on` lists the machines a row counts. With a `last_used`
+column in the export, a line's `extra` also counts its installs with that
+column filled and blank (`installs_with_usage_data`,
+`installs_never_used`); a blank is read as no recorded use, which no public
+source confirms. An export without the column counts neither. **Cannot
+see:** software the register does not list; a library compiled into another
+program; what any service using it negotiates. **Coverage gap:** no export
+read, or a register that cannot be read.
+
+### `falcon_vulnerabilities`
+
+Open vulnerabilities in the software that provides cryptography, the
+exploited-vulnerabilities catalogue's dated defects, and a census of
+operating systems, from a Falcon Spotlight vulnerability list (one record per
+machine and defect). The file can be large: it is read a row at a time,
+holding only the fields below, and a field holding a long block of text with
+line breaks in it is read whole.
+
+```yaml
+plugins:
+  - name: falcon_vulnerabilities
+    input: inbox/falcon/vulnerabilities.csv
+    settings:
+      # open_statuses: [open]            # status words counted as open
+      # exploit_in_use: []               # exploit_status values meaning an exploit is in use
+      # kev_true: ["true"]               # is_cisa_kev values meaning catalogued
+      # criticality_unset: []            # criticality words meaning unset (blank always is)
+      # packages: [["openssl(-libs)?", tls], ...]   # replaces the package list
+      # components: {"windows kerberos": kerberos}  # replaces the component list
+```
+
+| Field | Default heading |
+|---|---|
+| `machine` | `host_info.hostname` |
+| `os`, `machine_type` | `host_info.os_version`, `host_info.product_type_desc` |
+| `criticality` | `host_info.asset_criticality` |
+| `status`, `created` | `status`, `created_timestamp` |
+| `cve`, `description` | `cve.id`, `cve.description` |
+| `severity`, `score` | `cve.severity`, `cve.base_score` |
+| `exploit` | `cve.exploit_status` |
+| `kev`, `kev_due` | `cve.cisa_info.is_cisa_kev`, `cve.cisa_info.due_date` |
+| `product`, `versions` | `app.product_name_normalized`, `app.product_name_version` |
+
+`exploit_in_use` values match a record whose `exploit` equals or begins with
+one of them, ignoring case. **Cryptographic products** are packages whose
+whole name matches a `packages` pattern (the default list holds common Linux
+distribution package names for TLS, SSH, Kerberos, IPsec and key-handling
+libraries), or a Microsoft component named in the advisory text in the form
+"... in Windows <component> allows ..." and listed in `components` (by default
+Kerberos, Netlogon, NTLM, Schannel, Cryptographic Services, CryptoAPI,
+BitLocker, the IKE extension and SMB, each written `Windows <name>` as the
+advisory text writes it).
+
+**Rows.**
+
+| Row | Grade |
+|---|---|
+| `<product> — open defects` | `weak` when a record has an exploit in use or is catalogued, else `unknown`; `crypto-defect-open:<n>`, `crypto-defect-attribution:package-name` or `advisory-prose`, and `crypto-defect-exploited:<n>`, `crypto-defect-catalogued:<n>` where they apply |
+| `<CVE> — catalogued exploited defect`, each open catalogued identifier | `weak`; `exploited-defect-overdue:<date>` when the due date is before the newest record's date, else `exploited-defect-due:<date>` |
+| `<os> (<type>)`, each operating system and machine type | `n/a`, `os-census:<n>` |
+| `Vulnerability evidence scope` | `n/a`, `scope-technical-severity-only`, `scope-defect-window:<first>..<last>` |
+
+Only open records count toward products, catalogued defects and each
+operating system's open records; every record counts toward the scope row's
+total and the census of machines. **Coverage gap:** no export read; and
+`criticality` unset on any record, since the export then ranks defects by
+technical severity alone. **Cannot see:** whether a defect is reachable, or
+mitigated; any business impact the export does not carry.
+
+### `falcon_system_resources`
+
+BIOS and UEFI firmware versions, one row per manufacturer and version, and
+which machines run firmware older than the newest the estate itself runs on
+the same hardware family.
+
+```yaml
+plugins:
+  - name: falcon_system_resources
+    input: inbox/falcon/firmware.csv
+```
+
+| Field | Default heading |
+|---|---|
+| `machine` | `hostname` |
+| `os` | `os_version` |
+| `bios_manufacturer` | `bios_manufacturer` |
+| `bios_version` | `bios_version` |
+
+A version's hardware family is its leading token (`Q91` in `Q91 Ver.
+3.41`); families are never compared with each other. Within a family an
+order is claimed only when every version has the same shape once digit runs
+are set aside, and versions are then compared number by number.
+
+| Row | Grade |
+|---|---|
+| `Firmware <manufacturer> <version>` | `n/a`, `firmware-census:<n>`; `firmware-behind-estate-peers:<n>` when `n` newer versions run in the same family; `firmware-spread-unordered` when the family's versions are numbered more than one way |
+| `Firmware census scope` | `n/a`, `scope-no-firmware-currency-baseline` |
+
+All of these flags are informational. **Cannot see:** whether any version is
+its manufacturer's current release (takestock holds no firmware release
+list); machines without a sensor. **Coverage gap:** no export read.
+
+### `falcon_windows_os_security`
+
+Windows platform protections, one row per protection: how many readings
+report it on, off or not available, and, with a second export, how often the
+two readings agree.
+
+```yaml
+plugins:
+  - name: falcon_windows_os_security
+    input: inbox/falcon/windows-protections.csv
+    settings:
+      columns: {machine: Device, secure_boot_enabled: "Boot check", vbs: "Isolation"}
+      # on: [enabled]   off: [disabled]   unavailable: [not available, unavailable]
+      # unidentified: ["Some other status"]
+      # compare: {file: inbox/falcon/other.json, host_field: name, signals_field: signals,
+      #           pairs: {vbs: isolation_on}}
+      # platforms: {file: inbox/falcon/firmware.csv, host_column: hostname, os_column: os_version}
+```
+
+| Field (default heading = the field) | The protection, in Microsoft's terms |
+|---|---|
+| `machine` (`hostname`), `mac` (`mac_address`) | the machine, and its network adapter (read only to leave it out of the unread columns) |
+| `secure_boot_enabled`, `secure_boot_requested` | Secure Boot on, and requested |
+| `vbs` | virtualisation-based security |
+| `credential_guard` | Credential Guard |
+| `system_guard` | System Guard |
+| `kernel_dma_protection` | Kernel DMA Protection |
+| `iommu` | IOMMU protection |
+| `uefi_memory_protection` | UEFI memory protection |
+| `secure_mor_requested` | the Memory Overwrite Request |
+
+The right-hand column names the Windows feature each field is for, as Microsoft
+Learn names it; no public source was found saying how the export's columns
+measure those features.
+
+A control whose column is not in the export gets no row, and the scope row
+lists it. `unidentified` lists further columns to count without claiming
+what they measure: each is flagged `platform-control-not-identified` and
+raised as a gap. `compare` reads a JSON list of records, each holding its
+fields or holding them as JSON text under `@rawstring`; `host_field` is
+required, `signals_field` defaults to the record itself, `pairs` maps a
+control (an `unidentified` column by its heading) to the signal that reads
+it, and `yes` and `no` default to `yes`, `true` and `no`, `false`. Only
+readings that are on or off on both sides are compared. `platforms` names a
+CSV of every sensored machine and its operating system, so the scope row can
+say whether any Windows machine is missing from this export.
+
+| Row | Grade |
+|---|---|
+| `Windows platform protection — <heading>` | `n/a`, `platform-control-readings:<n>`; `platform-control-off-everywhere` when no reading is on and some are off; `platform-control-reading-contested` when the second reading disagrees more often than it agrees |
+| `Windows platform protection scope` | `n/a`, `scope-windows-only` |
+
+Every figure counts readings, not machines: a machine with two network
+adapters can be read twice. **Coverage gaps:** no export read; one per
+`unidentified` column. **Cannot see:** machines without a sensor; what a
+column measures beyond its heading.
+
+### `falcon_sha1_signed_modules`
+
+Which machines load software whose signing data carries SHA-1, from the
+sensor's `ModuleCertificateInfo2` events matching the text `sha1RSA`.
+
+```yaml
+plugins:
+  - name: falcon_sha1_signed_modules
+    input: inbox/falcon/sha1-signed-modules.csv
+    settings:
+      # platforms: {file: inbox/falcon/firmware.csv, host_column: hostname, os_column: os_version}
+      # top_machines: 10
+```
+
+```
+#event_simpleName=ModuleCertificateInfo2 "sha1RSA"
+| $"crowdstrike/fltr-core:zComputerName"()
+| groupBy([aid, ComputerName], limit=max)
+```
+
+| Field | Default heading |
+|---|---|
+| `machine` | `ComputerName` |
+| `agent_id` | `aid` (used when a row names no machine) |
+| `count` | `_count` |
+
+The public sources above name the event and show it carrying `aid`, but none
+shows which of its fields hold the certificates' algorithm names (Elastic's
+sample event holds hashes and flags, no certificate list). So the search
+rests on the algorithm's name appearing in the event's text; check that on a
+first run, and read an empty result as unestablished, not as no SHA-1.
+
+Machines are matched by name ignoring case and any domain suffix. **One
+row**, `Software signed with SHA-1, loaded on the machines`, carries
+`hashes: sha1` (so the baseline grades SHA-1 as anywhere else), `unknown`,
+flagged `sha1-signing-position-unresolved`, with the events, machines, the
+median and busiest machine's counts and the busiest machines by name. With
+`platforms`, it says how many of the machines run Windows, how many do not,
+how many the platform export does not list, and how many Windows machines
+that export lists (each machine once). **Coverage gaps:** no export read; and
+always one saying where SHA-1 sits in the chain is not established. **Cannot
+see:** whether SHA-1 is a module's own signature, the older half of a double
+signature, or a certificate higher in the chain; which modules or publishers.

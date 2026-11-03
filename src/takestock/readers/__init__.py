@@ -31,7 +31,10 @@ MODULES: tuple[str, ...] = ("cyclonedx", "oracle_tde", "commvault", "exchange_on
                             "entra_app_credentials", "exo_client_access",
                             "exo_connector_messages", "exo_outbound_protection",
                             "azure_resource_graph", "m365_bitlocker", "falcon",
-                            "falcon_connections", "falcon_http", "falcon_tls_clienthello")
+                            "falcon_connections", "falcon_http", "falcon_tls_clienthello",
+                            "falcon_software", "falcon_vulnerabilities",
+                            "falcon_system_resources", "falcon_windows_os_security",
+                            "falcon_sha1_signed_modules")
 
 
 def _load() -> list[Plugin]:
