@@ -140,7 +140,8 @@ def test_the_summary_counts_requirements_by_level_and_result():
     assert "Recommended 0 1 0 1" in summary
     assert "All 1 2 2 5" in summary
     # Only the must is listed as a breach; the recommendation is not.
-    breaches = summary.split("Unmet requirements stated as must")[1].split("Why requirements")[0]
+    breaches = (summary.split("Unmet requirements stated as must")[1]
+                .split("Unmet readings by condition")[0])
     assert "SGE-DMARC-01" in breaches and "example.net" in breaches
     assert "SGE-DMARC-R02" not in breaches
     assert "1: nothing outside the organisation can see this" in summary
@@ -258,3 +259,31 @@ def test_unknown_palette_tokens_warn_once_and_the_note_is_still_written(tmp_path
         warned = [line for line in err.splitlines() if "unknown colour token" in line]
         assert len(warned) == 1 and "palette.headline" in warned[0], err
         assert "--accent: #7a1f4d;" in (obs / "sge-note.html").read_text()
+
+
+def test_every_requirement_links_to_the_page_of_the_standard_that_states_it():
+    html = sge_note.build_note(synthetic_report(), TARGET)
+    for rid in ("SGE-SPF-01", "SGE-DMARC-01", "SGE-DLP-01"):
+        url, label = sge.source_link(STD, REQS[rid])
+        assert url.startswith("https://www.digital.govt.nz/") and "#page=" in url
+        card = html.split(f'id="{rid}"', 1)[1].split("</article>", 1)[0]
+        assert f'href="{url}"' in card and label in card
+
+
+def test_unmet_readings_are_grouped_by_condition_must_first():
+    report = synthetic_report()
+    report.rows.append(row("SGE-DMARC-01", "example.org", FAIL, observed="p=none; pct=100"))
+    html = sge_note.build_note(report, TARGET)
+    section = html.split("Unmet readings by condition", 1)[1].split("</table>", 1)[0]
+    assert "3 unmet readings come from 2 conditions" in html
+    must_at = section.index("SGE-DMARC-01")
+    rec_at = section.index("SGE-DMARC-R02")
+    assert must_at < rec_at
+    assert re.search(r"<td class=\"num\">2</td><td><a href=\"#SGE-DMARC-01\">", section)
+
+
+def test_the_summary_lists_the_domains_in_scope():
+    html = sge_note.build_note(synthetic_report(), TARGET)
+    scope = html.split('id="scope"', 1)[1].split("</table>", 1)[0]
+    for d in DOMAINS:
+        assert f"<code>{d}</code>" in scope

@@ -3735,6 +3735,28 @@ def citation(std: dict, req: dict) -> str:
     return out
 
 
+def source_link(std: dict, req: dict) -> tuple[str, str]:
+    """Where a reader can check a requirement in the standard itself: (url, label).
+
+    The url is the published document's, with ``#page=N`` when the requirement
+    set records the page its deciding sentence is printed on (a fragment PDF
+    viewers in common browsers honour). The label names the document, its
+    version and the page. ``("", "")`` when the document has no url.
+    """
+    d = (std.get("documents") or {}).get(req.get("document") or "") or {}
+    url = str(d.get("url") or "")
+    if not url:
+        return "", ""
+    page = (req.get("level_basis") or {}).get("page")
+    label = str(d.get("title", req.get("document")))
+    if d.get("version"):
+        label += f" v{d['version']}"
+    if page:
+        url += f"#page={int(page)}"
+        label += f", page {int(page)}"
+    return url, label
+
+
 def evaluate(assets: list[Any], domains: list[str], standard: dict | None = None,
              bulk_mail_domains: tuple[str, ...] = (),
              parked: list[str] | tuple[str, ...] = ()) -> Report:

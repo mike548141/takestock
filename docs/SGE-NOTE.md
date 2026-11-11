@@ -93,11 +93,17 @@ The target profile supplies:
 
 1. **Summary**: how many requirements are met, not met and not measured,
    at each level; which *must* requirements are not met, and for which
-   subjects; and why the unmeasured ones could not be measured.
+   subjects; the unmet readings grouped by condition (one requirement
+   failing with one observed value, counted once for each domain or host it
+   appears on, *must* conditions first); why the unmeasured ones could not
+   be measured; and a table of the domains in scope (email-enabled, parked,
+   and mail-handling names the sub-domain sweep found), with the rules each
+   is read against.
 2. **Requirement by requirement**, grouped by level: each with its deciding
-   sentence, where that sentence was read, what it applies to, its source
-   document, and a table of readings (subject, result, what was observed,
-   and the explanation).
+   sentence, where that sentence was read, what it applies to, a link that
+   opens the published document at the page stating the requirement, its
+   source document, and a table of readings (subject, result, what was
+   observed, and the explanation).
 3. **Parked domains**, when the profile has any: each parked domain against
    the framework's requirements for domains that send no mail (the blank SPF
    record `v=spf1 -all`, a `p=reject` DMARC policy with no `sp=` or `np=`
@@ -455,9 +461,9 @@ when the workspace is named with `--workspace` or `TAKESTOCK_HOME`. Each require
 |---|---|
 | `id`, `title` | The requirement's identifier and one-line name |
 | `level` | `must` or `recommended` |
-| `level_basis` | `quote` (the deciding sentence, verbatim), `where` it was read, and `judgement` when the level needed one |
+| `level_basis` | `quote` (the deciding sentence, verbatim), `page` (the page of the `document` that states it, used for the note's link), `where` it was read, and `judgement` when the level needed one |
 | `scope` | `email-domain`, `non-email-domain`, `mail-path` or `organisation` |
-| `text`, `source`, `document` | The requirement's wording and where it came from; `document` names an entry under `documents:` so the note can cite its version, date, index and digest |
+| `text`, `source`, `document` | The requirement's wording and where it came from; `document` names an entry under `documents:` so the note can cite its version, date, index, digest and published `url` |
 | `measurable` | `observed`, `not-collected`, `no-instrument` or `inside-export` (read from an export of the mail platform's settings when one is supplied) |
 | `settled_by` | The evidence that would settle it, printed in the note |
 | `note`, `partial`, `awaiting` | Explanations; `partial` says what a reading does not cover and is quoted into the row; `awaiting` says what a `not-collected` row is waiting for |

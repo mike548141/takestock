@@ -1189,3 +1189,15 @@ def test_the_limits_note_says_names_read_are_drawn_from_those_the_observation_ho
     assert "are those the observation knows of" not in said[0]
     assert "drawn from those the observation knows of" in said[0]
     assert "need not be all of them" in said[0]
+
+
+def test_every_document_has_a_published_url_and_every_requirement_a_page():
+    std = sge.load_standard()
+    for key, doc in std["documents"].items():
+        assert str(doc.get("url", "")).startswith("https://www.digital.govt.nz/assets/"), key
+        assert str(doc["url"]).endswith(".pdf"), key
+    for req in std["requirements"]:
+        page = (req.get("level_basis") or {}).get("page")
+        assert isinstance(page, int) and page >= 1, req["id"]
+        url, label = sge.source_link(std, req)
+        assert url.endswith(f"#page={page}") and label.endswith(f"page {page}"), req["id"]

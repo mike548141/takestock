@@ -288,6 +288,8 @@ class _Note:
                        f"same as conformance: {_n(counts[sge.NOT_MEASURED], 'requirement')} "
                        "could not be measured.</p>")
 
+        out.append(self.conditions())
+
         unmeasured = [rid for rid in self.order if self.status[rid] == sge.NOT_MEASURED]
         out.append("<h3>Why requirements could not be measured</h3>")
         if unmeasured:
@@ -316,8 +318,60 @@ class _Note:
                 str(self.std["deadline_note"]).split()))))
         out.append('<dl class="facts">' + "".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in facts)
                    + "</dl>")
+        out.append(self.scope_table())
         out.append("</section>")
         return "\n".join(out)
+
+    def scope_table(self) -> str:
+        """Every domain and group of names the note reads, and which rules it is read against."""
+        rows = [[f"<code>{esc(d)}</code>", "Sends and receives mail",
+                 "The rules for email-enabled domains"] for d in self.domains]
+        rows += [[f"<code>{esc(p.domain)}</code>", "Sends no mail (parked)",
+                  'The rules for domains that send no mail (<a href="#parked">read '
+                  "separately</a>)"] for p in self.parked]
+        groups = list(dict.fromkeys(r.subject for r in self.results.rows
+                                    if r.discovered and r.subject))
+        rows += [[esc(g), "Handle mail, found by the sub-domain sweep",
+                  "The rules for email-enabled domains, read together"] for g in groups]
+        if not rows:
+            return ""
+        return ('<h3 id="scope">Domains in scope</h3>'
+                + _table(["Domain", "Treated as", "Read against"], rows,
+                         caption="The domains and names this note reads"))
+
+    def conditions(self) -> str:
+        """Unmet readings grouped by the condition that produced them.
+
+        A condition is one requirement failing with one observed value, so a
+        value published on several domains is one condition counted once per
+        domain. MUST conditions come first, then by how many readings each
+        accounts for.
+        """
+        groups: dict[tuple[str, str], int] = {}
+        for rid in self.order:
+            for r in self.rows[rid]:
+                if r.status == sge.FAIL:
+                    key = (rid, " ".join(str(r.observed or "").split()))
+                    groups[key] = groups.get(key, 0) + 1
+        if not groups:
+            return ""
+
+        def level(rid: str) -> str:
+            return str(self.reqs[rid].get("level") or "")
+
+        keys = sorted(groups, key=lambda k: (level(k[0]) != "must", -groups[k], k))
+        total = sum(groups.values())
+        must = sum(n for k, n in groups.items() if level(k[0]) == "must")
+        rows = [[str(groups[k]), self.link(k[0]), esc(k[1]) or "—",
+                 esc(LEVELS.get(level(k[0]), (level(k[0]).capitalize(), ""))[0])] for k in keys]
+        return ("<h3>Unmet readings by condition</h3>"
+                f"<p>{_n(total, 'unmet reading')} come from {_n(len(keys), 'condition')}: one "
+                "requirement failing with one observed value, counted once for each domain or "
+                f"host it appears on. {must} of the readings are against requirements stated "
+                "as must.</p>"
+                + _table(["Readings", "Requirement", "Observed", "Level"], rows,
+                         caption="Unmet readings grouped by the condition that produced them",
+                         num=(0,)))
 
     def requirement(self, rid: str) -> str:
         req = self.reqs[rid]
@@ -334,6 +388,10 @@ class _Note:
             facts.append(("Level judged", esc(basis["judgement"])))
         if req.get("scope"):
             facts.append(("Applies to", esc(SCOPE_LABEL.get(req["scope"], req["scope"]))))
+        url, label = sge.source_link(self.standard, req)
+        if url:
+            facts.append(("Read it in the standard",
+                          f'<a href="{esc(url)}">{esc(label)}</a>'))
         cite = next((r.citation for r in self.rows[rid] if r.citation), "")
         if req.get("source") or cite:
             facts.append(("Source", esc("; ".join(x for x in (str(req.get("source") or ""), cite)
