@@ -18,9 +18,11 @@ in `.githooks/` is atelier's floor: it runs atelier's publication scanners
 (secrets, personal data, broken links and more) and then takestock's own
 checks, which `.atelier-floor.json` declares. The guard is one of them. The
 hook fails closed: with no atelier tools to run, it refuses the commit rather
-than scan nothing. The same floor runs in continuous integration
-(`.github/workflows/floor.yml`), so a commit made without the hook is still
-scanned when it is pushed.
+than scan nothing. The same checks run in continuous integration
+(`.github/workflows/floor.yml`), with leakscan structural-only and the extra
+hook skipped, so a commit made without the hook is still scanned when it is
+pushed. A merge made with `git merge --no-ff` is checked too: the
+`pre-merge-commit` hook hands its tree to the pre-commit hook.
 
 The personal-data scanner also matches a list of your own sensitive strings,
 kept outside every repository, and refuses a commit until the list exists:

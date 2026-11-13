@@ -30,5 +30,6 @@ venv:
 # local check, see .atelier-floor.json) and the guard on every commit message.
 # The floor's scanners come from a clone of atelier, by default beside this one.
 hooks:
+	@test -f '$(ATELIER)/tools/floor.py' || { echo "no atelier clone at $(ATELIER); make hooks ATELIER=<path>"; exit 1; }
 	git config core.hooksPath .githooks
 	git config hooks.atelierTools "$$(cd '$(ATELIER)/tools' && pwd)"

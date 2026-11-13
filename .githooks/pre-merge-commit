@@ -1,0 +1,37 @@
+#!/bin/sh
+# atelier pre-merge-commit hook — runs the same hook plane over a merge's tree.
+#
+# WHY THIS FILE EXISTS (roadmap 115/340). Git does not run `pre-commit` for the
+# commit that `git merge` writes on its own: a clean `git merge --no-ff` makes
+# the merge commit without ever calling it, so two branches that were each green
+# can combine into a tree no hook plane read. Git does call `pre-merge-commit`
+# there, with the merged result staged, so this hook routes to the sibling
+# `pre-commit` and the hook plane (tools/floor.py) checks that staged tree.
+# `git merge --no-verify` skips it, as `git commit --no-verify` skips pre-commit.
+# A merge that stops on a conflict and is finished by `git commit` already runs
+# `pre-commit`, so nothing is checked twice.
+#
+# WHAT IT STILL CANNOT COVER. `git cherry-pick`, `git revert` and `git rebase`
+# (including `rebase --continue` after a hand-resolved conflict) have no
+# client-side hook that can refuse the commits they write. Those commits are
+# checked by CI only (docs/method/GUARDS.md).
+#
+# Install it beside pre-commit, the same way:
+#     cp tools/pre-merge-commit.sample .githooks/pre-merge-commit
+#     chmod +x .githooks/pre-merge-commit
+# (legacy, per-clone: the same file into .git/hooks/). It names no scanner and
+# carries no policy; it only hands over to `pre-commit` in its own directory, so
+# the registry in tools/floor.py stays the one place that decides.
+
+hook_dir=$(dirname "$0")
+
+# FAIL CLOSED, like pre-commit: a merge hook with nothing to hand over to must
+# block, not wave the merge through.
+if [ ! -f "$hook_dir/pre-commit" ]; then
+    echo >&2 "pre-merge-commit: no pre-commit beside this hook ($hook_dir) — BLOCKING (fail closed)."
+    echo >&2 "  This hook only hands over to pre-commit. Install that first (tools/pre-commit.sample)."
+    exit 1
+fi
+
+# Run it by `sh` so a lost execute bit on the sibling cannot turn into a skip.
+exec sh "$hook_dir/pre-commit"

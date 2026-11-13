@@ -62,7 +62,7 @@ issue.
   holds the context partition and forms no finding; it was started by
   session `c87c4ee0`, which only launched it. Reviewer: Fable 5.1. The
   held-back sibling is held outside the repository until act 1 is committed.
-  **PASS RAN (2026-11-01): PASS-WITH-FINDINGS, 1 MAJOR, 7 MINOR, 2 notes.**
+  **PASS RAN 2026-11-01: PASS-WITH-FINDINGS, 1 MAJOR, 7 MINOR, 2 notes.**
   Act 1 in `f836875`, act 2 and the folded sibling in the review file.
   Standing MAJOR: F1, on the hook plane the guard reads the working tree,
   not the index, so a staged identifier can land with every check green.
@@ -84,6 +84,7 @@ issue.
   Routing: F4 (`make hooks` exits 0 without atelier), F6 (stale dev-loop
   line, with N3's CI wording), F7 (a pointer to the copied-text ruling at
   the point of use) and N2 (stale paths in `docs/`) are fixes any session
-  may apply; F5 is a process note for the next landing. Fixes to F1, F2,
-  F3 and F8 change a gate, so under rule 4 each is reviewed before it is
-  trusted.
+  may apply; F5 is a process note for the next landing. F4, F6 and F7
+  applied 2026-11-13, with N3 (the session index entry of that date); N2
+  is open. Fixes to F1, F2, F3 and F8 change a gate, so under rule 4 each is
+  reviewed before it is trusted.

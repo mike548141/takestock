@@ -29,7 +29,9 @@
 #
 # WHAT THIS REPO DECIDES — in `.atelier-floor.json` at the repo root, never here:
 # where its records live, the licence it asserts, and any check it runs advisory
-# or disabled (with a stated reason). Those are visible estate-wide via
+# or disabled (with a stated reason). A check of the repo's OWN goes in its
+# `local` block, which the floor runs from this same hook (tools/README.md,
+# "`local` in `.atelier-floor.json`"). Those are visible estate-wide via
 # `floorfleet`. To opt out of a check, declare it there — deleting a line here
 # would be invisible the moment it was done, which is the failure mode the whole
 # design replaces.

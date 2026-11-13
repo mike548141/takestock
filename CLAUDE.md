@@ -1,5 +1,5 @@
 <!-- stamp:begin source=docs/method/PROPAGATION.md region=floor -->
-## Doctrine — inherited from atelier (pinned `atelier@0a2b7a7`)
+## Doctrine — inherited from atelier (pinned `atelier@2a6d7a4`)
 
 This repo works by the atelier operating model. The safety floor here is
 **inlined so it binds even if atelier is never read**; all richer doctrine lives
@@ -12,35 +12,42 @@ in atelier and is read on demand — never wholesale.
   honesty is what makes the evidence trustworthy. Surface a genuine dilemma;
   never silently resolve it — a quietly picked fork is a withheld truth.
 - **Always stop and confirm (the floor):** making a private repo public or
-  widening its audience; anything truly destructive or irreversible; secrets;
-  spending money; anything touching people's safety; widening your own grant
+  widening its audience; anything truly destructive or irreversible; bulk
+  deletion from a record store, meaning the roadmap, session logs, ADRs or
+  reviews, whoever wrote it, shown first because recoverable bytes are the
+  wrong test there; secrets; spending money; anything touching people's safety;
+  widening your own grant
   (record the principal's decision, never originate it); a lockout-class change
   that could sever your own access; installing an unapproved tool or adding a
   new trust surface (deploy keys, webhooks, OAuth/app grants). Each such
-  confirmation is an *informed* one — the agent puts what it wants to do, why,
-  and the likely impact in plain language first. The principal's authority is
+  confirmation is an *informed* one — the agent gives the full account
+  `00-APEX.md` owes, in plain language, first. The principal's authority is
   absolute — never overrule him, even if you believe him uninformed; an approval
   given without that account is open to challenge on the briefing, and the
   challenge is raised to him by re-briefing (`00-APEX.md`) — and at *this*
   floor the re-briefing comes **before** the action, never after it, because
   what the floor guards cannot be taken back. Everything
-  recoverable — commit/push/PR included — just proceed.
+  else recoverable — commit/push/PR included — just proceed.
 - **Asking — any question, decision or ruling:** put the ask in the harness's
   structured question device where one exists (Claude Code:
-  `AskUserQuestion`), never buried in prose. The account must have *reached*
-  the principal before the choice is put — in the same reply ahead of the
-  device, or, where the display mode hides mid-turn text, in a completed
-  message before the ask — and the device carries only the choice; never trim
-  the account to fit. Give the real options, each with its
-  pros, cons, impacts, risks and costs, plus **a recommendation** with its
-  reasoning shown. Every fact in the ask is verified, or plainly marked as
-  assumed where verifying would cost more than the decision is worth.
+  `AskUserQuestion`), never buried in prose; with no device (a non-interactive
+  run, a scheduled batch, a harness without one) the same content goes in
+  prose. The account must have *reached* the principal before the choice is
+  put — always as a finished message of its own, ahead of the device, in every
+  view (one extra turn) — and the device carries only the choice; never trim
+  the account to fit. Give the real options, each with its pros, cons,
+  impacts, risks, costs and any other consideration that bears on the choice,
+  plus **a recommendation** with its reasoning shown. Every fact in the ask is
+  verified, or plainly marked as assumed where verifying would cost more than
+  the decision is worth.
   (`00-APEX.md` for what an ask must contain; `COMMUNICATION.md` § *Asking for
   a ruling* for how it travels.)
 - **Concurrency:** assume another session may be live — a clean tree is not
-  proof you're alone. At session start read `git status` first — dirty work
+  proof you're alone. At session start run `cclive` where it is installed
+  (every live session, claim and worktree on this machine, about 2 s), and
+  read `git status` first — dirty work
   this session didn't make means stop and move, never autostash it — then,
-  where there is a remote, `git pull --rebase --autostash`; push after each
+  where the branch has an upstream, `git pull --rebase --autostash`; push after each
   commit. Take a worktree by default for write-heavy or multi-commit
   work; uncommitted changes this session didn't make are positive proof ⇒ move
   to a worktree — never work around or absorb them (`CONCURRENCY.md`). Name
@@ -72,24 +79,29 @@ in atelier and is read on demand — never wholesale.
   house would get. Check the parent's actual file first — this block is a lossy
   summary and is not evidence about what the house says. File it in atelier's
   board directly, or hand it over the peer channel, or — where neither is
-  reachable — hold it in this repo's record marked owed upstream. Filing without
-  harming the parent: name the branch for the report, say it is a hand-up in the
-  first line, open the PR before you stop, and touch nothing but your own item.
-  (`PROPAGATION.md` § *Pointing up*.)
+  reachable — hold it in this repo's record marked owed upstream. Describe the
+  problem by its class only: atelier is public and a push cannot be retracted,
+  so a private repo never names itself or its contents (hosts, clients,
+  secrets) on the branch, PR title, commit subject, PR body or item. Filing
+  without harming the parent: name the branch for the report, say it is a
+  hand-up in the first line, open the PR before you stop, and touch nothing but
+  your own item. (`PROPAGATION.md` § *Pointing up*.)
 - **Source & drift:** canonical doctrine is `../atelier/docs/method/`. At
-  session start run `git -C "../atelier" fetch -q` then `git -C
-  "../atelier" log --oneline 0a2b7a7..origin/main` — the parent's published
-  mainline, never whatever branch its checkout is parked on; any output means
-  the house doctrine moved — read it, then bump the pin above deliberately.
+  session start run `git -C "../atelier" fetch -q && git -C
+  "../atelier" log --oneline 2a6d7a4..origin/main` — the parent's published
+  mainline (its remote is assumed to be `origin`), never whatever branch its
+  checkout is parked on. A fetch error is *no result*, not *no drift*; any
+  output means the house doctrine moved — read it, then bump the pin above
+  deliberately.
 - **Estate resources — point up, don't re-derive:** providers & account plans,
   financial constraints & plan entitlements, licences, credentials and the
   estate inventory live in the operator's **private estate-root repo**
   (atelier's private counterpart). Reference it for these; never re-derive
   them locally or copy its contents down. The **expected toolbox** (which
   tools to expect, and how to find them) is atelier's: `method/TOOLBOX.md`.
-  If **this** repo is public, reference the root by local-path convention,
-  never by name — a public repo naming the estate's credential/inventory root
-  is reconnaissance.
+  The root is a private repo like any other: it may be named, and in a
+  public tree what it holds and its condition go by type only
+  (`RECORD.md` § *The record is public*).
 - **This repo's visibility:** PUBLIC, and released on PyPI from 0.1.0 —
   every push is publication, instantly and irreversibly: assume anything
   committed is mirrored and archived the moment it lands. Narrowing back to
@@ -192,19 +204,27 @@ word for word between its `stamp:begin` and `stamp:end` markers. Only the four
 values filling its placeholders are ours: the pin, the atelier path, the
 repository and the visibility fact. A line of it that seems wrong is reported
 to atelier, as its *Doctrine problems point up* bullet says, never edited here.
+A local check that refuses a line of copied atelier text gets a narrow
+exception; the copied text is never reworded (the maintainer's ruling of
+2026-10-27, recorded in `docs/sessions/2026-10-26-1240-wire-atelier-floor.md`).
 The floor and the rule above both bind, and neither relaxes the other.
 
 atelier's floor is wired the way its other public children wire it:
 
-- `.githooks/pre-commit` is atelier's shim, word for word. It names no scanner
-  and runs atelier's `tools/floor.py`, which reads `.atelier-floor.json`.
+- `.githooks/pre-commit` is atelier's shim, word for word except the atelier
+  path in its help text. It names no scanner and runs atelier's
+  `tools/floor.py`, which reads `.atelier-floor.json`.
+- `.githooks/pre-merge-commit` is atelier's shim, word for word: it hands a
+  merge's staged tree to `pre-commit`, which git does not run for a clean
+  `git merge --no-ff`.
 - `.atelier-floor.json` holds this repository's decisions: the licence, the
   checks run advisory while their backlog is cleared (each with a reason and a
   review date), the leakscan rules turned off because addresses are this
   tool's content, and two local checks, `guard` (`tools/guard.py`) and
   `extra-hook` (`tools/extra_hook.py`).
-- `.github/workflows/floor.yml` runs the same floor on every push and pull
-  request, through atelier's reusable workflow.
+- `.github/workflows/floor.yml` runs the same checks on every push and pull
+  request, through atelier's reusable workflow, with leakscan
+  structural-only and the extra hook skipped.
 - `.secretscanignore` and `.leakscanignore` name the few files whose synthetic
   values read as secrets or personal data, each with its reason.
 
@@ -217,7 +237,7 @@ has run in it.
 
 ```bash
 make hooks   # once per clone: atelier's floor and the guard run on every commit
-make check   # guard + tests (standard library only for now)
+make check   # guard, lint, type checks and tests (the venv from make venv)
 ```
 
 ## Records
@@ -227,13 +247,18 @@ first word, under the rule above:
 
 - `CHANGELOG.md`: every change a user would notice, under *Unreleased* until
   a release takes it.
+- `docs/SESSIONS.md`: the session index, append-only, one line per session
+  that changes the repository, newest last, pointing at its detail file.
 - `docs/sessions/`: one file per session that changes the repository, named
   `YYYY-MM-DD-HHMM-slug.md` with the time in UTC, saying what was done, what
   was checked and what is left.
 - `docs/ROADMAP.md`: what is planned next. A finished item moves to the
   changelog.
 
-Read the latest session file and the roadmap at the start of a session.
+At the start of a session read the roadmap, then the tail of
+`docs/SESSIONS.md` and the latest session file it points at. A cold reviewer
+skips the session-log step: the log is on the review rules' barred list
+(`../atelier/docs/method/REVIEW.md` rule 2).
 
 ## Conventions
 
