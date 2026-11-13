@@ -82,3 +82,5 @@ from the detail files in one pass when this index was added.
   readers: [detail](sessions/2026-11-03-1701-falcon-identity-readers.md)
 - 2026-11-03 — CrowdStrike Falcon drive encryption and coverage readers:
   [detail](sessions/2026-11-03-1816-falcon-coverage-readers.md)
+- 2026-11-13 — Atelier floor at 2a6d7a4, a session index, and three review
+  fixes: [detail](sessions/2026-11-13-0629-atelier-pin-2a6d7a4.md)
