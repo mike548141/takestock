@@ -446,6 +446,9 @@ command line or a file format, and its entry says how.
 
 ### Changed
 
+- **The roadmap is one file per item.** Items live under `docs/roadmap/`,
+  each in a numbered section, with its state line first;
+  `docs/ROADMAP.md` is now an index generated from them.
 - **Configuration register, the workbook's Read me sheet.** Its third line
   now says when the data was read, in a sentence, instead of the
   observation's time stamp, its recording date and the schema version: for a
