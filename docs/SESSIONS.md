@@ -84,3 +84,5 @@ from the detail files in one pass when this index was added.
   [detail](sessions/2026-11-03-1816-falcon-coverage-readers.md)
 - 2026-11-13 — Atelier floor at 2a6d7a4, a session index, and three review
   fixes: [detail](sessions/2026-11-13-0629-atelier-pin-2a6d7a4.md)
+- 2026-11-14 — Roadmap: one file per item:
+  [detail](sessions/2026-11-14-0137-roadmap-board-split.md)
