@@ -1,5 +1,12 @@
 # 2026-10-17 — Exchange Online reader and three SGE evaluators
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 34+2 -->
+- 2026-10-17 — Exchange Online reader and three SGE evaluators:
+  [detail](2026-10-17-1009-exchange-online-reader-and-sge-evaluators.md)
+
+
 ## What was done
 
 - **`exchange_online`**, in `readers/exchange_online.py`, kind `general`:

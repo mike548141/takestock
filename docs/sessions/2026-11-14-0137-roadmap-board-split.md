@@ -1,5 +1,12 @@
 # 2026-11-14 — Roadmap: one file per item
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 87+2 -->
+- 2026-11-14 — Roadmap: one file per item:
+  [detail](2026-11-14-0137-roadmap-board-split.md)
+
+
 Dispatched by an estate health sweep (orchestrator session `58027096`): split
 the one-file roadmap into a board, one file per item, as atelier's
 `RECORD.md` expects of every record store kept as a list.

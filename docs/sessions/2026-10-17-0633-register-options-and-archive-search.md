@@ -1,5 +1,13 @@
 # 2026-10-17 — Register options, a schema overlay, a Jira Assets import, archive search
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 29+3 -->
+- 2026-10-17 — Register options, a schema overlay, a Jira Assets import, archive
+  search:
+  [detail](2026-10-17-0633-register-options-and-archive-search.md)
+
+
 ## What was done
 
 - **A schema overlay.** `takestock.cmdb.apply_overlay` merges an overlay's

@@ -1,5 +1,12 @@
 # 2026-11-03 — Five CrowdStrike Falcon platform and software readers in the readers library
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 79+2 -->
+- 2026-11-03 — Five CrowdStrike Falcon platform and software readers in the
+  readers library: [detail](2026-11-03-1700-falcon-platform-readers.md)
+
+
 ## What was done
 
 - **`takestock.readers`** gains five readers (`general`, no default input):

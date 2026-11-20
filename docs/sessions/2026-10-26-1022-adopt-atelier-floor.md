@@ -1,5 +1,12 @@
 # 2026-10-26 — Adopt atelier's floor block
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 57+2 -->
+- 2026-10-26 — Adopt atelier's floor block:
+  [detail](2026-10-26-1022-adopt-atelier-floor.md)
+
+
 ## What was done
 
 - **`CLAUDE.md` now opens with atelier's floor block**, pinned at

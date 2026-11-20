@@ -1,5 +1,12 @@
 # 2026-10-26 — Administrator-named accounts: successful sign-ins only
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 55+2 -->
+- 2026-10-26 — Administrator-named accounts: successful sign-ins only:
+  [detail](2026-10-26-1003-admin-named-accounts-successful-sign-ins.md)
+
+
 ## What was done
 
 - **`entra_signins`, the administrator-named accounts row.** Its count of

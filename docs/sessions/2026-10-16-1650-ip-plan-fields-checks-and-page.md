@@ -1,5 +1,12 @@
 # 2026-10-16 — IP address plan: new fields, two check rules, and the page
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 12+2 -->
+- 2026-10-16 — IP address plan: new fields, two check rules, and the page:
+  [detail](2026-10-16-1650-ip-plan-fields-checks-and-page.md)
+
+
 ## What was done
 
 Five changes to the IP address plan (`takestock.ipam`, `takestock.ipam_view`),

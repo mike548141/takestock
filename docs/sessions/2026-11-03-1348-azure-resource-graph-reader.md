@@ -1,5 +1,12 @@
 # 2026-11-03 — An Azure Resource Graph reader in the readers library
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 69+2 -->
+- 2026-11-03 — An Azure Resource Graph reader in the readers library:
+  [detail](2026-11-03-1348-azure-resource-graph-reader.md)
+
+
 ## What was done
 
 - **`takestock.readers`** gains `azure_resource_graph` (`general`, no

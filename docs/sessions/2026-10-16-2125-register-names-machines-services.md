@@ -1,5 +1,13 @@
 # 2026-10-16 — Register: names against machines, and when a port makes a service
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 22+3 -->
+- 2026-10-16 — Register: names against machines, and when a port makes a
+  service:
+  [detail](2026-10-16-2125-register-names-machines-services.md)
+
+
 ## What was done
 
 Five rules of the configuration register (`takestock.cmdb`) about names,

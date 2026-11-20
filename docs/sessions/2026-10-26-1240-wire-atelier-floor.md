@@ -1,5 +1,12 @@
 # 2026-10-26 — Wire atelier's floor
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 59+2 -->
+- 2026-10-26 — Wire atelier's floor:
+  [detail](2026-10-26-1240-wire-atelier-floor.md)
+
+
 Continues the earlier session record `*-adopt-atelier-floor.md`, which
 stamped the floor block and left the wiring to the maintainer. The maintainer
 chose to wire it the way atelier's other public children do.

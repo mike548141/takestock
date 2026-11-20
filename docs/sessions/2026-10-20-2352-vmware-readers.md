@@ -1,5 +1,12 @@
 # 2026-10-20 — VMware readers
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 39+2 -->
+- 2026-10-20 — VMware readers:
+  [detail](2026-10-20-2352-vmware-readers.md)
+
+
 ## What was done
 
 - **`vmware`**, in `readers/vmware.py`, kind `general`: a CSV of vSphere VM

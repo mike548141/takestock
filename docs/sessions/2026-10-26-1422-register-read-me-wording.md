@@ -1,5 +1,12 @@
 # 2026-10-26 — The register's Read me sheet, and one citation's wording
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 61+2 -->
+- 2026-10-26 — The register's Read me sheet, and one citation's wording:
+  [detail](2026-10-26-1422-register-read-me-wording.md)
+
+
 ## What was done
 
 - **The Read me sheet's date line.** It said *"Observation <stamp>, recorded

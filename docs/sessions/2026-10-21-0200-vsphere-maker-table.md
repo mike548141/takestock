@@ -1,5 +1,12 @@
 # 2026-10-21 — A maker table setting for `vsphere_lists`
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 41+2 -->
+- 2026-10-21 — A maker table setting for `vsphere_lists`:
+  [detail](2026-10-21-0200-vsphere-maker-table.md)
+
+
 ## What was done
 
 - **`vsphere_lists`** takes `settings: {makers: <csv>}`: a table of device

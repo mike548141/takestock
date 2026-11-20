@@ -1,5 +1,13 @@
 # 2026-10-17 — IP plan: segment mode, VLAN from an older source, segment locations, headed summary
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 36+3 -->
+- 2026-10-17 — IP plan: segment mode, VLAN from an older source, segment
+  locations, headed summary:
+  [detail](2026-10-17-1108-ip-plan-segment-mode-and-location.md)
+
+
 ## What was done
 
 - **Segment mode.** `ipam.Segment` has two new optional fields: `mode`

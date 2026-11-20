@@ -1,5 +1,12 @@
 # 2026-11-03 — Five CrowdStrike Falcon identity, endpoint-event and assessment readers
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 81+2 -->
+- 2026-11-03 — Five CrowdStrike Falcon identity, endpoint-event and assessment
+  readers: [detail](2026-11-03-1701-falcon-identity-readers.md)
+
+
 ## What was done
 
 - **`takestock.readers`** gains five readers (`general`, no default input):

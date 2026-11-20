@@ -1,5 +1,12 @@
 # 2026-10-17 — Oracle TDE and Commvault readers
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 32+2 -->
+- 2026-10-17 — Oracle TDE and Commvault readers:
+  [detail](2026-10-17-0754-oracle-tde-and-commvault-readers.md)
+
+
 ## What was done
 
 - **`oracle_tde`**, in `readers/oracle_tde.py`, kind `database-encryption`:

@@ -247,11 +247,11 @@ first word, under the rule above:
 
 - `CHANGELOG.md`: every change a user would notice, under *Unreleased* until
   a release takes it.
-- `docs/SESSIONS.md`: the session index, append-only, one line per session
-  that changes the repository, newest last, pointing at its detail file.
-- `docs/sessions/`: one file per session that changes the repository, named
-  `YYYY-MM-DD-HHMM-slug.md` with the time in UTC, saying what was done, what
-  was checked and what is left.
+- `docs/sessions/`: the session log, one file per session that changes the
+  repository, named `YYYY-MM-DD-HHMM-slug.md` with its start time in UTC,
+  saying what was done, what was checked and what is left. The folder is the
+  index: the names sort by start time, so there is no index file to append
+  to.
 - `docs/roadmap/`: what is planned next, one file per item under a numbered
   section, its state line first; [`docs/roadmap/README.md`](docs/roadmap/README.md)
   gives the states. A finished item is marked `[x]` in its own file and its
@@ -260,8 +260,8 @@ first word, under the rule above:
   `tools/board.py --rebuild` and never edited by hand; rebuild it in the
   commit that changes an item.
 
-At the start of a session read the roadmap index, then the tail of
-`docs/SESSIONS.md` and the latest session file it points at. A cold reviewer
+At the start of a session read the roadmap index, then the newest few
+session files (`ls docs/sessions | sort | tail -5`). A cold reviewer
 skips the session-log step: the log is on the review rules' barred list
 (`../atelier/docs/method/REVIEW.md` rule 2).
 

@@ -1,5 +1,12 @@
 # 2026-10-21 — the register names which rows' host lists draw installed-on
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 47+2 -->
+- 2026-10-21 — The register names which rows' host lists draw installed-on:
+  [detail](2026-10-21-1308-register-installed-on-sources.md)
+
+
 ## What was done
 
 - **`installed_on_from`**, a configuration register option: the row sources

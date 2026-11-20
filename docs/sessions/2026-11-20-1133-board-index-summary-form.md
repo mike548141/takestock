@@ -1,5 +1,12 @@
 # 2026-11-20 — Board index: summary + open-only form
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 93+2 -->
+- 2026-11-20 — Board index in the summary + open-only form:
+  [detail](2026-11-20-1133-board-index-summary-form.md)
+
+
 Dispatched by an estate health sweep (orchestrator session `19378351`): bring
 the board to atelier's current form.
 

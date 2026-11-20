@@ -1,5 +1,12 @@
 # 2026-11-20 — Mail path map: platform sources beyond headers
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 91+2 -->
+- 2026-11-20 — Mail path map: platform sources beyond headers:
+  [detail](2026-11-20-0755-mailpath-platform-sources.md)
+
+
 ## What was done
 
 - **`takestock.mailpath.platformlog`**: one per-message schema for mail

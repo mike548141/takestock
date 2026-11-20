@@ -1,5 +1,12 @@
 # 2026-10-16 — The configuration register lists every asset found
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 14+2 -->
+- 2026-10-16 — The configuration register lists every asset found:
+  [detail](2026-10-16-1846-register-lists-every-asset-found.md)
+
+
 ## What was done
 
 Five changes to the configuration register (`takestock.cmdb`) and the

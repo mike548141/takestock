@@ -1,5 +1,12 @@
 # 2026-10-21 — `takestock rerun`: derived observations
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 43+2 -->
+- 2026-10-21 — `takestock rerun`: derived observations:
+  [detail](2026-10-21-0211-rerun-derived-observations.md)
+
+
 ## What was done
 
 - **`takestock rerun <target> --from <observation> --plugin <name>`**, in

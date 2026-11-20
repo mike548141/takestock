@@ -1,5 +1,12 @@
 # 2026-11-01 — Brief the queued review of the atelier floor
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 67+2 -->
+- 2026-11-01 — Brief the queued review of the atelier floor:
+  [detail](2026-11-01-1206-brief-the-floor-review.md)
+
+
 ## What was done
 
 - **A brief for the queued rule-4 pass**, in a new `docs/reviews/`:

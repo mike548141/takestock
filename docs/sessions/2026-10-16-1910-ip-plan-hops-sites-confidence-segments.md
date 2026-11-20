@@ -1,5 +1,13 @@
 # 2026-10-16 — IP plan: network hops, site precedence, confidence, retired segments
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 16+3 -->
+- 2026-10-16 — IP plan: network hops, site precedence, confidence, retired
+  segments:
+  [detail](2026-10-16-1910-ip-plan-hops-sites-confidence-segments.md)
+
+
 ## What was done
 
 Four changes to the IP address plan (`takestock.ipam`), each a rule that read

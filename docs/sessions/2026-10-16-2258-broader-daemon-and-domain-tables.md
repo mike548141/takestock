@@ -1,5 +1,12 @@
 # 2026-10-16 — Broader daemon dictionary and vendor-domain table
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 25+2 -->
+- 2026-10-16 — Broader daemon dictionary and vendor-domain table:
+  [detail](2026-10-16-2258-broader-daemon-and-domain-tables.md)
+
+
 ## What was done
 
 Two bundled reference tables were widened so that each reads as general

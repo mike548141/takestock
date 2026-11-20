@@ -1,5 +1,12 @@
 # 2026-10-31 — Three Exchange Online mail readers in the readers library
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 63+2 -->
+- 2026-10-31 — Three Exchange Online mail readers in the readers library:
+  [detail](2026-10-31-1224-exchange-online-mail-readers.md)
+
+
 ## What was done
 
 - **`takestock.readers`** gains three readers, each with no default input:

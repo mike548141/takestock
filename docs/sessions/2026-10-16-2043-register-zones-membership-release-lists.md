@@ -1,5 +1,13 @@
 # 2026-10-16 — Register: technology zones, membership by collector id, release lists
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 19+3 -->
+- 2026-10-16 — Register: technology zones, membership by collector id, release
+  lists:
+  [detail](2026-10-16-2043-register-zones-membership-release-lists.md)
+
+
 ## What was done
 
 Three changes to the configuration register (`takestock.cmdb`), one commit

@@ -1,5 +1,12 @@
 # 2026-11-03 — A profile's own daemon-dictionary rows
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 73+2 -->
+- 2026-11-03 — A profile's own daemon-dictionary rows:
+  [detail](2026-11-03-1507-daemon-dictionary-overlay.md)
+
+
 ## What was done
 
 - **`<stem>.daemon-dictionary.yaml`**, a new overlay beside a target profile,

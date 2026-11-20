@@ -1,5 +1,12 @@
 # 2026-10-11 — One command for every standards check
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 10+2 -->
+- 2026-10-11 — One command for every standards check:
+  [detail](2026-10-11-0854-one-standards-command.md)
+
+
 ## What was done
 
 The standards checks now share one command, `takestock comply <standard>`,

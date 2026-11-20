@@ -1,5 +1,12 @@
 # 2026-11-03 — Three CrowdStrike Falcon traffic readers in the readers library
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 77+2 -->
+- 2026-11-03 — Three CrowdStrike Falcon traffic readers in the readers library:
+  [detail](2026-11-03-1553-falcon-traffic-readers.md)
+
+
 ## What was done
 
 - **`takestock.readers`** gains three readers (`general`, no default input),

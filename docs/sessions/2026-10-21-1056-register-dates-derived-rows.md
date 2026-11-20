@@ -1,5 +1,12 @@
 # 2026-10-21 — the register dates a derived observation's rows by when they were read
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 45+2 -->
+- 2026-10-21 — The register dates a derived observation's rows by when they were
+  read: [detail](2026-10-21-1056-register-dates-derived-rows.md)
+
+
 ## What was done
 
 - **The configuration register reads when each row was read.** A derived

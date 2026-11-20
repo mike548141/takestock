@@ -1,5 +1,12 @@
 # 2026-11-03 — CrowdStrike Falcon drive encryption and coverage readers
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 83+2 -->
+- 2026-11-03 — CrowdStrike Falcon drive encryption and coverage readers:
+  [detail](2026-11-03-1816-falcon-coverage-readers.md)
+
+
 ## What was done
 
 - **`takestock.readers`** gains two readers (`general`, no default input)

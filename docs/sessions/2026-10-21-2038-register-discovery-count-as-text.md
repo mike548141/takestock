@@ -1,5 +1,12 @@
 # 2026-10-21 — the register counts a discovery total written as text
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 49+2 -->
+- 2026-10-21 — The register counts a discovery total written as text:
+  [detail](2026-10-21-2038-register-discovery-count-as-text.md)
+
+
 ## What was done
 
 - **A discovery source's machine count may be text.** The configuration

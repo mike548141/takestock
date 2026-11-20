@@ -1,5 +1,12 @@
 # 2026-10-17 — Readers library, and a CycloneDX reader
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 27+2 -->
+- 2026-10-17 — Readers library, and a CycloneDX reader:
+  [detail](2026-10-17-0517-readers-library-and-cyclonedx.md)
+
+
 ## What was done
 
 - **A readers library.** takestock can now ship plug-ins of its own, in

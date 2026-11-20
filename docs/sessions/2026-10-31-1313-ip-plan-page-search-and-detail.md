@@ -1,5 +1,12 @@
 # 2026-10-31 — The IP address plan page: headline, search and subnet detail
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 65+2 -->
+- 2026-10-31 — The IP address plan page: headline, search and subnet detail:
+  [detail](2026-10-31-1313-ip-plan-page-search-and-detail.md)
+
+
 ## What was done
 
 The page (`src/takestock/ipam_view.py`) now answers more of an engineer's

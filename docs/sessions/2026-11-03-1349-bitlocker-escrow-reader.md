@@ -1,5 +1,12 @@
 # 2026-11-03 — A Windows drive encryption and recovery-key escrow reader in the readers library
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 71+2 -->
+- 2026-11-03 — A Windows drive encryption and recovery-key escrow reader in the
+  readers library: [detail](2026-11-03-1349-bitlocker-escrow-reader.md)
+
+
 ## What was done
 
 - **`takestock.readers.m365_bitlocker`** (`general`, no default input): reads

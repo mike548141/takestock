@@ -1,5 +1,12 @@
 # 2026-10-25 — Inbound DMARC behind a third-party MX graded as not measured
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 53+2 -->
+- 2026-10-25 — Inbound DMARC behind a third-party MX graded as not measured:
+  [detail](2026-10-25-2029-dmarc-behind-a-third-party-mx.md)
+
+
 ## What was done
 
 - **`sge._eval_inbound_dmarc` (SGE-DMARC-02).** Where the domain's MX points

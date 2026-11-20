@@ -1,5 +1,12 @@
 # 2026-10-11 — Ready to publish
 
+**From the retired session log**, word for word; only its link paths were re-pointed for this folder:
+
+<!-- archivecut:log-entry docs/SESSIONS.md 8+2 -->
+- 2026-10-11 — Ready to publish:
+  [detail](2026-10-11-0514-ready-to-publish.md)
+
+
 The first entry in takestock's session log. Each session that changes the
 repository adds one file here, named `YYYY-MM-DD-HHMM-slug.md` with the time
 in UTC, saying what was done, what was checked and what is left.
