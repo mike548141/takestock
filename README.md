@@ -15,6 +15,7 @@ and writes:
 | **IP address plan** | Every site, subnet and address the evidence shows, each with its source and date | `takestock ipam` |
 | **Secure Government Email note** | Every requirement of New Zealand's Secure Government Email framework, read as met, not met or not measured | `takestock comply sge` (HTML), `takestock comply sge --format text` (plain text) |
 | **Requirements** | Requirements derived from the findings, written from public standards, ready to put to a supplier | `takestock requirements` |
+| **Mail path map** | The routes mail takes for an organisation's domains, the transport and signing on each hand-over, who sends as each domain, volumes, and what each domain publishes | `takestock mailpath` |
 
 > **Status:** version 0.1.0, alpha. The commands work end to end on the
 > sample organisation below; the command line and file formats may still
@@ -225,6 +226,7 @@ Every command follows one contract, so a script can act on the result:
 | [`docs/IPAM.md`](docs/IPAM.md) | The IP address plan |
 | [`docs/SGE-NOTE.md`](docs/SGE-NOTE.md) | The Secure Government Email note |
 | [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) | Requirements derived from the findings |
+| [`docs/MAILPATH.md`](docs/MAILPATH.md) | The mail path map: its sources, how a route is read, and naming systems |
 | [`docs/STANDARDS.md`](docs/STANDARDS.md) | The standards takestock grades against, and where they disagree |
 | [`docs/SECURE-GOVERNMENT-EMAIL.md`](docs/SECURE-GOVERNMENT-EMAIL.md) | How takestock reads the Secure Government Email framework |
 | [`docs/OBLIGATIONS.md`](docs/OBLIGATIONS.md) | The New Zealand laws and policies above the technical standards |

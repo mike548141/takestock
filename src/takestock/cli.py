@@ -5,7 +5,8 @@ Python: ``observe`` over :mod:`takestock.observe`, ``rerun`` over
 :mod:`takestock.rerun`, ``cmdb`` over
 :mod:`takestock.cmdb`, ``requirements`` over :mod:`takestock.requirements`,
 ``comply`` over the standards registered in :mod:`takestock.comply`, and
-``ipam`` over :mod:`takestock.ipam` where that module is installed.
+``ipam`` over :mod:`takestock.ipam` where that module is installed, and
+``mailpath`` over :mod:`takestock.mailpath.run`.
 """
 
 from __future__ import annotations
@@ -174,6 +175,35 @@ def build_parser() -> argparse.ArgumentParser:
                    help="where to write (default: <observation>/requirements)")
     p.add_argument("--catalogue", type=Path, help="a requirements catalogue to use instead")
 
+    p = sub.add_parser(
+        "mailpath", help="map an organisation's mail paths",
+        description="Map how mail moves for an organisation's domains: the routes messages "
+                    "took (from header files), who sends as each domain (DMARC aggregate "
+                    "reports, saved or fetched from Cloudflare), the platform's volumes "
+                    "(an Exchange Online message trace export) and what each domain "
+                    "publishes. Writes mailpath.json and mailpath.html.")
+    p.add_argument("--organisation", required=True, help="the organisation's name, for the page")
+    p.add_argument("--domain", action="append", default=[], required=True, dest="domains",
+                   help="a domain to map (repeat)")
+    p.add_argument("--owned", action="append", default=[],
+                   help="a further domain that counts as the organisation's own (repeat)")
+    p.add_argument("--headers", action="append", default=[], type=Path, dest="header_paths",
+                   help="a file or directory of message headers (repeat)")
+    p.add_argument("--dmarc", action="append", default=[], type=Path, dest="dmarc_paths",
+                   help="a DMARC aggregate report, a directory of them, or saved Cloudflare "
+                        "rows as .json (repeat)")
+    p.add_argument("--cloudflare-zone", action="append", default=[], metavar="DOMAIN=ZONE_ID",
+                   help="fetch DMARC rows for this zone from Cloudflare (repeat)")
+    p.add_argument("--cloudflare-keychain", default="", metavar="ITEM",
+                   help="keychain item holding the Cloudflare token (else $CLOUDFLARE_API_TOKEN)")
+    p.add_argument("--trace", action="append", default=[], type=Path, dest="trace_paths",
+                   help="an Exchange Online message trace CSV (repeat)")
+    p.add_argument("--systems", action="append", default=[], type=Path, dest="overlays",
+                   help="a mail-systems overlay naming the organisation's own hosts (repeat)")
+    p.add_argument("--probe", action="store_true",
+                   help="probe each MX host's STARTTLS (makes network connections)")
+    p.add_argument("--out", type=Path, required=True, help="output directory")
+
     sub.add_parser("version", help="print the version")
     return parser
 
@@ -275,6 +305,29 @@ def _requirements(args: argparse.Namespace) -> int:
     return EXIT_FINDINGS if reqs else EXIT_CLEAN
 
 
+def _mailpath(args: argparse.Namespace) -> int:
+    from .mailpath import run as mp
+    zones = {}
+    for z in args.cloudflare_zone:
+        domain, sep, zone = z.partition("=")
+        if not sep or not zone:
+            raise ValueError(f"--cloudflare-zone takes DOMAIN=ZONE_ID, not {z!r}")
+        zones[domain.lower()] = zone
+    inp = mp.Inputs(organisation=args.organisation, domains=[d.lower() for d in args.domains],
+                    owned=args.owned, header_paths=args.header_paths, dmarc_paths=args.dmarc_paths,
+                    cloudflare_zones=zones, cloudflare_keychain=args.cloudflare_keychain,
+                    trace_paths=args.trace_paths, overlays=args.overlays, probe=args.probe,
+                    out=args.out)
+    result = mp.run(inp)
+    for path in mp.write(result, args.out):
+        print(path)
+    ev = result["evidence"]
+    print(f"{len(result['flows'])} flow(s) from {ev['headers']['messages_in_scope']} message(s); "
+          f"{ev['dmarc']['messages']} message(s) in DMARC reports; "
+          f"{ev['trace']['messages']} in the trace")
+    return EXIT_CLEAN
+
+
 _COMMANDS = {
     "observe": _observe,
     "rerun": _rerun,
@@ -282,6 +335,7 @@ _COMMANDS = {
     "ipam": _ipam,
     "comply": _comply,
     "requirements": _requirements,
+    "mailpath": _mailpath,
 }
 
 

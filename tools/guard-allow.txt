@@ -55,3 +55,76 @@ nsa.gov
 # reader compares a domain's MX hosts with. They name the vendor's service.
 mail.protection.outlook.com
 mail.eo.outlook.com
+# Public mail services' own host-name endings, as each provider documents
+# them for its sending hosts, MX hosts, SPF includes or report addresses.
+# The mail-path system catalogue (src/takestock/data/mail-systems.yaml)
+# recognises a route's hops by them. Every entry is a multi-tenant service's
+# own name, never a customer's.
+google.com
+googlemail.com
+gmail.com
+1e100.net
+outlook.com
+office365.com
+hotmail.com
+microsoft.com
+amazonses.com
+awsapps.com
+amazon.com
+sendgrid.net
+mailgun.net
+mailgun.org
+mcsv.net
+mandrillapp.com
+rsgsv.net
+mcdlv.net
+mailchimpapp.net
+mtasv.net
+postmarkapp.com
+sendinblue.com
+brevo.com
+sender-sib.com
+exacttarget.com
+salesforce.com
+hubspotemail.net
+hubspot.com
+zendesk.com
+atlassian.net
+atlassian.com
+github.net
+xero.com
+zoho.com
+zohomail.com
+zoho.com.au
+messagingengine.com
+fastmail.com
+icloud.com
+me.com
+mail.apple.com
+yahoo.com
+yahoodns.net
+cloudflare-email.net
+mx.cloudflare.net
+dmarc-reports.cloudflare.net
+api.cloudflare.com
+mimecast.com
+mimecast-offshore.com
+pphosted.com
+ppe-hosted.com
+proofpoint.com
+barracudanetworks.com
+ess.barracuda.com
+iphmx.com
+tmes.trendmicro.com
+tmes.trendmicro.eu
+hydra.sophos.com
+valimail.com
+dmarcian.com
+dmarcian.eu
+dmarcian-ap.com
+easydmarc.com
+easydmarc.us
+easydmarc.eu
+dmarcanalyzer.com
+uriports.com
+powerdmarc.com

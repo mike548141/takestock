@@ -1,0 +1,180 @@
+# Mail systems takestock can recognise in a message's route.
+#
+# Each entry names a system and the evidence that identifies it: host-name
+# suffixes (matched against a Received hop's host names and reverse DNS, an MX
+# host, an SPF include or a DMARC report's PTR), regular expressions over a host
+# name, the Message-ID's right-hand side, X-Mailer / User-Agent text, a header
+# whose presence alone identifies it, address ranges (`addresses`, CIDR), and
+# `asn_orgs`: the organisation name an IP registry gives, which DMARC aggregate
+# services report as the source's owner. Use `asn_orgs` only for a network that
+# carries nothing but this service's mail: a cloud provider's network also
+# carries its customers' own hosts, so its name identifies no service.
+#
+# `kind` says what the system does on a route:
+#   mailbox  - a mail platform that hosts mailboxes and sends and receives for them
+#   gateway  - a filtering or security service that mail passes through
+#   relay    - a sending service used by applications (transactional or bulk)
+#   client   - software a person or a program uses to write and submit mail
+#   forwarder- a service that forwards or redirects mail it receives
+#
+# Only public, widely used services belong here. An organisation adds its own
+# hosts, relays and partners with an overlay file of the same shape
+# (`takestock mailpath --systems FILE`), and an overlay entry with the same
+# name replaces the bundled one.
+#
+# Sources: each provider's published documentation of its sending hosts, MX
+# hosts or SPF include names.
+
+systems:
+  - name: Google Workspace / Gmail
+    kind: mailbox
+    host_suffixes: [google.com, googlemail.com, gmail.com, 1e100.net]
+    host_regex: ['^2002:a[0-9a-f]{2}:']
+    spf_includes: [_spf.google.com]
+    message_id_suffixes: [mail.gmail.com, google.com]
+    headers: [X-Google-Smtp-Source, X-Gm-Message-State]
+  - name: Microsoft 365 / Exchange Online
+    kind: mailbox
+    host_suffixes: [outlook.com, office365.com, protection.outlook.com, microsoft.com, hotmail.com, outlook.office365.com]
+    spf_includes: [spf.protection.outlook.com]
+    message_id_suffixes: [prod.outlook.com, outlook.com]
+    headers: [X-MS-Exchange-CrossTenant-Id, X-OriginatorOrg]
+  - name: Amazon SES
+    kind: relay
+    host_suffixes: [amazonses.com]
+    spf_includes: [amazonses.com]
+    message_id_suffixes: [email.amazonses.com, amazonses.com]
+    headers: [X-SES-Outgoing]
+  - name: Amazon WorkMail
+    kind: mailbox
+    host_suffixes: [awsapps.com]
+  - name: SendGrid
+    kind: relay
+    host_suffixes: [sendgrid.net]
+    spf_includes: [sendgrid.net]
+    headers: [X-SG-EID]
+  - name: Mailgun
+    kind: relay
+    host_suffixes: [mailgun.net, mailgun.org]
+    spf_includes: [mailgun.org]
+    headers: [X-Mailgun-Sid]
+  - name: Mailchimp / Mandrill
+    kind: relay
+    host_suffixes: [mcsv.net, mandrillapp.com, rsgsv.net, mcdlv.net, mailchimpapp.net]
+    spf_includes: [servers.mcsv.net, spf.mandrillapp.com]
+    headers: [X-MC-User]
+  - name: Postmark
+    kind: relay
+    host_suffixes: [mtasv.net, postmarkapp.com]
+    spf_includes: [spf.mtasv.net]
+  - name: Brevo
+    kind: relay
+    host_suffixes: [sendinblue.com, brevo.com, sender-sib.com]
+    spf_includes: [spf.sendinblue.com, spf.brevo.com]
+  - name: Salesforce Marketing Cloud
+    kind: relay
+    host_suffixes: [exacttarget.com, salesforce.com]
+    spf_includes: [_spf.salesforce.com, cust-spf.exacttarget.com]
+  - name: HubSpot
+    kind: relay
+    host_suffixes: [hubspotemail.net, hubspot.com]
+    spf_includes: [_spf.hubspotemail.net]
+  - name: Zendesk
+    kind: relay
+    host_suffixes: [zendesk.com]
+    spf_includes: [mail.zendesk.com]
+  - name: Atlassian
+    kind: relay
+    host_suffixes: [atlassian.net, atlassian.com]
+    spf_includes: [_spf.atlassian.net]
+  - name: GitHub
+    kind: relay
+    host_suffixes: [github.com, github.net]
+  - name: Xero
+    kind: relay
+    host_suffixes: [xero.com]
+    spf_includes: [_spf.xero.com]
+  - name: Zoho Mail
+    kind: mailbox
+    host_suffixes: [zoho.com, zohomail.com, zoho.com.au]
+    spf_includes: [zoho.com, zoho.com.au]
+  - name: Fastmail
+    kind: mailbox
+    host_suffixes: [messagingengine.com, fastmail.com]
+    spf_includes: [spf.messagingengine.com]
+  - name: Apple iCloud Mail
+    kind: mailbox
+    host_suffixes: [icloud.com, me.com, mail.apple.com]
+    spf_includes: [icloud.com]
+  - name: Yahoo Mail
+    kind: mailbox
+    host_suffixes: [yahoo.com, yahoodns.net]
+  - name: Cloudflare Email Routing
+    kind: forwarder
+    host_suffixes: [cloudflare-email.net, mx.cloudflare.net]
+    spf_includes: [_spf.mx.cloudflare.net]
+  - name: Mimecast
+    kind: gateway
+    host_suffixes: [mimecast.com, mimecast-offshore.com]
+    spf_includes: [_netblocks.mimecast.com]
+    asn_orgs: [Mimecast]
+  - name: Proofpoint
+    kind: gateway
+    host_suffixes: [pphosted.com, ppe-hosted.com, proofpoint.com]
+  - name: Barracuda Email Security
+    kind: gateway
+    host_suffixes: [barracudanetworks.com, ess.barracuda.com]
+    spf_includes: [spf.ess.barracudanetworks.com]
+  - name: Cisco Secure Email
+    kind: gateway
+    host_suffixes: [iphmx.com]
+  - name: Trend Micro Email Security
+    kind: gateway
+    host_suffixes: [tmes.trendmicro.com, tmes.trendmicro.eu]
+  - name: Sophos Email
+    kind: gateway
+    host_suffixes: [hydra.sophos.com]
+  # Mail clients and sending libraries, recognised from X-Mailer / User-Agent.
+  - name: Microsoft Outlook
+    kind: client
+    mailer_regex: ['Microsoft Outlook', 'Microsoft Office Outlook']
+  - name: Apple Mail
+    kind: client
+    mailer_regex: ['Apple Mail', '^iPhone Mail', '^iPad Mail']
+  - name: Mozilla Thunderbird
+    kind: client
+    mailer_regex: ['Thunderbird']
+  - name: PHPMailer
+    kind: client
+    mailer_regex: ['PHPMailer']
+  - name: Python email library
+    kind: client
+    mailer_regex: ['Python']
+  - name: Microsoft Exchange (self-hosted)
+    kind: mailbox
+    received_regex: ['with Microsoft SMTP Server']
+  # DMARC and TLS reporting services, recognised from rua / ruf addresses.
+  - name: Cloudflare DMARC Management
+    kind: reporting
+    host_suffixes: [dmarc-reports.cloudflare.net]
+  - name: Valimail
+    kind: reporting
+    host_suffixes: [valimail.com]
+  - name: dmarcian
+    kind: reporting
+    host_suffixes: [dmarcian.com, dmarcian.eu, dmarcian-ap.com]
+  - name: EasyDMARC
+    kind: reporting
+    host_suffixes: [easydmarc.com, easydmarc.us, easydmarc.eu]
+  - name: DMARC Analyzer
+    kind: reporting
+    host_suffixes: [dmarcanalyzer.com]
+  - name: Postmark DMARC
+    kind: reporting
+    host_suffixes: [dmarc.postmarkapp.com]
+  - name: URIports
+    kind: reporting
+    host_suffixes: [uriports.com]
+  - name: PowerDMARC
+    kind: reporting
+    host_suffixes: [powerdmarc.com]

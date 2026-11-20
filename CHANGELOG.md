@@ -9,6 +9,21 @@ command line or a file format, and its entry says how.
 
 ### Added
 
+- **`takestock mailpath`: a map of how mail moves for an organisation's
+  domains** (`docs/MAILPATH.md`). From message headers it draws each route
+  system by system, with the TLS each receiving server recorded on every
+  hand-over, how the message entered the mail system, its DKIM signatures and
+  the receiver's SPF, DKIM and DMARC results, the software that made it,
+  content signing or encryption, protective markings and sensitivity labels,
+  and sizes. From DMARC aggregate reports (RFC 7489 files, or Cloudflare DMARC
+  Management fetched live and saved) it lists every system sending as each
+  domain. From an Exchange Online message trace it counts messages and bytes
+  by direction, origin and connector. From DNS it reads MX, SPF, DMARC, DKIM,
+  MTA-STS, TLS reporting, BIMI, DNSSEC and DANE, and `--probe` reads each MX's
+  STARTTLS. A bundled catalogue (`data/mail-systems.yaml`) names public mail
+  services; an organisation names its own relays in an overlay. Writes
+  `mailpath.json` and `mailpath.html`.
+
 - **Readers library: CrowdStrike Falcon drive encryption and coverage**, each
   run when a profile names it in `plugins:` (`docs/COLLECTORS.md`, "The
   CrowdStrike Falcon drive encryption and coverage readers", which gives the
