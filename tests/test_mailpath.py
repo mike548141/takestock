@@ -122,6 +122,12 @@ def test_received_tls_clauses_are_read_in_each_servers_form():
     assert CAT.by_asn_org("Amazon.com, Inc.") is None      # a cloud network names no service
 
 
+def test_a_mailer_string_loses_its_per_message_token():
+    assert headers.mailer_name("Example Mailer (dGVzdGluZ3Rva2VuMTIzNDU2Nzg5MA==; +https://x)") == \
+        "Example Mailer"
+    assert headers.mailer_name("Example Mailer 2.1") == "Example Mailer 2.1"
+
+
 def test_plain_esmtp_is_not_recorded_rather_than_cleartext():
     hop = headers.parse_received("from a.example.test ([192.0.2.5]) by b.example.test with ESMTP id 7; d")
     assert hop.tls == headers.TLS_NOT_RECORDED and hop.plain_keyword

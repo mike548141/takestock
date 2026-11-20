@@ -233,6 +233,18 @@ def parse_dkim_signature(value: str) -> Signature:
 
 # --- content protection and generators ----------------------------------------
 
+def mailer_name(value: str) -> str:
+    """The product in a mailer string, without its parenthesised detail.
+
+    Bulk senders put a per-message token or a URL in brackets
+    (``Example Mailer (dGVzdA==; +https://...)``), which would make every
+    message its own sender.
+    """
+    name = re.sub(r"\([^()]*\)?", " ", value)
+    name = " ".join(w for w in name.split() if not re.fullmatch(r"[A-Za-z0-9+/=_-]{20,}", w))
+    return (name or value).strip()[:60]
+
+
 def content_protection(content_type: str) -> str:
     """What the outermost Content-Type says about the content's own protection."""
     ct = content_type.lower()
@@ -360,7 +372,7 @@ def parse(text: str, catalogue: Catalogue, source: str = "") -> Message:
     if named:
         gens.append(named)
     elif msg.mailer:
-        gens.append(f"mailer: {msg.mailer[:60]}")
+        gens.append(f"mailer: {mailer_name(msg.mailer)}")
     by_mid = catalogue.by_message_id(msg.message_id_domain) if msg.message_id_domain else None
     if by_mid:
         gens.append(by_mid)

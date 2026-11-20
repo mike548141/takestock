@@ -22,7 +22,8 @@ command line or a file format, and its entry says how.
   MTA-STS, TLS reporting, BIMI, DNSSEC and DANE, and `--probe` reads each MX's
   STARTTLS. A bundled catalogue (`data/mail-systems.yaml`) names public mail
   services; an organisation names its own relays in an overlay. Writes
-  `mailpath.json` and `mailpath.html`.
+  `mailpath.json` and `mailpath.html`. A mailer string is reduced to its product name, so a
+  bulk sender's per-message token does not split one sender into many.
 
 - **Readers library: CrowdStrike Falcon drive encryption and coverage**, each
   run when a profile names it in `plugins:` (`docs/COLLECTORS.md`, "The
