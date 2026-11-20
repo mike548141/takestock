@@ -15,6 +15,13 @@ Sources, each optional, each with its own reach:
 * **Message trace** (an Exchange Online export): every message the platform
   handled, with sizes and the address it entered from. No hops outside the
   platform.
+* **Platform logs** (:mod:`.platformlog`): Google Workspace's Gmail log events,
+  Defender's ``EmailEvents`` from a Microsoft 365 export, Cloudflare Email
+  Routing and Sending: every message the platform handled, with its transport,
+  authentication and outcome as the platform recorded them. Beside them, the
+  platform's own settings (Microsoft 365 connectors, DKIM, rules), Google's
+  daily volumes and Postmaster Tools' view, and OnDMARC's source
+  classification.
 
 The output is one JSON document (counts and names, never a person's address)
 that :mod:`.report` turns into a page.
@@ -24,10 +31,10 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from . import cloudflare, dmarc, dnsposture, headers, paths, systems, trace
+from . import cloudflare, dmarc, dnsposture, headers, paths, platformlog, systems, trace
 
 SCHEMA = "takestock.mailpath/1"
 
@@ -46,6 +53,19 @@ class Inputs:
     overlays: list[Path] = field(default_factory=list)
     probe: bool = False
     out: Path = Path("mailpath")
+    # Platforms' own records (see platformlog): saved row files, Cloudflare Email
+    # Routing and Sending for the zones above, a Microsoft 365 export bundle, a
+    # Google Workspace pull, and Red Sift OnDMARC (saved archives or live).
+    platform_logs: list[Path] = field(default_factory=list)
+    cloudflare_email: bool = False
+    m365_bundles: list[Path] = field(default_factory=list)
+    google_dirs: list[Path] = field(default_factory=list)
+    ondmarc_archives: list[Path] = field(default_factory=list)
+    ondmarc_domains: list[str] = field(default_factory=list)
+    ondmarc_region: str = ""
+    ondmarc_keychain: str = ""
+    since: str = ""
+    until: str = ""
 
 
 def _header_files(paths_in: list[Path]) -> list[Path]:
@@ -113,11 +133,33 @@ def run(inp: Inputs, now: datetime | None = None,
     if inp.cloudflare_zones:
         bearer = cloudflare.token(inp.cloudflare_token_env, inp.cloudflare_keychain)
         for domain, zone in inp.cloudflare_zones.items():
-            rows, stop = cloudflare.fetch(zone, bearer, now=when)
+            cf_rows, stop = cloudflare.fetch(zone, bearer, now=when)
             archive = inp.out / f"cloudflare-dmarc-{domain}-{when:%Y%m%dT%H%MZ}.json"
-            archive.write_text(json.dumps(rows), encoding="utf-8")
-            fetch_notes[domain] = f"{len(rows)} rows; {stop}; kept in {archive.name}"
-            records += dmarc.from_cloudflare_rows(rows)
+            archive.write_text(json.dumps(cf_rows), encoding="utf-8")
+            fetch_notes[domain] = f"{len(cf_rows)} rows; {stop}; kept in {archive.name}"
+            records += dmarc.from_cloudflare_rows(cf_rows)
+    ondmarc_raw: list[dict] = []
+    if inp.ondmarc_archives or inp.ondmarc_domains:
+        from . import ondmarc
+        for archive_file in inp.ondmarc_archives:
+            saved, saved_notes = ondmarc.load_archive(Path(archive_file))
+            ondmarc_raw += saved
+            fetch_notes[f"ondmarc {Path(archive_file).name}"] = "; ".join(saved_notes) or "read"
+        if inp.ondmarc_domains:
+            key = ondmarc.token(keychain_item=inp.ondmarc_keychain)
+            since = inp.since or (when - timedelta(days=30)).date().isoformat()
+            until = inp.until or when.date().isoformat()
+            region = inp.ondmarc_region or "uk"
+            live, notes = ondmarc.fetch(key, inp.ondmarc_domains, region, since, until)
+            archive = inp.out / f"ondmarc-{when:%Y%m%dT%H%MZ}.json"
+            ondmarc.save(archive, live, notes, region)
+            fetch_notes["ondmarc"] = f"{len(live)} records; {'; '.join(notes)}; kept in {archive.name}"
+            ondmarc_raw += live
+    ondmarc_sources: list[dict] = []
+    if ondmarc_raw:
+        from . import ondmarc
+        records += ondmarc.to_records(ondmarc_raw)
+        ondmarc_sources = ondmarc.sources_summary(ondmarc_raw)
     records = [r for r in records if paths.owns(r.header_from, owned)]
     if resolve is None:
         _fill_reverse_dns(records)
@@ -136,7 +178,45 @@ def run(inp: Inputs, now: datetime | None = None,
                 if host != "." and host not in probes:
                     probes[host] = _probe(host)
 
-    traces = [t for p in inp.trace_paths for t in trace.read(p, owned)]
+    rows: list[dict] = []
+    for log_file in inp.platform_logs:
+        rows += json.loads(Path(log_file).read_text(encoding="utf-8"))
+    if inp.cloudflare_email and inp.cloudflare_zones:
+        bearer = cloudflare.token(inp.cloudflare_token_env, inp.cloudflare_keychain)
+        for domain, zone in inp.cloudflare_zones.items():
+            for kind in ("routing", "sending"):
+                got, stop = cloudflare.fetch_email(zone, bearer, kind, now=when)
+                fetch_notes[f"email {kind} {domain}"] = f"{len(got)} messages; {stop}"
+                rows += got
+    trace_paths = list(inp.trace_paths)
+    m365_settings: list[dict] = []
+    bundle_traces: list[trace.TraceFlow] = []
+    if inp.m365_bundles:
+        from . import m365
+        for bundle_path in inp.m365_bundles:
+            bundle = m365.read_bundle(Path(bundle_path))
+            bundle_traces += m365.trace_flows(Path(bundle_path), owned)
+            rows += m365.email_events(Path(bundle_path))
+            m365_settings.append({k: v for k, v in bundle.items()
+                                  if k not in ("trace_files", "email_events_files")})
+    google: dict[str, dict] = {}
+    for google_dir in inp.google_dirs:
+        for name in ("gmail-log", "usage", "postmaster"):
+            f = Path(google_dir) / f"{name}.json"
+            if not f.is_file():
+                continue
+            data = json.loads(f.read_text(encoding="utf-8"))
+            if name == "gmail-log":
+                rows += data["rows"] if isinstance(data, dict) else data
+                if isinstance(data, dict) and data.get("notes"):
+                    fetch_notes[f"gmail log {Path(google_dir).name}"] = "; ".join(data["notes"])
+            else:
+                google[name] = data
+    problems = platformlog.check(rows)
+    if problems:
+        raise ValueError("platform rows outside the schema: " + "; ".join(problems[:5]))
+    platform_flows = platformlog.flows(rows, owned, cat)
+    traces = [t for p in trace_paths for t in trace.read(p, owned)] + bundle_traces
 
     return {
         "schema": SCHEMA,
@@ -149,6 +229,10 @@ def run(inp: Inputs, now: datetime | None = None,
         "flows": [f.as_dict() for f in flows],
         "dmarc_sources": [s.as_dict() for s in sources],
         "trace": [t.as_dict() for t in traces],
+        "platform_flows": [f.as_dict() for f in platform_flows],
+        "m365_settings": m365_settings,
+        "google": google,
+        "ondmarc_sources": ondmarc_sources,
         "systems": {name: cat.kind_of(name) for name in
                     {s for f in flows for s in f.route} | {s.system for s in sources}},
         "evidence": {
@@ -159,7 +243,9 @@ def run(inp: Inputs, now: datetime | None = None,
                       "first": min((r.begin for r in records if r.begin), default=""),
                       "last": max((r.end or r.begin for r in records), default=""),
                       "cloudflare": fetch_notes},
-            "trace": {"files": [p.name for p in inp.trace_paths],
+            "platform": {"messages": len(rows),
+                         "sources": sorted({str(r.get("source") or "") for r in rows})},
+            "trace": {"files": [p.name for p in trace_paths],
                       "messages": sum(t.messages for t in traces)},
             "probes": {"hosts": len(probes)},
         },

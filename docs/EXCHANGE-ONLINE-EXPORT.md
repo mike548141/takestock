@@ -203,3 +203,101 @@ Write-Host ''
 Write-Host "Wrote $($readings.Count) reading(s), $failed failed (each failure is in manifest.json):"
 Write-Host "  $zip"
 ```
+
+## Exporting mail flow for `takestock mailpath`
+
+A second script, shipped with takestock at
+[`src/takestock/data/exports/export-m365-mail-flow.ps1`](../src/takestock/data/exports/export-m365-mail-flow.ps1),
+exports how mail moves through a Microsoft 365 organisation in one run, for
+the `takestock.mailpath.m365` reader ([`MAILPATH.md`](MAILPATH.md#source-microsoft-365)).
+It is **read-only** as well: every Exchange command is a `Get-*` cmdlet, and
+the optional Defender step runs one read-only hunting query.
+
+### Running it
+
+1. Open Azure Cloud Shell (PowerShell), where the ExchangeOnlineManagement
+   module is installed, and upload the script.
+2. Run `./export-m365-mail-flow.ps1 -DomainsOnly`. It signs in with
+   `Connect-ExchangeOnline` if no session is open. It needs an account that
+   can read Exchange Online configuration and run message trace, such as one
+   holding the View-Only Configuration and Message Tracking roles.
+3. It writes `m365-mail-flow-<UTC time>` in your home folder and a zip of it
+   beside it, and prints the zip's path. Download the zip.
+
+| Option | Effect |
+|---|---|
+| `-DomainsOnly` | Writes `*@<domain>` for every address in the message trace. takestock reads only the domain, so this loses nothing it uses. Recommended. |
+| `-TraceDays N` | Reads `N` days of message trace, 1 to 90 (default 90). |
+| `-SkipTrace` | Does not read the message trace. |
+| `-EmailEvents` | Also reads Defender for Office 365's `EmailEvents` through Microsoft Graph. Needs the Microsoft.Graph.Authentication module and consent to `ThreatHunting.Read.All`. |
+| `-EmailEventsDays N` | Reads `N` days of `EmailEvents`, 1 to 30 (default 30). |
+
+### What it writes
+
+| File | From | Holds |
+|---|---|---|
+| `Get-AcceptedDomain.json` | `Get-AcceptedDomain` | Every accepted domain |
+| `Get-InboundConnector.json` | `Get-InboundConnector` | Whole objects, less `Comment` and `ScanAndDropRecipients`; each `EFUsers` address written as `*@<domain>`, so a connector filtering for some recipients still reads as such |
+| `Get-OutboundConnector.json` | `Get-OutboundConnector` | Whole objects, less `Comment` and `ValidationRecipients` |
+| `Get-DkimSigningConfig.json` | `Get-DkimSigningConfig` | Whole objects: signing state, key sizes, selectors |
+| `Get-TransportRule.json` | `Get-TransportRule` | Name, state, mode, priority, the names of the conditions and actions each rule sets (`Uses`), and values only for routing and transport settings (`Values`) |
+| `Get-RemoteDomain.json` | `Get-RemoteDomain` | Whole objects |
+| `Get-ArcConfig.json` | `Get-ArcConfig` | The trusted ARC sealers |
+| `Get-HostedContentFilterPolicy.json` | `Get-HostedContentFilterPolicy` | Each policy's name and its SPF, sender-authentication and phishing actions |
+| `Get-MailFlowStatusReport.json` | `Get-MailFlowStatusReport` | Message counts by day, direction and event type |
+| `message-trace.csv` | `Get-MessageTraceV2` | `Received`, `SenderAddress`, `RecipientAddress`, `Status`, `FromIP`, `ToIP`, `Size`, `MessageId`, `MessageTraceId`; never `Subject` |
+| `EmailEvents.csv` | advanced hunting, `-EmailEvents` only | `Timestamp`, `NetworkMessageId`, `EmailDirection`, the sender's From and MAIL FROM domains, the recipient's domain, `DeliveryAction`, `DeliveryLocation`, `Connectors`, `AuthenticationDetails`, `SenderIPv4`, `SenderIPv6`, `EmailSize`, `AttachmentCount`; never a subject or a recipient's address |
+| `manifest.json` | the script | Each command's count, or the error it met; the trace's and Defender's windows that failed; what is never exported |
+
+A command the account cannot run, and a tenant without Defender for Office
+365, are recorded in the manifest and the rest still runs. Because the
+manifest has the same shape as the settings export's, the `exchange_online`
+reader can read this zip too, for the settings it shares.
+
+### The limits it works within
+
+Each from the cmdlet's or API's page on Microsoft Learn:
+
+- **`Get-MessageTraceV2`** ([learn.microsoft.com/powershell/module/exchangepowershell/get-messagetracev2](https://learn.microsoft.com/powershell/module/exchangepowershell/get-messagetracev2)):
+  data for "the last 90 days"; "You can only return 10 days worth of data
+  per query"; "a maximum of 5000 results"; "A maximum of 100 query requests
+  are accepted within a 5 minute running window"; and "Pagination isn't
+  supported", so the next page is asked for "using the StartingRecipientAddress
+  and EndDate parameters with the values from the Recipient address and
+  Received Time properties respectively of the previous result". The script
+  reads in 10-day windows of 5,000 rows, pages that way, and keeps to 95
+  queries in any five minutes.
+- **`Get-MailFlowStatusReport`** ([learn.microsoft.com/powershell/module/exchangepowershell/get-mailflowstatusreport](https://learn.microsoft.com/powershell/module/exchangepowershell/get-mailflowstatusreport)):
+  counts "for the last 90 days". No range limit is documented, so the script
+  asks in the same 10-day windows.
+- **Advanced hunting** through Microsoft Graph's `runHuntingQuery`
+  ([learn.microsoft.com/graph/api/security-security-runhuntingquery](https://learn.microsoft.com/graph/api/security-security-runhuntingquery)),
+  least-privileged permission `ThreatHunting.Read.All`. The limits are those
+  documented for the advanced hunting API
+  ([learn.microsoft.com/defender-xdr/api-advanced-hunting](https://learn.microsoft.com/defender-xdr/api-advanced-hunting)):
+  "data from the past 30 days", "up to 100,000 rows", "up to at least 45
+  calls per minute per tenant". The script asks a day at a time, an hour at a
+  time for a day that reaches the row limit (and records any hour that still
+  does), and pauses between calls. The older Defender endpoint
+  (`api.security.microsoft.com`) is being retired in favour of Graph and is
+  not used.
+- The `EmailEvents` columns are from *EmailEvents table in the advanced
+  hunting schema*
+  ([learn.microsoft.com/defender-xdr/advanced-hunting-emailevents-table](https://learn.microsoft.com/defender-xdr/advanced-hunting-emailevents-table)).
+  `EmailSize` is read through `column_ifexists`, so a tenant whose table
+  lacks it still answers.
+
+Not used: `Get-MailTrafficSummaryReport`, whose sender and recipient
+categories list people's addresses.
+
+### What has not been tested
+
+takestock's tests read hand-written files in the documented shapes; the
+script has not been run against a tenant by takestock's own tests, and it
+was not parse-checked with PowerShell where it was written. Three things are
+therefore unconfirmed: the property names `Get-MailFlowStatusReport` returns
+(the page lists "Date, Direction, Event Type, Count"; the reader accepts
+`MessageCount` or `Count`); the DKIM selector properties
+(`SelectorBeforeRotateOnDate`, `Selector1KeySize` and their pairs), which the
+cmdlet page does not list; and whether Cloud Shell's Microsoft Graph sign-in
+asks for a device code.

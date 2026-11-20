@@ -200,6 +200,23 @@ def build_parser() -> argparse.ArgumentParser:
                    help="an Exchange Online message trace CSV (repeat)")
     p.add_argument("--systems", action="append", default=[], type=Path, dest="overlays",
                    help="a mail-systems overlay naming the organisation's own hosts (repeat)")
+    p.add_argument("--cloudflare-email", action="store_true",
+                   help="also fetch Cloudflare Email Routing and Sending for the --cloudflare-zone zones")
+    p.add_argument("--platform-log", action="append", default=[], type=Path, dest="platform_logs",
+                   help="a JSON file of platform-log rows (docs/MAILPATH.md, Platform logs) (repeat)")
+    p.add_argument("--m365-bundle", action="append", default=[], type=Path, dest="m365_bundles",
+                   help="a Microsoft 365 mail-flow export folder or zip (repeat)")
+    p.add_argument("--google-dir", action="append", default=[], type=Path, dest="google_dirs",
+                   help="a Google Workspace pull's output folder (repeat)")
+    p.add_argument("--ondmarc-archive", action="append", default=[], type=Path, dest="ondmarc_archives",
+                   help="a saved Red Sift OnDMARC fetch (repeat)")
+    p.add_argument("--ondmarc-domain", action="append", default=[], dest="ondmarc_domains",
+                   help="fetch this domain from Red Sift OnDMARC (repeat)")
+    p.add_argument("--ondmarc-region", default="", help="the OnDMARC account's region")
+    p.add_argument("--ondmarc-keychain", default="", metavar="ITEM",
+                   help="keychain item holding the OnDMARC API key (else $ONDMARC_API_KEY)")
+    p.add_argument("--since", default="", help="start date for live fetches (YYYY-MM-DD)")
+    p.add_argument("--until", default="", help="end date for live fetches (YYYY-MM-DD)")
     p.add_argument("--probe", action="store_true",
                    help="probe each MX host's STARTTLS (makes network connections)")
     p.add_argument("--out", type=Path, required=True, help="output directory")
@@ -317,14 +334,18 @@ def _mailpath(args: argparse.Namespace) -> int:
                     owned=args.owned, header_paths=args.header_paths, dmarc_paths=args.dmarc_paths,
                     cloudflare_zones=zones, cloudflare_keychain=args.cloudflare_keychain,
                     trace_paths=args.trace_paths, overlays=args.overlays, probe=args.probe,
-                    out=args.out)
+                    out=args.out, platform_logs=args.platform_logs,
+                    cloudflare_email=args.cloudflare_email, m365_bundles=args.m365_bundles,
+                    google_dirs=args.google_dirs, ondmarc_archives=args.ondmarc_archives,
+                    ondmarc_domains=args.ondmarc_domains, ondmarc_region=args.ondmarc_region,
+                    ondmarc_keychain=args.ondmarc_keychain, since=args.since, until=args.until)
     result = mp.run(inp)
     for path in mp.write(result, args.out):
         print(path)
     ev = result["evidence"]
     print(f"{len(result['flows'])} flow(s) from {ev['headers']['messages_in_scope']} message(s); "
           f"{ev['dmarc']['messages']} message(s) in DMARC reports; "
-          f"{ev['trace']['messages']} in the trace")
+          f"{ev['trace']['messages']} in the trace; {ev['platform']['messages']} in platform logs")
     return EXIT_CLEAN
 
 

@@ -97,3 +97,80 @@ def fetch(zone_id: str, bearer: str, now: datetime | None = None,
             stop = "a window returned the 10,000-row limit; narrow the window"
         end = start
     return rows, stop
+
+
+# ---------------------------------------------------------------------------
+# Email Routing and Email Sending
+#
+# A zone that receives mail through Cloudflare Email Routing, or sends through
+# Cloudflare's email sending service, has a per-message analytics dataset of
+# each: ``emailRoutingAdaptive`` and ``emailSendingAdaptive``. Each message
+# can appear as several events; only its last event is kept, so a message is
+# counted once. The subject, message identifier and session are never asked
+# for, and addresses are reduced to their domains before anything is kept.
+# The token needs the zone's Analytics read permission.
+# ---------------------------------------------------------------------------
+
+EMAIL_DATASETS = {
+    "routing": ("emailRoutingAdaptive",
+                "datetime action status eventType from to spf dkim dmarc arc isSpam isNDR isLastEvent"),
+    "sending": ("emailSendingAdaptive",
+                "datetime status eventType from to sendingDomain spf dkim dmarc isSpam isNDR "
+                "isLastEvent errorCause"),
+}
+
+
+def _domain(address: str) -> str:
+    a = (address or "").strip().strip("<>").lower()
+    return a.rpartition("@")[2] if "@" in a else ""
+
+
+def email_rows(raw: list[dict], kind: str) -> list[dict]:
+    """Platform-log rows (see :mod:`.platformlog`) from one dataset's raw rows."""
+    out = []
+    for r in raw:
+        if r.get("isLastEvent") == 0:
+            continue
+        recipients = sorted({_domain(x) for x in str(r.get("to") or "").split(",") if _domain(x)})
+        out.append({
+            "time": r.get("datetime") or "",
+            "direction": "inbound" if kind == "routing" else "outbound",
+            "sender_domain": _domain(str(r.get("from") or "")) or str(r.get("sendingDomain") or "").lower(),
+            "recipient_domains": recipients,
+            "size": None,
+            "tls": "",
+            "spf": str(r.get("spf") or ""),
+            "dkim": str(r.get("dkim") or ""),
+            "dmarc": str(r.get("dmarc") or ""),
+            "remote_host": "",
+            "remote_ip": "",
+            "connector": "Cloudflare Email Routing" if kind == "routing" else "Cloudflare email sending",
+            "delivery": str(r.get("action") or r.get("status") or r.get("eventType") or ""),
+            "source": f"cloudflare-email-{kind}",
+        })
+    return out
+
+
+def fetch_email(zone_id: str, bearer: str, kind: str, now: datetime | None = None,
+                max_windows: int = 13) -> tuple[list[dict], str]:
+    """(platform-log rows, why fetching stopped) for ``kind`` "routing" or "sending"."""
+    dataset, fields = EMAIL_DATASETS[kind]
+    end = (now or datetime.now(UTC)).replace(microsecond=0)
+    raw: list[dict] = []
+    stop = f"{max_windows} windows fetched"
+    for _ in range(max_windows):
+        start = end - timedelta(days=WINDOW_DAYS)
+        since, until = start.strftime("%Y-%m-%dT%H:%M:%SZ"), end.strftime("%Y-%m-%dT%H:%M:%SZ")
+        q = (f'{{ viewer {{ zones(filter:{{zoneTag:"{zone_id}"}}) {{ {dataset}(limit:10000, '
+             f'filter:{{datetime_geq:"{since}", datetime_lt:"{until}"}}) {{ {fields} }} }} }} }}')
+        doc = _post(q, bearer)
+        if doc.get("errors"):
+            msg = str(doc["errors"][0].get("message", ""))
+            if _retention(msg) is not None or "quota" in msg:
+                stop = f"retention or range limit reached ({msg.split(',')[0]})"
+                break
+            raise FetchError(msg)
+        zones = doc.get("data", {}).get("viewer", {}).get("zones") or []
+        raw += zones[0].get(dataset, []) if zones else []
+        end = start
+    return email_rows(raw, kind), stop

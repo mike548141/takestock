@@ -136,11 +136,16 @@ def _origin(from_ip: str, direction: str, export_direction: str = "", connector:
 
 def read(path: Path, owned: set[str]) -> list[TraceFlow]:
     """Trace flows for an organisation owning ``owned``."""
-    text = _decode(path.read_bytes())
+    return read_bytes(path.read_bytes(), path.name, owned)
+
+
+def read_bytes(raw: bytes, name: str, owned: set[str]) -> list[TraceFlow]:
+    """Trace flows from a trace export's bytes (``name`` is for messages), as :func:`read`."""
+    text = _decode(raw)
     reader = csv.DictReader(io.StringIO(text))
     cols = _columns(list(reader.fieldnames or []))
     if "sender" not in cols or "recipient" not in cols:
-        raise ValueError(f"{path.name}: not a message trace export (no sender and recipient columns)")
+        raise ValueError(f"{name}: not a message trace export (no sender and recipient columns)")
     seen: set[tuple] = set()
     out: dict[tuple, TraceFlow] = {}
     for row in reader:

@@ -56,7 +56,7 @@ takestock = "takestock.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-takestock = ["data/*", "py.typed"]
+takestock = ["data/*", "data/exports/*", "py.typed"]
 
 [tool.ruff]
 line-length = 110

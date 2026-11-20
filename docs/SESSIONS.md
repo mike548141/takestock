@@ -88,3 +88,5 @@ from the detail files in one pass when this index was added.
   [detail](sessions/2026-11-14-0137-roadmap-board-split.md)
 - 2026-11-20 — The mail path map (`takestock mailpath`):
   [detail](sessions/2026-11-20-0530-mailpath.md)
+- 2026-11-20 — Mail path map: platform sources beyond headers:
+  [detail](sessions/2026-11-20-0755-mailpath-platform-sources.md)

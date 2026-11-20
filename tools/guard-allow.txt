@@ -128,3 +128,14 @@ easydmarc.eu
 dmarcanalyzer.com
 uriports.com
 powerdmarc.com
+# Red Sift OnDMARC: the vendor's published API base hosts (one per region) and
+# its public documentation site, which publishes the API specification.
+rpc.redsift.cloud
+rpc.eu.redsift.cloud
+rpc.us.redsift.cloud
+docs.redsift.com
+# Google's public API hosts (Admin SDK Reports, Postmaster Tools, the OAuth
+# token endpoint, and OAuth scope names) and its Workspace product
+# announcement blog, called or cited by the mail-path Google Workspace source.
+googleapis.com
+workspaceupdates.googleblog.com

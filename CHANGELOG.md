@@ -9,6 +9,39 @@ command line or a file format, and its entry says how.
 
 ### Added
 
+- **`takestock mailpath` reads mail platforms' own records**: a shared
+  per-message schema (`takestock.mailpath.platformlog`) that Google
+  Workspace's Gmail log events, Microsoft 365's `EmailEvents` and Cloudflare
+  Email Routing and Sending (new, `--cloudflare-email`) are normalised into,
+  grouped on the page into flows with counts, bytes, transport,
+  authentication and outcome; new options read a Microsoft 365 export, a
+  Google Workspace pull and Red Sift OnDMARC (saved or live), and the page
+  gains sections for each (`docs/MAILPATH.md`, "Platform logs").
+
+- **Microsoft 365 mail flow export and reader** (`takestock.mailpath.m365`;
+  `docs/EXCHANGE-ONLINE-EXPORT.md`, `docs/MAILPATH.md`). A read-only Cloud
+  Shell script, `data/exports/export-m365-mail-flow.ps1`, exports accepted
+  domains, connectors, DKIM signing, mail flow rules (reduced to the names of
+  what they set), remote domains, ARC sealers, anti-spam authentication
+  actions, the mail flow status report and 90 days of message trace (paged
+  within Microsoft's documented limits, never the subject, `-DomainsOnly` to
+  drop people's addresses), and optionally 30 days of Defender for Office
+  365 `EmailEvents` through Microsoft Graph. `read_bundle` normalises the
+  settings and says what was missing or refused; `trace_flows` reads the
+  trace through the trace reader; `email_events` turns `EmailEvents` rows into
+  one event per message in a shared schema, keeping domains only.
+
+- **`takestock.mailpath.google_workspace`: Google Workspace mail data beyond
+  headers** (`docs/MAILPATH.md`, "Source: Google Workspace"). Read-only, on an
+  installed-app OAuth grant with PKCE whose refresh token is kept in the macOS
+  keychain. From the Reports API's Gmail log events it writes one row per
+  message (direction, sender and recipient domains, size, TLS version, SPF,
+  DKIM and DMARC results, remote server, delivery outcome; never an address
+  or subject) in the shape the mail-path log sources share; from Gmail usage
+  reports, daily totals and user counts; from Postmaster Tools API v2, each
+  verified domain's daily spam, authentication, TLS and delivery-error rates
+  and compliance status. A licence or permission refusal is reported as one.
+
 - **`takestock mailpath`: a map of how mail moves for an organisation's
   domains** (`docs/MAILPATH.md`). From message headers it draws each route
   system by system, with the TLS each receiving server recorded on every
@@ -24,6 +57,13 @@ command line or a file format, and its entry says how.
   services; an organisation names its own relays in an overlay. Writes
   `mailpath.json` and `mailpath.html`. A mailer string is reduced to its product name, so a
   bulk sender's per-message token does not split one sender into many.
+
+- **`takestock.mailpath.ondmarc`: a Red Sift OnDMARC API connector**
+  (`docs/MAILPATH.md`, "Source: Red Sift OnDMARC"). It fetches a domain's
+  sources and per-record DMARC rows (or per-address totals where the account
+  lacks DMARC Analyst), maps them to DMARC records, keeps OnDMARC's own source
+  names and classifications, records every refused call, and saves an archive
+  (`python -m takestock.mailpath.ondmarc --out FILE.json`).
 
 - **Readers library: CrowdStrike Falcon drive encryption and coverage**, each
   run when a profile names it in `plugins:` (`docs/COLLECTORS.md`, "The

@@ -342,6 +342,117 @@ def _trace_table(rows: list[dict]) -> str:
             "<th>Transport recorded</th></tr></thead><tbody>" + body + "</tbody></table></div>")
 
 
+def _counts(c: dict, top: int = 4) -> str:
+    items = sorted(c.items(), key=lambda kv: -kv[1])
+    return esc(", ".join(f"{k} {v}" for k, v in items[:top]) or "–")
+
+
+def _platform_table(rows: list[dict]) -> str:
+    if not rows:
+        return ""
+    body = "".join(
+        f"<tr><td>{esc(r['source'])}</td><td>{esc(r['direction'])}</td><td>{esc(r['domain'] or '–')}</td>"
+        f"<td>{esc(r['far_system'] or '–')}</td><td>{esc(r['connector'] or '–')}</td>"
+        f"<td class='num'>{r['messages']}</td>"
+        f"<td class='num'>{_mb(r['bytes']) if r.get('messages_with_size') else '–'}</td>"
+        f"<td>{_counts(r['tls'])}</td><td>{_counts(r['dmarc'])}</td><td>{_counts(r['delivery'])}</td>"
+        f"<td class='num'>{r['counterparty_domains']}</td></tr>" for r in rows)
+    return ("<h2 id='platforms'>What the mail platforms recorded</h2>"
+            "<p class='mp-legend'>Every message the platforms' own logs hold, grouped by direction, "
+            "the far system and the connector. This is the census beside the routes above.</p>"
+            "<div class='table-wrap'><table><thead><tr><th>Source</th><th>Direction</th>"
+            "<th>Our domain</th><th>Far system</th><th>Connector</th><th class='num'>Messages</th>"
+            "<th class='num'>Size</th><th>Transport</th><th>DMARC</th><th>Outcome</th>"
+            "<th class='num'>Other domains</th></tr></thead><tbody>" + body + "</tbody></table></div>")
+
+
+def _m365_settings(bundles: list[dict]) -> str:
+    out = []
+    for b in bundles:
+        conns = b.get("connectors") or []
+        if conns:
+            body = "".join(
+                f"<tr><td>{esc(c.get('name', ''))}</td><td>{esc(c.get('direction', ''))}</td>"
+                f"<td>{esc(c.get('enabled', ''))}</td>"
+                f"<td>{esc(c.get('tls', c.get('tls_requirement', '')))}</td>"
+                f"<td>{esc(c.get('certificate_validation', ''))}</td>"
+                f"<td>{esc(', '.join(c.get('smart_hosts') or []))}</td></tr>" for c in conns)
+            out.append("<h3>Connectors</h3><div class='table-wrap'><table><thead><tr><th>Connector</th>"
+                       "<th>Direction</th><th>On</th><th>TLS</th><th>Certificate check</th>"
+                       f"<th>Smart hosts</th></tr></thead><tbody>{body}</tbody></table></div>")
+        dkim = b.get("dkim") or []
+        if dkim:
+            body = "".join(
+                f"<tr><td>{esc(d.get('domain', ''))}</td><td>{esc(d.get('enabled', ''))}</td>"
+                f"<td>{esc(d.get('key_size', ''))}</td>"
+                f"<td>{esc(', '.join(map(str, d.get('selectors') or [])))}</td>"
+                "</tr>" for d in dkim)
+            out.append("<h3>DKIM signing</h3><div class='table-wrap'><table><thead><tr><th>Domain</th>"
+                       "<th>Signing on</th><th>Key size</th><th>Selectors</th></tr></thead>"
+                       f"<tbody>{body}</tbody></table></div>")
+        if b.get("transport_rules"):
+            out.append(f"<p>{len(b['transport_rules'])} mail-flow rules exported.</p>")
+        if b.get("notes"):
+            out.append("<ul>" + "".join(f"<li>{esc(n)}</li>" for n in b["notes"]) + "</ul>")
+    return ("<h2 id='m365'>Microsoft 365 mail-flow settings</h2>" + "".join(out)) if out else ""
+
+
+def _fmt(v: object) -> str:
+    if isinstance(v, float):
+        return f"{v:.1%}" if 0 <= v <= 1 else f"{v:,.0f}"
+    if isinstance(v, dict):
+        return ", ".join(f"{k} {_fmt(x)}" for k, x in v.items())
+    return "–" if v in (None, "") else str(v)
+
+
+def _google(google: dict) -> str:
+    out = []
+    pm = google.get("postmaster") or {}
+    for domain, entry in (pm.get("domains") or {}).items():
+        if entry.get("error"):
+            out.append(f"<p><strong>{esc(domain)}</strong>: {esc(entry['error'])}</p>")
+            continue
+        days = entry.get("days") or {}
+        metrics = sorted({m for d in days.values() for m in d})
+        recent = sorted(days)[-14:]
+        head = "".join(f"<th>{esc(m.replace('_', ' ').lower())}</th>" for m in metrics)
+        body = "".join(f"<tr><th scope='row'>{esc(day)}</th>"
+                       + "".join(f"<td class='num'>{esc(_fmt(days[day].get(m)))}</td>" for m in metrics)
+                       + "</tr>" for day in recent)
+        out.append(f"<h3>{esc(domain)} as Gmail sees it (Postmaster Tools)</h3>"
+                   f"<div class='table-wrap'><table><thead><tr><th>Day</th>{head}</tr></thead>"
+                   f"<tbody>{body}</tbody></table></div>")
+        if entry.get("compliance"):
+            out.append("<p>Sender requirements: " + esc(_fmt(entry["compliance"])) + "</p>")
+    usage = google.get("usage") or {}
+    per_day = usage.get("users") or {}
+    if per_day:
+        cols = ["sent", "received", "spam_received", "senders", "receivers", "users"]
+        body = "".join(f"<tr><th scope='row'>{esc(day)}</th>"
+                       + "".join(f"<td class='num'>{esc(_fmt(v.get(c)))}</td>" for c in cols) + "</tr>"
+                       for day, v in sorted(per_day.items()))
+        head = "".join(f"<th class='num'>{esc(c.replace('_', ' '))}</th>" for c in cols)
+        out.append("<h3>Daily volumes across all mailboxes (Workspace usage reports)</h3>"
+                   f"<div class='table-wrap'><table><thead><tr><th>Day</th>{head}</tr></thead>"
+                   f"<tbody>{body}</tbody></table></div>")
+    notes = [*(pm.get("notes") or []), *(usage.get("notes") or [])][:12]
+    if notes:
+        out.append("<ul>" + "".join(f"<li>{esc(n)}</li>" for n in notes) + "</ul>")
+    return ("<h2 id='google'>Google Workspace</h2>" + "".join(out)) if out else ""
+
+
+def _ondmarc(rows: list[dict]) -> str:
+    if not rows:
+        return ""
+    keys = [k for k in rows[0] if k not in ("raw",)][:8]
+    head = "".join(f"<th>{esc(k.replace('_', ' '))}</th>" for k in keys)
+    body = "".join("<tr>" + "".join(f"<td>{esc(r.get(k, ''))}</td>" for k in keys) + "</tr>"
+                   for r in rows)
+    return ("<h2 id='ondmarc'>Sending sources as Red Sift OnDMARC classifies them</h2>"
+            f"<div class='table-wrap'><table><thead><tr>{head}</tr></thead><tbody>{body}"
+            "</tbody></table></div>")
+
+
 def _headline(result: dict, merged: dict[str, list[dict]]) -> str:
     stats = []
     for d in ("outbound", "internal", "inbound", "sent copy"):
@@ -449,6 +560,10 @@ def render(result: dict) -> str:
     body.append("<h2 id='senders'>Who sends as each domain (DMARC reports)</h2>"
                 + _dmarc_table(result.get("dmarc_sources", [])))
     body.append(_trace_table(result.get("trace", [])))
+    body.append(_platform_table(result.get("platform_flows", [])))
+    body.append(_m365_settings(result.get("m365_settings", [])))
+    body.append(_google(result.get("google", {})))
+    body.append(_ondmarc(result.get("ondmarc_sources", [])))
     body.append(_method(result))
     title = f"Mail paths · {result.get('organisation', '')}"
     lead = (f"How mail moves for {len(result.get('domains', []))} domains: the routes measured, "
