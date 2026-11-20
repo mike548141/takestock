@@ -90,3 +90,5 @@ from the detail files in one pass when this index was added.
   [detail](sessions/2026-11-20-0530-mailpath.md)
 - 2026-11-20 — Mail path map: platform sources beyond headers:
   [detail](sessions/2026-11-20-0755-mailpath-platform-sources.md)
+- 2026-11-20 — Board index in the summary + open-only form:
+  [detail](sessions/2026-11-20-1133-board-index-summary-form.md)

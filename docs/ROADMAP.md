@@ -6,6 +6,20 @@ Board doctrine and the checkbox legend:
 [roadmap/README.md](roadmap/README.md). One item per file; edit the item,
 then `python3 "${ATELIER_TOOLS:-$(git config hooks.atelierTools)}"/board.py rebuild`.
 
+## Summary
+
+Only unfinished items are listed below; a finished item stays in its own file.
+A ✅ section has nothing owed and no list. 🎯 and ⏳ count items on the state
+line, so they overlap Open and Claimed.
+
+| Section | Open | Claimed | 🎯 Waiting | ⏳ Review |
+| :-- | --: | --: | --: | --: |
+| [Now](roadmap/010-now/README.md) | 1 | 0 | 0 | 0 |
+| [Next](roadmap/020-next/README.md) | 3 | 0 | 0 | 0 |
+| [Later](roadmap/030-later/README.md) | 1 | 0 | 0 | 0 |
+| [Queued reviews](roadmap/040-queued-reviews/README.md) | 1 | 0 | 1 | 0 |
+| **All sections** | 6 | 0 | 1 | 0 |
+
 ## Now
 
 *[Narrative](roadmap/010-now/README.md)*

@@ -509,7 +509,9 @@ command line or a file format, and its entry says how.
 
 - **The roadmap is one file per item.** Items live under `docs/roadmap/`,
   each in a numbered section, with its state line first;
-  `docs/ROADMAP.md` is now an index generated from them.
+  `docs/ROADMAP.md` is now an index generated from them. The index opens
+  with a summary table of each section's counts and lists only unfinished
+  items; a finished item stays in its own file.
 - **Configuration register, the workbook's Read me sheet.** Its third line
   now says when the data was read, in a sentence, instead of the
   observation's time stamp, its recording date and the schema version: for a
