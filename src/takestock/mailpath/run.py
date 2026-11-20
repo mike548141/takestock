@@ -217,6 +217,7 @@ def run(inp: Inputs, now: datetime | None = None,
         raise ValueError("platform rows outside the schema: " + "; ".join(problems[:5]))
     platform_flows = platformlog.flows(rows, owned, cat)
     traces = [t for p in trace_paths for t in trace.read(p, owned)] + bundle_traces
+    trace.name_origins(traces, cat)
 
     return {
         "schema": SCHEMA,

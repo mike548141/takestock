@@ -40,7 +40,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .paths import INBOUND, INTERNAL, OUTBOUND, owning
-from .systems import is_internal_address
+from .systems import Catalogue, is_internal_address
 
 _ALIASES = {
     "date": ("received", "origin_timestamp_utc", "date_utc", "date"),
@@ -132,6 +132,30 @@ def _origin(from_ip: str, direction: str, export_direction: str = "", connector:
     if is_internal_address(from_ip):
         return f"internal host {from_ip}"
     return f"external host {from_ip}"
+
+
+#: The address Exchange Online records for a message the platform made itself
+#: (a notification, a report, a journal or a forwarded copy).
+PLATFORM_ADDRESS = "255.255.255.255"
+
+
+def name_origins(flows: list[TraceFlow], catalogue: Catalogue) -> None:
+    """Name each sending address the catalogue (or an overlay) recognises, in place.
+
+    ``external host 192.0.2.7`` becomes ``Example relay (192.0.2.7)``; the
+    platform's own placeholder address becomes ``the mail platform itself``.
+    An address nobody recognises keeps its bare form.
+    """
+    for f in flows:
+        kind, _, ip = f.origin.rpartition(" ")
+        if kind not in ("external host", "internal host"):
+            continue
+        if ip == PLATFORM_ADDRESS:
+            f.origin = "the mail platform itself"
+            continue
+        name = catalogue.by_address(ip)
+        if name:
+            f.origin = f"{name} ({ip})"
 
 
 def read(path: Path, owned: set[str]) -> list[TraceFlow]:

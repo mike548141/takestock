@@ -9,6 +9,11 @@ command line or a file format, and its entry says how.
 
 ### Added
 
+- **`takestock mailpath` names message-trace origins**: a sending address the
+  system catalogue or an overlay recognises is shown by name beside the
+  address, and Exchange Online's placeholder for messages the platform made
+  itself (`255.255.255.255`) reads as the platform.
+
 - **`takestock mailpath` reads mail platforms' own records**: a shared
   per-message schema (`takestock.mailpath.platformlog`) that Google
   Workspace's Gmail log events, Microsoft 365's `EmailEvents` and Cloudflare

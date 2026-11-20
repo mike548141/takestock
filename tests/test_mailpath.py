@@ -331,3 +331,13 @@ def test_cli_wires_the_command(tmp_path, monkeypatch):
     assert code == 0 and (tmp_path / "o" / "mailpath.html").exists()
     assert cli.main(["mailpath", "--organisation", "E", "--domain", "example.test",
                      "--cloudflare-zone", "nozone", "--out", str(tmp_path / "o")]) != 0
+
+
+def test_trace_origins_are_named_from_the_catalogue(cat):
+    flows = [trace.TraceFlow("outbound", "example.test", "external host 192.0.2.5", ""),
+             trace.TraceFlow("internal", "example.test", "internal host 255.255.255.255", ""),
+             trace.TraceFlow("outbound", "example.test", "external host 203.0.113.9", ""),
+             trace.TraceFlow("outbound", "example.test", "a mailbox on the platform", "")]
+    trace.name_origins(flows, cat)
+    assert [f.origin for f in flows] == ["Example relay (192.0.2.5)", "the mail platform itself",
+                                         "external host 203.0.113.9", "a mailbox on the platform"]
