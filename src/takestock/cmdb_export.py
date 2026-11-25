@@ -197,18 +197,16 @@ def workbook_style(theme: Any = None) -> WorkbookStyle:
 def as_at_line(reg: Mapping[str, Any]) -> str:
     """The read-me's sentence saying when the data was read.
 
-    The date the observation's rows were read (``read_on``, else the
-    recording date), and, for a derived observation, how many of its sources
-    were read again and when.
+    One date when every row was read on the same day: the observation's
+    ``read_on`` (else its recording date). For a derived observation whose
+    sources were read again on later days, the range from the earliest read
+    to the latest, and nothing about which sources were read when.
     """
-    line = f"The data was read on {reg.get('read_on') or reg['recorded_at']}"
-    dates = sorted(set((reg.get("read_again") or {}).values()))
-    if not dates:
-        return line + "."
-    n = len(reg["read_again"])
-    sources = "1 of its sources was" if n == 1 else f"{n:,} of its sources were"
-    when = f"on {dates[0]}" if len(dates) == 1 else f"between {dates[0]} and {dates[-1]}"
-    return f"{line}; {sources} read again {when}."
+    first = str(reg.get("read_on") or reg["recorded_at"])
+    dates = sorted({first, *(str(d) for d in (reg.get("read_again") or {}).values())})
+    if len(dates) == 1:
+        return f"The data was read on {first}."
+    return f"The data was read between {dates[0]} and {dates[-1]}."
 
 
 def write_xlsx(register: Mapping[str, Any], path: Path, *, theme: Any = None) -> Path:

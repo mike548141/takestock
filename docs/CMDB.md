@@ -83,10 +83,12 @@ observations/latest/cmdb/keys.jsonl
   one that is neither derived nor named by a time stamp, the recording
   date), and
   `register.read_again` maps each plug-in a derived observation read again
-  to the date it last did. The workbook's Read me sheet says the same in a
-  sentence, such as *"The data was read on 2030-01-10; 1 of its sources was
-  read again on 2030-01-25."* Counts on that sheet carry thousands
-  separators (*27,182,818*).
+  to the date it last did. The workbook's Read me sheet gives only the span
+  in a sentence: *"The data was read on 2030-01-10."* when every row was read
+  that day, and *"The data was read between 2030-01-10 and 2030-01-25."* when
+  some were read again later; which sources were read again, and how many,
+  stay in the JSON. Counts on that sheet carry thousands separators
+  (*27,182,818*).
 - If `summary.json` gives a `total_assets` count that differs from the rows
   in `assets.json`, the build stops: the observation is incomplete.
 - The schema is read from `data/cmdb-schema.yaml` in the workspace if one is

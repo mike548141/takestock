@@ -243,19 +243,21 @@ def test_the_read_me_says_when_a_derived_observation_was_read(tmp_path):
     assert register["register"]["read_on"] == HELD_DAY
     assert register["register"]["read_again"] == {PLUGIN: REREAD_DAY}
     readme = _readme(register, tmp_path)
-    assert (f"The data was read on {HELD_DAY}; 1 of its sources was read again "
-            f"on {REREAD_DAY}.") in readme
+    assert f"The data was read between {HELD_DAY} and {REREAD_DAY}." in readme
     assert not any(REREAD in line for line in readme)
+    assert [line for line in readme if line.startswith("The data was read")] == [
+        f"The data was read between {HELD_DAY} and {REREAD_DAY}."]
 
 
-def test_the_read_me_gives_the_range_when_sources_were_read_again_on_several_days(tmp_path):
+def test_the_read_me_gives_one_range_when_sources_were_read_again_on_several_days(tmp_path):
     summary = {"from_observation": "2030-01-18T0000Z", "plugins": [PLUGIN],
                "from_rerun": {"from_observation": HELD, "plugins": [PLUGIN, "example_other"]}}
     register = cmdb.build_register(_write(tmp_path, _rows(), summary))
     assert register["register"]["read_again"] == {PLUGIN: REREAD_DAY,
                                                   "example_other": "2030-01-18"}
-    assert (f"The data was read on {HELD_DAY}; 2 of its sources were read again "
-            f"between 2030-01-18 and {REREAD_DAY}.") in _readme(register, tmp_path)
+    readme = _readme(register, tmp_path)
+    assert f"The data was read between {HELD_DAY} and {REREAD_DAY}." in readme
+    assert not any("2030-01-18" in line for line in readme)
 
 
 def test_the_read_me_dates_an_ordinary_observation_by_its_stamp(tmp_path):
@@ -264,6 +266,20 @@ def test_the_read_me_dates_an_ordinary_observation_by_its_stamp(tmp_path):
     readme = _readme(register, tmp_path)
     assert f"The data was read on {REREAD_DAY}." in readme
     assert not any(line.startswith("Observation ") for line in readme)
+
+
+def test_the_read_me_gives_one_date_when_the_sources_were_read_again_that_day():
+    from takestock.cmdb_export import as_at_line
+    reg = {"read_on": HELD_DAY, "recorded_at": "2030-02-01",
+           "read_again": {PLUGIN: HELD_DAY, "example_other": HELD_DAY}}
+    assert as_at_line(reg) == f"The data was read on {HELD_DAY}."
+
+
+def test_the_read_me_falls_back_to_the_recording_date():
+    from takestock.cmdb_export import as_at_line
+    assert as_at_line({"recorded_at": "2030-02-01"}) == "The data was read on 2030-02-01."
+    assert as_at_line({"recorded_at": "2030-02-01", "read_again": {PLUGIN: "2030-02-03"}}) == (
+        "The data was read between 2030-02-01 and 2030-02-03.")
 
 
 def test_a_recording_date_given_for_the_build_leaves_the_read_date_alone(tmp_path):

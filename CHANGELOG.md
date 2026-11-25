@@ -507,6 +507,11 @@ command line or a file format, and its entry says how.
 
 ### Changed
 
+- **The CMDB workbook's Read me gives one date range**: a derived
+  observation's read date now reads *"The data was read between 2030-01-10
+  and 2030-01-25."* rather than counting the sources read again; the JSON's
+  `register.read_on` and `register.read_again` are unchanged.
+
 - **The roadmap is one file per item.** Items live under `docs/roadmap/`,
   each in a numbered section, with its state line first;
   `docs/ROADMAP.md` is now an index generated from them. The index opens
