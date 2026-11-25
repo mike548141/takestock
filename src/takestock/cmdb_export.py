@@ -197,28 +197,26 @@ def workbook_style(theme: Any = None) -> WorkbookStyle:
 def as_at_line(reg: Mapping[str, Any]) -> str:
     """The read-me's sentence saying when the data was collected.
 
-    One date when every row is dated by the same day: the observation's
-    ``read_on`` (else its recording date). For a derived observation, each
-    plug-in read again is dated as the register dates its rows: by when its
-    source was collected (``read_again_collected``), or the full observation
-    when that is older, or the day it was read again when its rows give no
-    collection date. More than one date gives the range from the earliest to
-    the latest, and nothing about which sources were read when. A register
-    written before ``read_again_collected`` existed keeps the sentence that
-    says when the data was read.
+    The span of the dates the register's rows are dated by
+    (``collected_from`` to ``collected_to``): when each row's data was
+    collected, or for a row that gives no collection date the observation
+    that read it. One date when they are the same day; otherwise the range,
+    and nothing about which sources were collected when. A register that
+    does not carry the span (written before it existed, or from an
+    observation with no rows) says when the data was read instead: the
+    observation's ``read_on`` (else its recording date), and for a derived
+    observation the days its plug-ins were read again.
     """
+    start = str(reg.get("collected_from") or "")
+    end = str(reg.get("collected_to") or "")
+    if start and end:
+        return (f"The data was collected on {start}." if start == end
+                else f"The data was collected between {start} and {end}.")
     first = str(reg.get("read_on") or reg["recorded_at"])
     again = reg.get("read_again") or {}
-    if "read_again_collected" not in reg and again:
-        dates = sorted({first, *(str(d) for d in again.values())})
-        return (f"The data was read on {first}." if len(dates) == 1
-                else f"The data was read between {dates[0]} and {dates[-1]}.")
-    collected = reg.get("read_again_collected") or {}
-    dates = sorted({first, *(max(first, str(collected.get(name) or day))
-                             for name, day in again.items())})
-    if len(dates) == 1:
-        return f"The data was collected on {first}."
-    return f"The data was collected between {dates[0]} and {dates[-1]}."
+    dates = sorted({first, *(str(d) for d in again.values())})
+    return (f"The data was read on {first}." if len(dates) == 1
+            else f"The data was read between {dates[0]} and {dates[-1]}.")
 
 
 def write_xlsx(register: Mapping[str, Any], path: Path, *, theme: Any = None) -> Path:

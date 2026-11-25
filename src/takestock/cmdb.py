@@ -835,6 +835,10 @@ class Cmdb:
     #: Each plug-in read again whose rows give a collection date, with the
     #: newest (:class:`ReadDates`).
     read_again_collected: dict[str, str] = field(default_factory=dict)
+    #: The earliest and latest dates the observation's rows are dated by: when
+    #: each row's data was collected, or for a row that gives no collection
+    #: date the observation that read it. Empty when it holds no rows.
+    collected: tuple[str, str] = ("", "")
 
     def resolved(self) -> dict[str, dict[str, Resolution]]:
         """The published value of every asserted attribute, per item."""
@@ -1276,6 +1280,13 @@ def _default_recorded_at(observation: Path) -> str:
 DERIVED_KEY = "rerun"
 
 
+def _collected_on(row: Mapping[str, Any]) -> str:
+    """The date ``row`` says its data was collected (its ``collected_at``,
+    when that is an ISO date); empty when it gives none."""
+    collected = str(row.get("collected_at") or "")
+    return collected if _ISO_DATE.match(collected) else ""
+
+
 @dataclass(frozen=True)
 class ReadDates:
     """When the rows of a derived observation were read, and what dates them.
@@ -1284,7 +1295,9 @@ class ReadDates:
     in; ``reread`` maps each plug-in read again to the date of the derived
     observation that last read it; ``collected`` maps each plug-in read
     again to the newest date its rows say its source was collected (their
-    ``collected_at``), for a plug-in whose rows give one.
+    ``collected_at``), for a plug-in whose rows give one. ``collected``
+    describes a source; it dates no row, since each row is dated by its own
+    collection date (:meth:`of`).
     """
 
     held: str
@@ -1292,22 +1305,41 @@ class ReadDates:
     collected: dict[str, str] = field(default_factory=dict)
 
     def dated(self, plugin: str) -> str:
-        """The date a plug-in's rows are dated by.
+        """The date a plug-in's rows are dated by when they give no collection date.
 
-        Reading an export again does not make its data newer: a plug-in read
-        again is dated by when its source was collected, and by the full
-        observation when that collection is older than it (the full
-        observation held that data already, and its carried rows are dated
-        the same way). The day it was read again only when its rows give no
-        collection date. A plug-in not read again is the full observation's.
+        The observation that read them: the latest derived observation that
+        read the plug-in again, or the full observation for a plug-in not
+        read again. A row that gives its own collection date is dated by it
+        (:meth:`of`).
         """
-        if plugin not in self.reread:
-            return self.held
-        return max(self.held, self.collected.get(plugin) or self.reread[plugin])
+        return self.reread.get(plugin, self.held)
 
     def of(self, row: Mapping[str, Any]) -> str:
-        """The date ``row`` is dated by (:meth:`dated`)."""
-        return self.dated(str((row.get("extra") or {}).get("plugin") or ""))
+        """The date ``row`` is dated by: when its data was collected.
+
+        Its own ``collected_at`` when that is an ISO date, whether the row
+        was carried or read again, so reading an export again never makes
+        its data newer or older than it is; otherwise :meth:`dated`, the
+        observation that read it.
+        """
+        return _collected_on(row) or self.dated(_plugin_of(row))
+
+    def recorded(self, row: Mapping[str, Any]) -> str:
+        """The date the register learned ``row``'s facts.
+
+        A carried row's is the full observation's. A row a plug-in read again
+        wrote is no earlier than the full observation (which may have held
+        that data already) and no later than the day it was read again;
+        between them, the day its data was collected (:meth:`of`).
+        """
+        plugin = _plugin_of(row)
+        if plugin not in self.reread:
+            return self.held
+        return min(max(self.held, self.of(row)), self.reread[plugin])
+
+
+def _plugin_of(row: Mapping[str, Any]) -> str:
+    return str((row.get("extra") or {}).get("plugin") or "")
 
 
 def read_dates(summary: Mapping[str, Any], stamp: str,
@@ -1371,10 +1403,11 @@ class _Builder:
             if isinstance(total, int) and total != len(self.assets):
                 raise ValueError(f"summary.json counts {total} assets and assets.json holds "
                                  f"{len(self.assets)}: the observation is incomplete")
-        # A derived observation holds rows read on more than one date: each
-        # row's facts are dated by the collection its data comes from
-        # (`_read_on`, `ReadDates.dated`), never by the day an export was read
-        # again, and what the build says of the whole by the full
+        # Each row's facts are dated by when its data was collected (its own
+        # `collected_at`), and a row that gives none by the observation that
+        # read it (`_seen_at`, `ReadDates.of`); never by the day an export was
+        # read again. A derived observation holds rows read on more than one
+        # date, and what the build says of the whole takes the full
         # observation's date.
         block = summary.get("observation")
         stamp = str((block if isinstance(block, dict) else {}).get("stamp") or self.dir.name)
@@ -1424,19 +1457,23 @@ class _Builder:
 
     # Keys
 
-    def _read_on(self, asset: Mapping[str, Any]) -> str:
-        """The date ``asset`` is dated by: the recording date, unless the
-        observation is derived (:meth:`ReadDates.dated`)."""
-        return self.read.of(asset) if self.read else self.recorded_at
-
     def _recorded_on(self, asset: Mapping[str, Any]) -> str:
-        """The date a row's facts are recorded: the date it was read, unless a
-        recording date was given for the whole build."""
-        return self.recorded_at if self._explicit else self._read_on(asset)
+        """The date a row's facts are recorded: the recording date, or for a
+        derived observation the date the register learned the row
+        (:meth:`ReadDates.recorded`), unless a recording date was given for
+        the whole build."""
+        if self._explicit or not self.read:
+            return self.recorded_at
+        return self.read.recorded(asset)
 
     def _seen_at(self, asset: Mapping[str, Any]) -> str:
-        collected = str(asset.get("collected_at") or "")
-        return collected if _ISO_DATE.match(collected) else self._read_on(asset)
+        """The date ``asset`` is dated by: when its data was collected (its
+        own ``collected_at``), otherwise the observation that read it
+        (:meth:`ReadDates.of`), the same in a full observation and a derived
+        one."""
+        if self.read:
+            return self.read.of(asset)
+        return _collected_on(asset) or self.read_on or self.recorded_at
 
     def _named_key(self, kind: str, identifier: str, asset: Mapping[str, Any]) -> str:
         return self.ledger.key_for(
@@ -1662,7 +1699,7 @@ class _Builder:
                 continue
             for attribute, value in self._attributes(asset, extra).items():
                 self._say(key, attribute, value, strength, seen, actor)
-            self._say_environment(key, extra, self._read_on(asset))
+            self._say_environment(key, extra, seen)
             if asset.get("data_state") == "third-party" and str(extra.get("vendor") or "").strip():
                 self._say(key, "vendor_name", str(extra["vendor"]).strip(),
                           DECLARED if extra.get("declared") is True else INFERRED, seen, actor)
@@ -1750,9 +1787,9 @@ class _Builder:
             self._note_read((release, machine), asset)
 
     def _note_read(self, what: Any, asset: Mapping[str, Any]) -> None:
-        """Keep the latest (read, recorded) dates of the rows behind an edge the
-        fold draws, so the edge is dated by them and not by the build."""
-        dates = (self._read_on(asset), self._recording)
+        """Keep the latest (collected, recorded) dates of the rows behind an
+        edge the fold draws, so the edge is dated by them and not by the build."""
+        dates = (self._seen_at(asset), self._recording)
         self._edge_dates[what] = max(self._edge_dates.get(what, dates), dates)
 
     def _release_facts(self, asset: Mapping[str, Any], entry: Mapping[str, Any],
@@ -2008,7 +2045,13 @@ class _Builder:
                     observation=self.dir.name, recorded_at=self.recorded_at,
                     installed_on_from=self.installed_on_from, read_on=self.read_on,
                     read_again=dict(self.read.reread) if self.read else {},
-                    read_again_collected=dict(self.read.collected) if self.read else {})
+                    read_again_collected=dict(self.read.collected) if self.read else {},
+                    collected=self._collected_span())
+
+    def _collected_span(self) -> tuple[str, str]:
+        """The earliest and latest dates the rows are dated by (:meth:`_seen_at`)."""
+        dates = sorted({self._seen_at(asset) for asset in self.assets})
+        return (dates[0], dates[-1]) if dates else ("", "")
 
 
 def build(observation: Path | str, *, ledger: KeyLedger | None = None,
@@ -2019,11 +2062,12 @@ def build(observation: Path | str, *, ledger: KeyLedger | None = None,
 
     ``recorded_at`` defaults to the observation's own date when its directory
     is named by a time stamp, so rebuilding the same observation gives the
-    same register. A derived observation (``takestock rerun``) holds rows read
-    on different dates, so each row's facts, keys and edges are dated by the
-    observation that read the row (:func:`read_dates`), and the register's
-    own date is the full observation's; a ``recorded_at`` given here is the
-    recording date of every fact. ``ip_plan`` names an IP address plan's JSON (as
+    same register. Each row's facts, keys and edges are dated by when its
+    data was collected (its ``collected_at``), and a row that gives none by
+    the observation that read it. A derived observation (``takestock
+    rerun``) holds rows read on different dates (:func:`read_dates`), and the
+    register's own date is the full observation's; a ``recorded_at`` given
+    here is the recording date of every fact. ``ip_plan`` names an IP address plan's JSON (as
     ``takestock ipam`` writes it); when given, every machine it names at an
     address is an item too (:func:`plan_machines`). It is never read unless
     named. ``schema_overlay`` names a schema overlay whose wording is merged
@@ -2233,6 +2277,8 @@ def register_payload(register: Cmdb, *, title: str = "", organisation: str = "",
             "read_on": register.read_on or register.recorded_at,
             "read_again": dict(sorted(register.read_again.items())),
             "read_again_collected": dict(sorted(register.read_again_collected.items())),
+            "collected_from": register.collected[0],
+            "collected_to": register.collected[1],
             "item_noun": noun,
             "schema_version": schema.version,
             "schema_maturity": schema.maturity,

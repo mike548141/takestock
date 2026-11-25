@@ -525,15 +525,26 @@ command line or a file format, and its entry says how.
   late step, coverage check or annotation is still refused, since every rerun
   runs them.
 
-- **A derived observation's rows are dated by when their data was
-  collected**: a plug-in read again by `takestock rerun` no longer dates its
-  facts and relationships by the day it was read again, but by the newest
-  `collected_at` its rows give (or the full observation's date when that is
-  older; the day it was read again only when its rows give none). The
-  register's JSON gains `register.read_again_collected`, `cmdb.read_dates`
-  takes the observation's rows, and the workbook's Read me says when the
-  data was collected: *"The data was collected between 2030-01-10 and
-  2030-01-20."*
+- **The register dates each row by when its data was collected**: every
+  fact, key and relationship drawn from a row is dated by the row's own
+  `collected_at`, and a row that gives none by the observation that read it
+  (for a derived observation, the latest that read its plug-in again, else
+  the full observation). This is the same in an ordinary observation and a
+  derived one: a plug-in read again by `takestock rerun` is no longer dated
+  by the day it was read again, nor moved forward to the full
+  observation's date when its export was collected earlier, and an ordinary
+  observation's `installed-on` and `release-of` edges and environment
+  facts are dated by their rows' collection rather than the observation.
+  A row read again is recorded on the day its data was collected, kept
+  between the full observation's date and the day it was read again
+  (`cmdb.ReadDates.recorded`); carried rows are recorded on the full
+  observation's date. The register's JSON gains `register.collected_from`
+  and `register.collected_to`, the span of the rows' dates, and
+  `register.read_again_collected` (the newest collection of each plug-in
+  read again, which `cmdb.read_dates` names given the observation's rows).
+  The workbook's Read me states that span: *"The data was collected between
+  2030-01-04 and 2030-01-10."* A register without the span says when its
+  data was read.
 
 - **The CMDB workbook's Read me gives one date range**: a derived
   observation's read date now reads *"The data was read between 2030-01-10

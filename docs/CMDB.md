@@ -65,35 +65,42 @@ observations/latest/cmdb/keys.jsonl
 - The recording date is the observation's own date when its directory is
   named by a time stamp, otherwise today. Rebuilding the same observation
   therefore gives the same register.
+- Each fact, key and relationship drawn from a row is dated by when the
+  row's data was collected: its own `collected_at`, when that is an ISO
+  date. A row that gives none is dated by the observation that read it.
+  This is the same in an ordinary observation and a derived one, so
+  reading an export again never makes its data newer, nor older than it is.
 - A derived observation (`takestock rerun`) holds rows read on different
   dates: the rows it carries were read when the full observation it comes
-  from was taken, and the rows of the plug-ins it read again were read on its
-  own date. Reading an export again does not make its data newer, so each
-  fact, key and relationship drawn from a row is dated by the collection the
-  row's data comes from: a row a plug-in read again wrote (it names the
-  plug-in in `extra.plugin`) by the newest `collected_at` that plug-in's
-  rows give, or by the full observation's date when that is older (the full
-  observation held that data already), or, when its rows give no
-  collection date, by the latest observation that read the plug-in again;
-  every other row by the full observation, following a chain of derived
-  observations back to it. A row that gives its own `collected_at` keeps it
-  as the date the value was true. The register's own recording date, and
-  what the build says of the whole (the count of every machine, the classes
-  a machine is attributed to), take the full observation's date. A recording
-  date given to `build(..., recorded_at=)` is the recording date of every
-  fact; each row is still dated as true when its data was collected.
+  from was taken, and the rows of the plug-ins it read again (a row names
+  its plug-in in `extra.plugin`) were read on its own date. A row with no
+  collection date is dated by the latest observation that read its plug-in
+  again, or, for a carried row, by the full observation, following a chain
+  of derived observations back to it. A carried row's facts are recorded
+  on the full observation's date; a row read again is recorded on the day
+  its data was collected (with no collection date, the day it was read
+  again), but no earlier than the full observation (which
+  may have held that data already) and no later than the day it was read
+  again. The register's own recording date, and what the build says of the
+  whole (the count of every machine, the classes a machine is attributed
+  to), take the full observation's date. A recording date given to
+  `build(..., recorded_at=)` is the recording date of every fact; each row
+  is still dated as true when its data was collected.
 - The register's JSON says when the data was read and collected:
   `register.read_on` is the full observation's date (for an ordinary
   observation, its own date; for one that is neither derived nor named by a
   time stamp, the recording date), `register.read_again` maps each plug-in a
-  derived observation read again to the date it last did, and
+  derived observation read again to the date it last did,
   `register.read_again_collected` maps each of those whose rows give a
-  collection date to the newest. The workbook's Read me sheet gives only the
-  span of the dates the rows are dated by, in a sentence: *"The data was
-  collected on 2030-01-10."* when that is one day, and *"The data was
-  collected between 2030-01-10 and 2030-01-20."* when a source read again
-  was collected later; which sources were read again, and how many, stay in
-  the JSON. Counts on that sheet carry thousands separators (*27,182,818*).
+  collection date to the newest, and `register.collected_from` and
+  `register.collected_to` are the earliest and latest dates the rows are
+  dated by. The workbook's Read me sheet gives that span in a sentence:
+  *"The data was collected on 2030-01-10."* when it is one day, and *"The
+  data was collected between 2030-01-04 and 2030-01-10."* otherwise; which
+  sources were collected when stays in the rows. A register without the
+  span says when the data was read instead (*"The data was read between
+  2030-01-10 and 2030-01-25."*). Counts on that sheet carry thousands
+  separators (*27,182,818*).
 - If `summary.json` gives a `total_assets` count that differs from the rows
   in `assets.json`, the build stops: the observation is incomplete.
 - The schema is read from `data/cmdb-schema.yaml` in the workspace if one is
