@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import socket
 import subprocess
@@ -131,8 +132,9 @@ def test_carried_rows_are_written_exactly_as_stored(workspace):
     _write(workspace, "disks", "disk-01.example.test,off", "disk-03.example.test,on")
     _write(workspace, "laptops", "laptop-09.example.test,off")  # changed, but not re-read
     derived = _rerun("disks")
-    before = [r for r in _stored(base.observation) if r["source"] != "disks"]
-    after = [r for r in _stored(derived.observation) if r["source"] != "disks"]
+    # The late step's row is written again by every rerun, so it is not carried.
+    before = [r for r in _stored(base.observation) if r["source"] not in ("disks", "late-step")]
+    after = [r for r in _stored(derived.observation) if r["source"] not in ("disks", "late-step")]
     assert after == before
     assert {r["host"] for r in after if r["source"] == "laptops"} == {
         "laptop-01.example.test", "laptop-02.example.test"}
@@ -197,25 +199,181 @@ def test_the_named_plugins_gaps_are_replaced_and_others_kept(workspace):
     assert len(gaps) == len(base.summary["gaps"])
 
 
-def test_gaps_that_do_not_name_their_plugin_are_kept_and_not_repeated(workspace, monkeypatch):
+def _quiet(monkeypatch: pytest.MonkeyPatch, *others: Plugin) -> dict:
+    """A reader whose gaps do not name it, declared with ``others``."""
     def step(ctx: Context) -> StepResult:
         assert ctx.input is not None
         lines = ctx.input.read_text().splitlines()
         return StepResult(gaps=[f"the quiet reader read {len(lines)} line(s)"])
     _install(monkeypatch, Plugin(name="quiet", kind="general", step=step,
-                                 input="inbox/quiet.csv", gap_prefix=False))
+                                 input="inbox/quiet.csv", gap_prefix=False), *others)
+    return _target("quiet", *(p.name for p in others))
+
+
+def test_a_reread_plugins_earlier_gaps_give_way_though_they_do_not_name_it(workspace,
+                                                                            monkeypatch):
+    target = _quiet(monkeypatch)
     _write(workspace, "quiet", "a", "b")
-    target = _target("quiet")
     _base(target)
     same = _rerun("quiet", target=target)
     assert same.summary["gaps"].count("the quiet reader read 2 line(s)") == 1
-    assert same.summary[rerun.SUMMARY_KEY]["gaps_repeated"] == 1
     _write(workspace, "quiet", "a")
     moved = _rerun("quiet", target=target, now=LATER + timedelta(hours=1))
-    # The earlier wording cannot be told apart from another plug-in's, so it stays.
-    assert {"the quiet reader read 2 line(s)", "the quiet reader read 1 line(s)"} <= set(
-        moved.summary["gaps"])
-    assert moved.summary[rerun.SUMMARY_KEY]["gaps_added"] == ["the quiet reader read 1 line(s)"]
+    assert "the quiet reader read 1 line(s)" in moved.summary["gaps"]
+    assert "the quiet reader read 2 line(s)" not in moved.summary["gaps"]
+    record = moved.summary[rerun.SUMMARY_KEY]
+    assert record["gaps_added"] == ["the quiet reader read 1 line(s)"]
+    assert record["gaps_dropped_by"] == {"origin": 1}
+    assert record["gaps_without_origin"] == 0
+
+
+def _forget_origins(obs: Path) -> None:
+    """Make ``obs`` look like an observation written before gap origins were recorded."""
+    summary = json.loads((obs / "summary.json").read_text())
+    del summary["gap_origins"]
+    (obs / "summary.json").write_text(json.dumps(summary))
+
+
+def test_without_recorded_origins_a_reread_plugins_reworded_gap_gives_way(workspace,
+                                                                          monkeypatch):
+    target = _quiet(monkeypatch, _reader("laptops"))
+    _write(workspace, "quiet", "a", "b")
+    _write(workspace, "laptops", "laptop-01.example.test,on")
+    base = _base(target)
+    _forget_origins(base.observation)
+    _write(workspace, "quiet", "a", "b", "c")
+    derived = _rerun("quiet", target=target)
+    gaps = derived.summary["gaps"]
+    assert "the quiet reader read 3 line(s)" in gaps
+    assert "the quiet reader read 2 line(s)" not in gaps
+    # Another reader's gap, whatever its figures, is not the re-read one's.
+    assert "plug-in `laptops`: laptops read 1 line(s)" in gaps
+    assert derived.summary[rerun.SUMMARY_KEY]["gaps_dropped_by"] == {"reworded": 1}
+
+
+@pytest.mark.parametrize("text, shape", [
+    ("12 widgets were not read in full: alpha (3), beta (2)", "# widgets were not read in full"),
+    ("the reader read 99.5 line(s). The rest were blank", "the reader read # line(s)"),
+    ("3 hosts", ""),
+])
+def test_a_gaps_shape_is_its_first_clause_with_figures_masked(text, shape):
+    assert rerun._shape(text) == shape
+
+
+def test_each_gap_records_the_step_it_is_about(workspace):
+    base = _base()
+    gaps, origins = base.summary["gaps"], base.summary["gap_origins"]
+    assert len(origins) == len(gaps)
+    by_text = dict(zip(gaps, origins, strict=True))
+    assert by_text["plug-in `disks`: disks read 2 line(s)"] == "disks"
+    assert by_text["plug-in `laptops`: laptops read 2 line(s)"] == "laptops"
+    # A gap about the run as a whole is no step's.
+    assert any(o == "" and "collector(s) not run" in g for g, o in by_text.items())
+    derived = _rerun("disks")
+    assert len(derived.summary["gap_origins"]) == len(derived.summary["gaps"])
+
+
+# ── the steps that read the rest of the observation run again ──
+
+def _tally() -> Plugin:
+    """A late step writing one row that counts the rows each reader wrote."""
+    def step(ctx: Context) -> StepResult:
+        counts = {}
+        for a in ctx.assets:
+            counts[a.source] = counts.get(a.source, 0) + 1
+        return StepResult(records=[CryptoAsset(
+            name="row tally", data_state="inventory", host="tally.example.test",
+            verdict="unknown",
+            notes="; ".join(f"{k}: {v}" for k, v in sorted(counts.items())))])
+    return Plugin(name="tally", kind="general", step=step, late=True, gap_prefix=False)
+
+
+def _reach() -> Plugin:
+    """A coverage check filing one unprefixed gap over the devices the readers reached."""
+    def step(ctx: Context) -> StepResult:
+        hosts = {a.host for a in ctx.assets if a.host.startswith(("disk-", "laptop-"))}
+        return StepResult(gaps=[f"device coverage: {len(hosts)} device(s) reached"])
+    return Plugin(name="reach", kind="coverage-check", step=step, gap_prefix=False)
+
+
+def _labels() -> Plugin:
+    """An annotation filing one gap over every row it labels."""
+    def step(ctx: Context) -> StepResult:
+        disks = [a for a in ctx.assets if a.source == "disks"]
+        return StepResult(annotations={a.bom_ref(): {"label": "disk"} for a in disks},
+                          gaps=[f"{len(disks)} disk row(s) labelled"])
+    return Plugin(name="labels", kind="annotation", step=step, annotation_keys=("label",),
+                  gap_prefix=False)
+
+
+READ_AGAIN = ("laptops", "disks", "servers", "tally", "reach", "labels")
+
+
+@pytest.fixture()
+def counted(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
+    """The three readers with a late step, a coverage check and an annotation that read them."""
+    _install(monkeypatch, _reader("laptops"), _reader("disks"), _reader("servers"), _tally(),
+             _reach(), _labels())
+    return _target(*READ_AGAIN)
+
+
+def _late_view(result: observe.Result) -> tuple[list[str], list[str]]:
+    """The late step's row notes, and the coverage check's and annotation's gaps."""
+    rows = [r["notes"] for r in _stored(result.observation) if r["source"] == "tally"]
+    gaps = [g for g in result.summary["gaps"]
+            if g.startswith("device coverage") or "labelled" in g]
+    return rows, sorted(gaps)
+
+
+def _grow_disks(workspace: Path) -> None:
+    _write(workspace, "disks", "disk-01.example.test,on", "disk-03.example.test,off",
+           "disk-04.example.test,on", "disk-05.example.test,on")
+
+
+def test_the_late_steps_and_checks_match_a_full_observation_on_the_same_inputs(workspace,
+                                                                                counted):
+    base = _base(counted)
+    _grow_disks(workspace)
+    derived = _rerun("disks", target=counted)
+    full = observe.observe(counted, observe.Options(
+        now=LATER + timedelta(hours=1), offline=True, announce=lambda _line: None))
+    assert _late_view(derived) == _late_view(full)
+    assert _late_view(derived) != _late_view(base)
+    rows, gaps = _late_view(derived)
+    assert len(rows) == 1 and "disks: 4; " in rows[0] and "tally" not in rows[0]
+    assert gaps == ["4 disk row(s) labelled", "device coverage: 6 device(s) reached"]
+    assert len(derived.summary["gaps"]) == len(set(derived.summary["gaps"]))
+    record = derived.summary[rerun.SUMMARY_KEY]
+    assert record["run_over_rows"] == ["tally", "reach", "labels"]
+    assert record["rows_added"] == {"disks": 4, "tally": 1}
+
+
+def test_the_late_step_sees_every_row_but_its_own(workspace, counted):
+    _base(counted)
+    derived = _rerun("servers", target=counted)
+    (row,) = [r for r in _stored(derived.observation) if r["source"] == "tally"]
+    assert "tally" not in row["notes"]
+    assert row["collected_at"] == derived.summary["observation"]["collected_at"][:10]
+
+
+def test_an_observation_that_recorded_no_origins_drops_the_later_steps_earlier_gaps(
+        workspace, counted):
+    base = _base(counted)
+    _forget_origins(base.observation)
+    _grow_disks(workspace)
+    derived = _rerun("disks", target=counted)
+    gaps = derived.summary["gaps"]
+    assert "device coverage: 4 device(s) reached" not in gaps
+    assert "2 disk row(s) labelled" not in gaps
+    assert {"device coverage: 6 device(s) reached", "4 disk row(s) labelled"} <= set(gaps)
+    assert len(gaps) == len(set(gaps))
+    record = derived.summary[rerun.SUMMARY_KEY]
+    assert record["gaps_dropped_by"]["replayed"] == 2
+    # The derived observation records origins for what it wrote; what it kept stays unknown.
+    origins = dict(zip(gaps, derived.summary["gap_origins"], strict=True))
+    assert origins["device coverage: 6 device(s) reached"] == "reach"
+    assert origins["plug-in `laptops`: laptops read 2 line(s)"] is None
+    assert record["gaps_without_origin"] == sum(o is None for o in origins.values())
 
 
 def test_the_observation_records_that_it_is_derived(workspace):
@@ -225,9 +383,10 @@ def test_the_observation_records_that_it_is_derived(workspace):
     assert record["from_observation"] == base.observation.name
     assert record["from_collected_at"] == "2030-01-31T09:30:00Z"
     assert record["plugins"] == ["disks", "servers"]
-    assert record["rows_dropped"] == {"disks": 2, "servers": 1}
-    assert record["rows_added"] == {"disks": 2, "servers": 1}
-    assert record["rows_carried"] == len(base.assets) - 3
+    assert record["run_over_rows"] == ["late-step", "tags"]
+    assert record["rows_dropped"] == {"disks": 2, "late-step": 1, "servers": 1}
+    assert record["rows_added"] == {"disks": 2, "late-step": 1, "servers": 1}
+    assert record["rows_carried"] == len(base.assets) - 4
     block = derived.summary["observation"]
     assert block["stamp"] == "2030-02-03T0930Z" and block["offline"] is True
     assert block["scan"] is False
@@ -286,6 +445,10 @@ def test_a_derived_observation_can_be_derived_from_again(workspace):
 
 def test_the_register_dates_each_fact_by_the_observation_that_read_its_row(workspace):
     _base()
+    # Each export dated the day it is read again, so its rows' collection
+    # date does not come before the read.
+    for name, when in (("disks", LATER), ("servers", LATER + timedelta(days=1))):
+        os.utime(workspace / "inbox" / f"{name}.csv", (when.timestamp(), when.timestamp()))
     first = _rerun("disks")
     second = _rerun("servers", base=first.observation, now=LATER + timedelta(days=1))
     register = cmdb.build(second.observation)

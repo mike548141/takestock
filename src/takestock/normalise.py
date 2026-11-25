@@ -318,8 +318,16 @@ _NOT_MEASURED_TEXT = {
 }
 
 
+def row_origin(asset: CryptoAsset) -> str:
+    """The step that wrote ``asset``: its plug-in (``extra.plugin``), else its source."""
+    return str((asset.extra or {}).get("plugin") or asset.source or "")
+
+
 def not_measured_gaps(assets: Iterable[CryptoAsset]) -> list[coverage.Gap]:
-    """One gap per ``not-measured:<attribute>`` flag the grading raised."""
+    """One gap per ``not-measured:<attribute>`` flag the grading raised.
+
+    Each gap's origin is the step that wrote the row (:func:`row_origin`).
+    """
     out = []
     for a in assets:
         for f in a.flags:
@@ -328,14 +336,14 @@ def not_measured_gaps(assets: Iterable[CryptoAsset]) -> list[coverage.Gap]:
             attribute = f[len("not-measured:"):]
             template = _NOT_MEASURED_TEXT.get(
                 attribute, f"{attribute.replace('-', ' ')} not reported for {{name}}")
-            out.append(coverage.gap(
+            out.append(coverage.attributed(coverage.gap(
                 coverage.NOT_MEASURED, template.format(name=a.name),
                 impact_kind=coverage.NARROWS_CONFIDENCE,
                 impact=("The connection was measured and one part of it was not visible. "
                         "Its grade rests on what was seen, so it is a ceiling: measuring "
                         "the missing part can only lower it."),
                 harvest="A closer scan of this one service that reports the missing attribute.",
-                nature=coverage.LOW_FIDELITY))
+                nature=coverage.LOW_FIDELITY), row_origin(a)))
     return out
 
 
@@ -438,6 +446,7 @@ def gap_fields(gaps: list) -> dict:
         "gap_impact_kinds": coverage.impact_kinds(gaps),
         "gap_harvests": coverage.harvests(gaps),
         "gap_natures": coverage.natures(gaps),
+        "gap_origins": coverage.origins(gaps),
     }
 
 

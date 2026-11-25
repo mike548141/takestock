@@ -135,3 +135,17 @@ def test_every_label_table_is_complete():
     assert set(coverage.LABELS) == set(coverage.KINDS)
     assert set(coverage.IMPACT_LABELS) == set(coverage.IMPACT_KINDS)
     assert set(coverage.NATURE_LABELS) == set(coverage.NATURES)
+
+
+def test_a_gap_is_attributed_to_a_step_without_losing_its_classification():
+    g = gap(coverage.NOT_COLLECTED, "inbox/widgets.csv not supplied", required=False,
+            impact_kind=coverage.NARROWS_CONFIDENCE, impact="Widget counts are a floor.",
+            harvest="Supply the export.", nature=coverage.NO_DATA)
+    assert coverage.origin_of(g) == ""
+    mine = coverage.attributed(g, "widgets")
+    assert coverage.origin_of(mine) == "widgets" and coverage.origin_of(g) == ""
+    assert (mine.kind, mine.required, mine.impact, mine.impact_kind, mine.harvest,
+            mine.nature) == (g.kind, g.required, g.impact, g.impact_kind, g.harvest, g.nature)
+    plain = coverage.attributed("a gap written as plain text", "widgets")
+    assert coverage.kind_of(plain) == coverage.UNCLASSIFIED and plain.origin == "widgets"
+    assert coverage.origins([mine, "older text"]) == ["widgets", None]

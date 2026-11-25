@@ -139,48 +139,67 @@ measured are carried in, and the raw transcripts beside them are copied.
 `rerun.rerun(target, observation, rerun.Options(plugins=(...)))`) writes a new
 observation that holds everything an earlier one holds, except the named
 plug-ins' rows, which are read again from their inputs. Only those plug-ins
-run, with the profile's annotations to label their rows, so nothing is looked
-up or probed. It suits a plug-in whose reader has changed, or whose export
-has been supplied again, while the rest of the observation is still current.
-The result is a *derived* observation, and its record says so.
+read their inputs, and the plug-ins that read the rest of the observation
+(late steps, coverage checks and annotations) run again over the rows, so
+nothing is looked up or probed. It suits a plug-in whose reader has changed,
+or whose export has been supplied again, while the rest of the observation is
+still current. The result is a *derived* observation, and its record says so.
 
-- **Rows.** Every row whose `source` is not a named plug-in's is written
-  exactly as it was stored. The named plug-ins' old rows are dropped; their
-  new rows take the place of the first old one, or, for a plug-in that wrote
-  none before, follow the rows of the nearest plug-in before it in the
-  profile's `plugins:` list.
+- **Rows.** Every row whose `source` is not a named plug-in's or a late
+  step's is written exactly as it was stored. The named plug-ins' old rows
+  are dropped; their new rows take the place of the first old one, or, for a
+  plug-in that wrote none before, follow the rows of the nearest plug-in
+  before it in the profile's `plugins:` list.
+- **Late steps and coverage checks** run again after the readers, as in a
+  full observation: over every row but the late steps' own, with
+  `Context.run` giving the earlier observation's collectors and each
+  plug-in's status (`offline` is true). Their old rows are dropped and their
+  new ones take their place (last, for one that wrote none before), so their
+  rows and gaps describe the rows the derived observation holds. Built-in
+  collectors' late steps (zone files, CAA, WinRM listeners) are carried, as
+  every built-in collector is.
 - **Grading.** The new rows are graded together with the carried ones, as a
   full observation grades every row at once (usage bands, shared keys and
   Secure Government Email marks compare rows across the population). The
   carried rows are then written as stored. Where that pass would have stored
-  a carried row differently, because the tool has changed since or a new row
-  changes a reading across rows, the record counts it by source and by
-  field; it is not applied.
-- **Annotations** label the new rows as a full run would. Every other
+  a carried row differently, because the tool has changed since, a new row
+  changes a reading across rows or an annotation would label it differently,
+  the record counts it by source and by field; it is not applied.
+- **Annotations** run again over every graded row, so the new rows carry the
+  labels a full run would give them; a carried row keeps its stored labels.
+  The records of the plug-ins run again are this pass's; every other
   plug-in's record and summary are the earlier observation's.
-- **Gaps.** The earlier gaps are kept, except those naming a named plug-in
-  (``plug-in `<name>` ``), and the new run's gaps are added. A plug-in
-  declared with `gap_prefix=False` writes gaps that do not name it; its
-  earlier gaps are kept, a new gap with the same text is not added twice
-  (`gaps_repeated` counts those), and an earlier gap it would now word
-  differently stays beside the new wording.
+- **Gaps.** Each gap's origin is recorded beside it at observe time
+  (`gap_origins`, below). An earlier gap whose origin is a named plug-in, a
+  late step, a coverage check or an annotation is dropped, whether or not it
+  names the plug-in, and those steps' new gaps are added; a new gap with the
+  same text as one kept is not added twice (`gaps_repeated` counts those).
+  In an observation written before origins were recorded, an earlier gap is
+  dropped when it names a plug-in run again (``plug-in `<name>` ``), or when
+  the earlier observation's own late steps, coverage checks and annotations
+  file it again over its stored rows (with the not-measured gaps of the rows
+  being replaced; that replay writes nothing), or when its first clause,
+  figures masked, is the same as that of a gap a step run again files now or
+  in the replay: the same gap worded with other counts. Anything else is
+  kept, and `gaps_without_origin` counts the gaps kept with no recorded
+  origin.
 - **The summary** is worked out again from the rows and gaps written; any
   other key the earlier summary holds is copied. The `observation` block
   keeps the earlier `dispositions_digest`, since the carried rows were judged
   under that set; the record's `dispositions_digest` is the set the new rows
   were judged under.
-- **Raw files** are copied, except the named plug-ins' own folders under
-  `raw/plugins/`.
+- **Raw files** are copied, except the folders under `raw/plugins/` of the
+  plug-ins run again.
 - **Refused**, leaving nothing behind: when no plug-in is named, or one twice;
   when the earlier observation cannot be found, has not finished, has no
   `observation` block or was taken of another target; when a name is not a
   declared plug-in (a built-in collector is named as one), or is an
   annotation, a coverage check or a late step, each of which reads the rest of
-  the observation; when a named plug-in's source is also another declared
-  plug-in's (named or not) or a built-in collector's; when a stored row was
-  merged across the line, or a new row would merge with a carried one; when a
-  named plug-in does not run (its input is missing); and when the directory
-  exists.
+  the observation and runs again anyway; when a named plug-in's or a late
+  step's source is also another declared plug-in's (named or not) or a
+  built-in collector's; when a stored row was merged across the line, or a
+  new row would merge with a carried one; when a named plug-in does not run
+  (its input is missing); and when the directory exists.
 - **The record.** `summary.json` gains `rerun`:
 
   ```json
@@ -188,14 +207,16 @@ The result is a *derived* observation, and its record says so.
     "from_observation": "2030-01-31T0930Z",
     "from_collected_at": "2030-01-31T09:30:00Z",
     "plugins": ["disks"],
+    "run_over_rows": ["tally", "reach", "tags"],
     "rows_carried": 120,
-    "rows_dropped": {"disks": 2},
-    "rows_added": {"disks": 3},
+    "rows_dropped": {"disks": 2, "tally": 1},
+    "rows_added": {"disks": 3, "tally": 1},
     "gaps_carried": 14,
-    "gaps_dropped": 1,
-    "gaps_added": ["plug-in `disks`: ..."],
+    "gaps_dropped": 3,
+    "gaps_dropped_by": {"origin": 3},
+    "gaps_added": ["plug-in `disks`: ...", "device coverage: ..."],
     "gaps_repeated": 0,
-    "annotation_gaps_not_carried": [],
+    "gaps_without_origin": 0,
     "dispositions_digest": "sha256:...",
     "raw_files_copied": 9,
     "carried_rows_graded_differently": {"rows": 0, "by_source": {}, "by_field": {},
@@ -352,7 +373,11 @@ A `Gap` is the sentence a reader sees, carrying three classifications:
 
 `summary.json` keeps the gap sentences in `gaps` and each classification in a
 parallel list (`gap_kinds`, `gap_impact_kinds`, `gap_natures` and so on), so
-they survive a round trip through JSON.
+they survive a round trip through JSON. `gap_origins` names the step each gap
+is about: the built-in collector or plug-in that filed it, or, for a gap about
+one row, the step that wrote the row; `""` for a gap about the run as a whole,
+and `null` where nothing recorded it (a gap carried by `takestock rerun` from
+an observation written before origins were recorded).
 
 ## Registries: where a module plugs in
 

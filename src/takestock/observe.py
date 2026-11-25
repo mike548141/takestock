@@ -433,7 +433,7 @@ def run_step(run: Run, name: str) -> StepOutput:
         _mark_failed(run, name)
         return [], [failed], []
     real, unconfigured = split_failures(list(failures))
-    added = list(gaps) + unconfigured
+    added = [coverage.attributed(g, name) for g in [*gaps, *unconfigured]]
     run.assets += rows
     run.failures += real
     if real:
@@ -460,6 +460,7 @@ def resume_ct(run: Run) -> StepOutput:
     run.ct_failures += failures
     if run.ct_failures:
         gaps.append(_ct_failure_gap(run.ct_failures))
+    gaps = [coverage.attributed(g, "ct_dns") for g in gaps]
     run.assets += rows
     run.gaps += gaps
     run.failures += failures

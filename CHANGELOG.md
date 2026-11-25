@@ -507,6 +507,24 @@ command line or a file format, and its entry says how.
 
 ### Changed
 
+- **`takestock rerun` runs the late steps, coverage checks and annotations
+  again**: after the named plug-ins are read again, the plug-ins that read the
+  rest of the observation run over the rows as in a full observation, and
+  their rows and gaps replace the earlier ones, so a late step's rows and a
+  coverage check's gaps describe the rows the derived observation holds. An
+  observation now records beside each gap the step it is about
+  (`summary.json` `gap_origins`; `coverage.Gap.origin`), and a rerun drops a
+  re-run step's earlier gaps by that record, whether or not their text names
+  the plug-in, so a reader's old and new wording no longer stand side by side.
+  For an observation written before origins were recorded, an earlier gap is
+  dropped when it names a step run again, when that observation's own late
+  steps, coverage checks and annotations file it again over its stored rows,
+  or when it is a gap a step run again files now, worded with other counts.
+  The `rerun` record gains `run_over_rows`, `gaps_dropped_by` and
+  `gaps_without_origin`, and loses `annotation_gaps_not_carried`; naming a
+  late step, coverage check or annotation is still refused, since every rerun
+  runs them.
+
 - **A derived observation's rows are dated by when their data was
   collected**: a plug-in read again by `takestock rerun` no longer dates its
   facts and relationships by the day it was read again, but by the newest

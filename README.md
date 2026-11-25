@@ -185,7 +185,9 @@ Collectors come in three kinds:
 - `takestock rerun <target> --from <observation> --plugin <name>` derives a
   new observation from an earlier one: every row is carried as it was
   stored, except the named plug-ins' rows, which are read again from their
-  inputs. Nothing is looked up or probed. `summary.json` records the
+  inputs, and the rows and gaps of the late steps, coverage checks and
+  annotations, which run again over the result. Nothing is looked up or
+  probed. `summary.json` records the
   observation it was derived from under `rerun`. See
   [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#reading-named-plug-ins-again-rerunpy).
 - Probes that run inside a network each need their own named, dated record

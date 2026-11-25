@@ -176,6 +176,14 @@ class Gap(str):
 
     Being a ``str`` means any code that handles gaps as plain text keeps
     working; code that knows about gaps reads the attributes.
+
+    ``origin`` names the step the gap is about: the built-in collector or
+    plug-in that filed it, or, for a gap about one row, the step that wrote
+    the row. It is ``""`` for a gap about the run as a whole (collectors not
+    run, resolvers, carried probes), and None when nothing recorded it (a gap
+    read back from an observation written before origins were recorded). An
+    observation files it beside the text (``gap_origins``), so a later
+    re-read can tell which step's gaps to replace (:mod:`takestock.rerun`).
     """
 
     kind: str
@@ -184,10 +192,12 @@ class Gap(str):
     impact_kind: str
     harvest: str
     nature: str
+    origin: str | None
 
     def __new__(cls, kind: str, text: str, required: bool = True, *,
                 impact: str = "", impact_kind: str = IMPACT_UNWRITTEN,
-                harvest: str = "", nature: str = NATURE_UNSTATED) -> Gap:
+                harvest: str = "", nature: str = NATURE_UNSTATED,
+                origin: str | None = "") -> Gap:
         self = super().__new__(cls, text)
         self.kind = kind
         self.required = required
@@ -195,6 +205,7 @@ class Gap(str):
         self.impact_kind = impact_kind
         self.harvest = harvest
         self.nature = nature
+        self.origin = origin
         return self
 
 
@@ -334,6 +345,31 @@ def impact_kinds(gaps: Iterable[object]) -> list[str]:
 def harvests(gaps: Iterable[object]) -> list[str]:
     """:func:`harvest_of` for each gap, in order."""
     return [harvest_of(g) for g in gaps]
+
+
+def origin_of(entry: object) -> str | None:
+    """The step the gap is about (see :class:`Gap`); None when nothing recorded it."""
+    v = getattr(entry, "origin", None)
+    return v if isinstance(v, str) else None
+
+
+def origins(gaps: Iterable[object]) -> list[str | None]:
+    """:func:`origin_of` for each gap, in order."""
+    return [origin_of(g) for g in gaps]
+
+
+def attributed(entry: object, origin: str | None) -> Gap:
+    """``entry`` as a :class:`Gap` whose origin is ``origin``.
+
+    A plain string becomes an unclassified gap. The entry itself is never
+    changed: a gap a step hands over may be one it keeps.
+    """
+    if isinstance(entry, Gap) and entry.origin == origin:
+        return entry
+    return Gap(entry.kind if isinstance(entry, Gap) else UNCLASSIFIED,
+               str(entry), is_required(entry), impact=impact_of(entry),
+               impact_kind=impact_kind_of(entry), harvest=harvest_of(entry),
+               nature=nature_of(entry), origin=origin)
 
 
 def required_gaps(gaps: Iterable[object]) -> list[object]:

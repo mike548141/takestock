@@ -500,7 +500,8 @@ def _prefixed(name: str, g: Any) -> coverage.Gap:
     if f"`{name}`" in g:
         return g
     return coverage.Gap(g.kind, f"plug-in `{name}`: {g}", g.required, impact=g.impact,
-                        impact_kind=g.impact_kind, harvest=g.harvest, nature=g.nature)
+                        impact_kind=g.impact_kind, harvest=g.harvest, nature=g.nature,
+                        origin=coverage.origin_of(g))
 
 
 def _not_run_gap(d: Declared, why: str, kind: str, missing_input: bool = False) -> coverage.Gap:
@@ -558,8 +559,15 @@ class Host:
     """Runs the declared plug-ins of one observation and keeps their records."""
 
     def __init__(self, target: Mapping, raw: Path, ref_time: datetime | None = None,
-                 announce: Callable[[str], None] = lambda _line: None) -> None:
+                 announce: Callable[[str], None] = lambda _line: None,
+                 earlier: Mapping[str, Mapping] | None = None) -> None:
+        """``earlier`` holds, by name, the ``summary.json`` records of plug-ins
+        this host does not run, from the observation a derived one is made
+        from: a late step or coverage check sees each one's recorded status in
+        ``RunInfo.plugins``, as it would in a full run."""
         self.target = target
+        self.earlier = {str(n): dict(r) for n, r in (earlier or {}).items()
+                        if isinstance(r, Mapping)}
         self.raw = raw
         self.ref_time = ref_time or datetime.now(UTC)
         self.say = announce
@@ -580,7 +588,11 @@ class Host:
                         plugin_kinds.LISTENER_MARKER)
             elif d.problem:
                 rec.reason = d.problem
-                self.gaps.append(_not_run_gap(d, d.problem, ""))
+                self._file(d.name, _not_run_gap(d, d.problem, ""))
+
+    def _file(self, name: str, *gaps: Any) -> None:
+        """Record gaps about the plug-in ``name``, each with ``name`` as its origin."""
+        self.gaps += [coverage.attributed(g, name) for g in gaps]
 
     def _drain(self) -> list[coverage.Gap]:
         """The gaps recorded since the last call, so each is handed over once."""
@@ -612,8 +624,11 @@ class Host:
 
     def _statuses(self) -> dict[str, str]:
         """Each declared plug-in's status so far: ran, not-run, or pending."""
-        return {name: "ran" if rec.status == "ran" else "not-run" if rec.reason else "pending"
-                for name, rec in self.records.items()}
+        out = {name: "ran" if rec.get("status") == "ran" else "not-run"
+               for name, rec in self.earlier.items() if name not in self.records}
+        out.update({name: "ran" if rec.status == "ran" else "not-run" if rec.reason else "pending"
+                     for name, rec in self.records.items()})
+        return out
 
     def _context(self, d: Declared, assets: Iterable[CryptoAsset],
                  run: RunInfo | None = None) -> Context | None:
@@ -625,7 +640,7 @@ class Host:
         rec.input = config.display_path(path) if path is not None else ""
         if path is not None and not path.exists():
             rec.reason = f"its input {rec.input} was not supplied"
-            self.gaps.append(_not_run_gap(d, rec.reason, p.kind, missing_input=True))
+            self._file(d.name, _not_run_gap(d, rec.reason, p.kind, missing_input=True))
             return None
         self._reference()
         raw_dir = self.raw / "plugins" / p.name
@@ -649,7 +664,7 @@ class Host:
             out = d.plugin.step(ctx) if d.plugin else None
         except Exception as exc:  # noqa: BLE001 - a plug-in that raises must not end the run
             rec.reason = f"stopped with {type(exc).__name__}: {exc}"
-            self.gaps.append(_not_run_gap(d, rec.reason, ctx.kind))
+            self._file(d.name, _not_run_gap(d, rec.reason, ctx.kind))
             return None
         if out is None:
             out = StepResult()
@@ -657,15 +672,15 @@ class Host:
             out = StepResult(records=out)
         if not isinstance(out, StepResult):
             rec.reason = f"its step returned {type(out).__name__}, not a StepResult or a list"
-            self.gaps.append(_not_run_gap(d, rec.reason, ctx.kind))
+            self._file(d.name, _not_run_gap(d, rec.reason, ctx.kind))
             return None
         rec.status = "ran"
         own = d.plugin is None or d.plugin.gap_prefix
         for g in out.gaps:
-            self.gaps.append(_prefixed(d.name, g) if own else _as_gap(g))
+            self._file(d.name, _prefixed(d.name, g) if own else _as_gap(g))
         problem = _json_ok(out.summary) if isinstance(out.summary, dict) else "not a mapping"
         if problem:
-            self.gaps.append(_problem_gap(d.name, "its summary was not written", [problem]))
+            self._file(d.name, _problem_gap(d.name, "its summary was not written", [problem]))
         else:
             rec.summary.update(out.summary)
         return out
@@ -691,7 +706,7 @@ class Host:
                 continue
             if p.kind == plugin_kinds.COVERAGE_CHECK:
                 if out.records:
-                    self.gaps.append(_problem_gap(
+                    self._file(p.name, _problem_gap(
                         p.name, "a coverage check returns gaps only, so its rows were not written",
                         [f"{len(out.records)} row(s) returned"]))
                 continue
@@ -730,17 +745,17 @@ class Host:
         refused = [f"{mappings} record mapping(s): the general kind has no record schema"]
         rec.problems = ((refused if mappings else []) + problems)[:PROBLEM_SAMPLE]
         if mappings:
-            self.gaps.append(_problem_gap(
+            self._file(p.name, _problem_gap(
                 p.name, "a general plug-in returns finished rows only, so its record mappings "
                 "were not written", [f"{mappings} record mapping(s) returned"]))
         if bad:
-            self.gaps.append(_invalid_gap(p.name, p.kind, bad, len(out.records) - mappings,
+            self._file(p.name, _invalid_gap(p.name, p.kind, bad, len(out.records) - mappings,
                                           problems))
         if not out.records:
             # A general plug-in says for itself what an empty result means, and
             # a step that returned a gap of its own has already said it.
             if p.kind != plugin_kinds.GENERAL and not out.gaps:
-                self.gaps.append(plugin_kinds.scope_gap(p.name, p.kind, rec.input or "its input"))
+                self._file(p.name, plugin_kinds.scope_gap(p.name, p.kind, rec.input or "its input"))
             return []
         # Without date_rows, takestock supplies no date: a row is dated only
         # by the plug-in itself or by its record's own collected_on.
@@ -755,11 +770,11 @@ class Host:
             try:
                 built, gaps = plugin_kinds.build_rows(p.kind, records, build)
             except Exception as exc:  # noqa: BLE001 - rows takestock cannot build are a gap, not a crash
-                self.gaps.append(_problem_gap(p.name, "its records could not be turned into rows",
+                self._file(p.name, _problem_gap(p.name, "its records could not be turned into rows",
                                               [f"{type(exc).__name__}: {exc}"]))
                 built, gaps = [], []
             rows += built
-            self.gaps += [_prefixed(p.name, g) for g in gaps]
+            self._file(p.name, *(_prefixed(p.name, g) for g in gaps))
         for a in finished:
             rows.append(build.stamp(replace(a, extra=dict(a.extra)), {}, finished=True))
         rec.rows = len(rows)
@@ -787,7 +802,7 @@ class Host:
             if out is None:
                 continue
             if out.records:
-                self.gaps.append(_problem_gap(
+                self._file(p.name, _problem_gap(
                     p.name, "an annotation adds keys to rows and writes none, so its rows were "
                     "not written", [f"{len(out.records)} row(s) returned"]))
             self.records[p.name].annotated = self._apply(p.name, out.annotations, assets)
@@ -795,7 +810,7 @@ class Host:
 
     def _apply(self, name: str, annotations: Any, assets: list[CryptoAsset]) -> int:
         if not isinstance(annotations, Mapping):
-            self.gaps.append(_problem_gap(name, "its annotations were not applied",
+            self._file(name, _problem_gap(name, "its annotations were not applied",
                                           ["annotations must map a row's bom_ref to its keys"]))
             return 0
         by_ref = {a.bom_ref(): a for a in assets}
@@ -824,7 +839,7 @@ class Host:
                     changed = True
             stamped += changed
         if problems:
-            self.gaps.append(_problem_gap(name, f"{len(problems)} annotation(s) not applied",
+            self._file(name, _problem_gap(name, f"{len(problems)} annotation(s) not applied",
                                           problems))
         return stamped
 
@@ -841,12 +856,12 @@ class Host:
             try:
                 extra = p.summarise(ctx, own)
             except Exception as exc:  # noqa: BLE001 - a broken summary must not end the run
-                self.gaps.append(_problem_gap(d.name, "its summary was not written",
+                self._file(d.name, _problem_gap(d.name, "its summary was not written",
                                               [f"{type(exc).__name__}: {exc}"]))
                 continue
             problem = _json_ok(extra) if isinstance(extra, Mapping) else "not a mapping"
             if problem:
-                self.gaps.append(_problem_gap(d.name, "its summary was not written", [problem]))
+                self._file(d.name, _problem_gap(d.name, "its summary was not written", [problem]))
                 continue
             self.records[d.name].summary.update(dict(extra))
         return self._drain()
