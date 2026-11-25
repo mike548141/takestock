@@ -68,27 +68,32 @@ observations/latest/cmdb/keys.jsonl
 - A derived observation (`takestock rerun`) holds rows read on different
   dates: the rows it carries were read when the full observation it comes
   from was taken, and the rows of the plug-ins it read again were read on its
-  own date. Each fact, key and relationship drawn from a row is dated by the
-  observation that read the row: a row a plug-in wrote (it names the plug-in
-  in `extra.plugin`) by the latest observation that read that plug-in again,
-  and every other row by the full observation, following a chain of derived
+  own date. Reading an export again does not make its data newer, so each
+  fact, key and relationship drawn from a row is dated by the collection the
+  row's data comes from: a row a plug-in read again wrote (it names the
+  plug-in in `extra.plugin`) by the newest `collected_at` that plug-in's
+  rows give, or by the full observation's date when that is older (the full
+  observation held that data already), or, when its rows give no
+  collection date, by the latest observation that read the plug-in again;
+  every other row by the full observation, following a chain of derived
   observations back to it. A row that gives its own `collected_at` keeps it
   as the date the value was true. The register's own recording date, and
   what the build says of the whole (the count of every machine, the classes
   a machine is attributed to), take the full observation's date. A recording
   date given to `build(..., recorded_at=)` is the recording date of every
-  fact; each row is still dated as true when it was read.
-- The register's JSON says when the data was read: `register.read_on` is the
-  full observation's date (for an ordinary observation, its own date; for
-  one that is neither derived nor named by a time stamp, the recording
-  date), and
-  `register.read_again` maps each plug-in a derived observation read again
-  to the date it last did. The workbook's Read me sheet gives only the span
-  in a sentence: *"The data was read on 2030-01-10."* when every row was read
-  that day, and *"The data was read between 2030-01-10 and 2030-01-25."* when
-  some were read again later; which sources were read again, and how many,
-  stay in the JSON. Counts on that sheet carry thousands separators
-  (*27,182,818*).
+  fact; each row is still dated as true when its data was collected.
+- The register's JSON says when the data was read and collected:
+  `register.read_on` is the full observation's date (for an ordinary
+  observation, its own date; for one that is neither derived nor named by a
+  time stamp, the recording date), `register.read_again` maps each plug-in a
+  derived observation read again to the date it last did, and
+  `register.read_again_collected` maps each of those whose rows give a
+  collection date to the newest. The workbook's Read me sheet gives only the
+  span of the dates the rows are dated by, in a sentence: *"The data was
+  collected on 2030-01-10."* when that is one day, and *"The data was
+  collected between 2030-01-10 and 2030-01-20."* when a source read again
+  was collected later; which sources were read again, and how many, stay in
+  the JSON. Counts on that sheet carry thousands separators (*27,182,818*).
 - If `summary.json` gives a `total_assets` count that differs from the rows
   in `assets.json`, the build stops: the observation is incomplete.
 - The schema is read from `data/cmdb-schema.yaml` in the workspace if one is

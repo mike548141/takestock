@@ -195,18 +195,30 @@ def workbook_style(theme: Any = None) -> WorkbookStyle:
 
 
 def as_at_line(reg: Mapping[str, Any]) -> str:
-    """The read-me's sentence saying when the data was read.
+    """The read-me's sentence saying when the data was collected.
 
-    One date when every row was read on the same day: the observation's
-    ``read_on`` (else its recording date). For a derived observation whose
-    sources were read again on later days, the range from the earliest read
-    to the latest, and nothing about which sources were read when.
+    One date when every row is dated by the same day: the observation's
+    ``read_on`` (else its recording date). For a derived observation, each
+    plug-in read again is dated as the register dates its rows: by when its
+    source was collected (``read_again_collected``), or the full observation
+    when that is older, or the day it was read again when its rows give no
+    collection date. More than one date gives the range from the earliest to
+    the latest, and nothing about which sources were read when. A register
+    written before ``read_again_collected`` existed keeps the sentence that
+    says when the data was read.
     """
     first = str(reg.get("read_on") or reg["recorded_at"])
-    dates = sorted({first, *(str(d) for d in (reg.get("read_again") or {}).values())})
+    again = reg.get("read_again") or {}
+    if "read_again_collected" not in reg and again:
+        dates = sorted({first, *(str(d) for d in again.values())})
+        return (f"The data was read on {first}." if len(dates) == 1
+                else f"The data was read between {dates[0]} and {dates[-1]}.")
+    collected = reg.get("read_again_collected") or {}
+    dates = sorted({first, *(max(first, str(collected.get(name) or day))
+                             for name, day in again.items())})
     if len(dates) == 1:
-        return f"The data was read on {first}."
-    return f"The data was read between {dates[0]} and {dates[-1]}."
+        return f"The data was collected on {first}."
+    return f"The data was collected between {dates[0]} and {dates[-1]}."
 
 
 def write_xlsx(register: Mapping[str, Any], path: Path, *, theme: Any = None) -> Path:

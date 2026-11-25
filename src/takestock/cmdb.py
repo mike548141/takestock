@@ -832,6 +832,9 @@ class Cmdb:
     read_on: str = ""
     #: Each plug-in a derived observation read again, with the date it last did.
     read_again: dict[str, str] = field(default_factory=dict)
+    #: Each plug-in read again whose rows give a collection date, with the
+    #: newest (:class:`ReadDates`).
+    read_again_collected: dict[str, str] = field(default_factory=dict)
 
     def resolved(self) -> dict[str, dict[str, Resolution]]:
         """The published value of every asserted attribute, per item."""
@@ -1275,32 +1278,51 @@ DERIVED_KEY = "rerun"
 
 @dataclass(frozen=True)
 class ReadDates:
-    """When the rows of a derived observation were read.
+    """When the rows of a derived observation were read, and what dates them.
 
     ``held`` is the date of the full observation every carried row was read
     in; ``reread`` maps each plug-in read again to the date of the derived
-    observation that last read it.
+    observation that last read it; ``collected`` maps each plug-in read
+    again to the newest date its rows say its source was collected (their
+    ``collected_at``), for a plug-in whose rows give one.
     """
 
     held: str
     reread: dict[str, str]
+    collected: dict[str, str] = field(default_factory=dict)
+
+    def dated(self, plugin: str) -> str:
+        """The date a plug-in's rows are dated by.
+
+        Reading an export again does not make its data newer: a plug-in read
+        again is dated by when its source was collected, and by the full
+        observation when that collection is older than it (the full
+        observation held that data already, and its carried rows are dated
+        the same way). The day it was read again only when its rows give no
+        collection date. A plug-in not read again is the full observation's.
+        """
+        if plugin not in self.reread:
+            return self.held
+        return max(self.held, self.collected.get(plugin) or self.reread[plugin])
 
     def of(self, row: Mapping[str, Any]) -> str:
-        """The date the observation that read ``row`` was taken."""
-        plugin = str((row.get("extra") or {}).get("plugin") or "")
-        return self.reread.get(plugin, self.held)
+        """The date ``row`` is dated by (:meth:`dated`)."""
+        return self.dated(str((row.get("extra") or {}).get("plugin") or ""))
 
 
-def read_dates(summary: Mapping[str, Any], stamp: str) -> ReadDates | None:
+def read_dates(summary: Mapping[str, Any], stamp: str,
+               rows: Iterable[Mapping[str, Any]] | None = None) -> ReadDates | None:
     """When a derived observation's rows were read; None for an observation that is not derived.
 
     ``stamp`` is the observation's own time stamp. A derived observation
     (``takestock rerun``) carries the record of the one it was derived from,
     which may be derived in turn, so the chain is followed back to the full
-    observation: a row a plug-in wrote is dated by the latest observation
-    that read that plug-in again, and every other row by the full one. A
-    plug-in row names its plug-in in ``extra.plugin``. None too when the
-    record names no earlier observation by a dated stamp.
+    observation: each plug-in read again is named with the latest
+    observation that read it again. A plug-in row names its plug-in in
+    ``extra.plugin``. Given the observation's ``rows``, each plug-in read
+    again is also named with the newest collection date its rows give, never
+    later than the day it was read again. None too when the record names no
+    earlier observation by a dated stamp.
     """
     record = summary.get(DERIVED_KEY)
     if not isinstance(record, Mapping):
@@ -1313,7 +1335,15 @@ def read_dates(summary: Mapping[str, Any], stamp: str) -> ReadDates | None:
                 reread.setdefault(str(name), day)
         day = str(record.get("from_observation") or "")[:10]
         record = record.get("from_rerun")
-    return ReadDates(held=day, reread=reread) if _ISO_DATE.match(day) else None
+    if not _ISO_DATE.match(day):
+        return None
+    collected: dict[str, str] = {}
+    for row in rows or ():
+        plugin = str((row.get("extra") or {}).get("plugin") or "")
+        when = str(row.get("collected_at") or "")[:10]
+        if plugin in reread and _ISO_DATE.match(when):
+            collected[plugin] = min(max(collected.get(plugin, when), when), reread[plugin])
+    return ReadDates(held=day, reread=reread, collected=collected)
 
 
 # ── The builder ────────────────────────────────────────────────────────────
@@ -1342,11 +1372,13 @@ class _Builder:
                 raise ValueError(f"summary.json counts {total} assets and assets.json holds "
                                  f"{len(self.assets)}: the observation is incomplete")
         # A derived observation holds rows read on more than one date: each
-        # row's facts are dated by the observation that read it (`_read_on`),
-        # and what the build says of the whole by the full observation's date.
+        # row's facts are dated by the collection its data comes from
+        # (`_read_on`, `ReadDates.dated`), never by the day an export was read
+        # again, and what the build says of the whole by the full
+        # observation's date.
         block = summary.get("observation")
         stamp = str((block if isinstance(block, dict) else {}).get("stamp") or self.dir.name)
-        self.read = read_dates(summary, stamp)
+        self.read = read_dates(summary, stamp, self.assets)
         self.read_on = (self.read.held if self.read
                         else stamp[:10] if obsarchive.is_stamp(stamp) else "")
         self._explicit = bool(recorded_at)
@@ -1393,8 +1425,8 @@ class _Builder:
     # Keys
 
     def _read_on(self, asset: Mapping[str, Any]) -> str:
-        """The date of the observation that read ``asset``: the recording date,
-        unless the observation is derived (:func:`read_dates`)."""
+        """The date ``asset`` is dated by: the recording date, unless the
+        observation is derived (:meth:`ReadDates.dated`)."""
         return self.read.of(asset) if self.read else self.recorded_at
 
     def _recorded_on(self, asset: Mapping[str, Any]) -> str:
@@ -1975,7 +2007,8 @@ class _Builder:
                     edges=self.edges, populations=self.populations, ledger=self.ledger,
                     observation=self.dir.name, recorded_at=self.recorded_at,
                     installed_on_from=self.installed_on_from, read_on=self.read_on,
-                    read_again=dict(self.read.reread) if self.read else {})
+                    read_again=dict(self.read.reread) if self.read else {},
+                    read_again_collected=dict(self.read.collected) if self.read else {})
 
 
 def build(observation: Path | str, *, ledger: KeyLedger | None = None,
@@ -2199,6 +2232,7 @@ def register_payload(register: Cmdb, *, title: str = "", organisation: str = "",
             "recorded_at": register.recorded_at,
             "read_on": register.read_on or register.recorded_at,
             "read_again": dict(sorted(register.read_again.items())),
+            "read_again_collected": dict(sorted(register.read_again_collected.items())),
             "item_noun": noun,
             "schema_version": schema.version,
             "schema_maturity": schema.maturity,

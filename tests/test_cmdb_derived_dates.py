@@ -119,8 +119,10 @@ def test_a_row_that_dates_itself_keeps_its_date(tmp_path):
     assert {a.valid_at for a in register.assertions
             if a.attribute == "hostname" and a.value == "printer-01.example.test"} == {
         "2030-01-05"}
+    # Collected before the full observation, so read again it is recorded on
+    # the full observation's date, as its carried rows are.
     assert {a.recorded_at for a in register.assertions
-            if a.attribute == "version" and a.value == "3.0.13"} == {REREAD_DAY}
+            if a.attribute == "version" and a.value == "3.0.13"} == {HELD_DAY}
 
 
 def test_an_environment_without_a_date_is_valid_when_its_row_was_read(tmp_path):
@@ -242,11 +244,12 @@ def test_the_read_me_says_when_a_derived_observation_was_read(tmp_path):
     register = cmdb.build_register(_derived(tmp_path))
     assert register["register"]["read_on"] == HELD_DAY
     assert register["register"]["read_again"] == {PLUGIN: REREAD_DAY}
+    assert register["register"]["read_again_collected"] == {}
     readme = _readme(register, tmp_path)
-    assert f"The data was read between {HELD_DAY} and {REREAD_DAY}." in readme
+    assert f"The data was collected between {HELD_DAY} and {REREAD_DAY}." in readme
     assert not any(REREAD in line for line in readme)
-    assert [line for line in readme if line.startswith("The data was read")] == [
-        f"The data was read between {HELD_DAY} and {REREAD_DAY}."]
+    assert [line for line in readme if line.startswith("The data was")] == [
+        f"The data was collected between {HELD_DAY} and {REREAD_DAY}."]
 
 
 def test_the_read_me_gives_one_range_when_sources_were_read_again_on_several_days(tmp_path):
@@ -256,7 +259,7 @@ def test_the_read_me_gives_one_range_when_sources_were_read_again_on_several_day
     assert register["register"]["read_again"] == {PLUGIN: REREAD_DAY,
                                                   "example_other": "2030-01-18"}
     readme = _readme(register, tmp_path)
-    assert f"The data was read between {HELD_DAY} and {REREAD_DAY}." in readme
+    assert f"The data was collected between {HELD_DAY} and {REREAD_DAY}." in readme
     assert not any("2030-01-18" in line for line in readme)
 
 
@@ -264,20 +267,28 @@ def test_the_read_me_dates_an_ordinary_observation_by_its_stamp(tmp_path):
     register = cmdb.build_register(_write(tmp_path, _rows(), None))
     assert register["register"]["read_again"] == {}
     readme = _readme(register, tmp_path)
-    assert f"The data was read on {REREAD_DAY}." in readme
+    assert f"The data was collected on {REREAD_DAY}." in readme
     assert not any(line.startswith("Observation ") for line in readme)
 
 
 def test_the_read_me_gives_one_date_when_the_sources_were_read_again_that_day():
     from takestock.cmdb_export import as_at_line
     reg = {"read_on": HELD_DAY, "recorded_at": "2030-02-01",
-           "read_again": {PLUGIN: HELD_DAY, "example_other": HELD_DAY}}
-    assert as_at_line(reg) == f"The data was read on {HELD_DAY}."
+           "read_again": {PLUGIN: HELD_DAY, "example_other": HELD_DAY},
+           "read_again_collected": {}}
+    assert as_at_line(reg) == f"The data was collected on {HELD_DAY}."
 
 
 def test_the_read_me_falls_back_to_the_recording_date():
     from takestock.cmdb_export import as_at_line
-    assert as_at_line({"recorded_at": "2030-02-01"}) == "The data was read on 2030-02-01."
+    assert as_at_line({"recorded_at": "2030-02-01"}) == "The data was collected on 2030-02-01."
+    assert as_at_line({"recorded_at": "2030-02-01", "read_again": {PLUGIN: "2030-02-03"},
+                       "read_again_collected": {}}) == (
+        "The data was collected between 2030-02-01 and 2030-02-03.")
+
+
+def test_a_register_from_before_collection_dates_says_when_it_was_read():
+    from takestock.cmdb_export import as_at_line
     assert as_at_line({"recorded_at": "2030-02-01", "read_again": {PLUGIN: "2030-02-03"}}) == (
         "The data was read between 2030-02-01 and 2030-02-03.")
 
@@ -286,3 +297,92 @@ def test_a_recording_date_given_for_the_build_leaves_the_read_date_alone(tmp_pat
     register = cmdb.build_register(_write(tmp_path, _rows(), None), recorded_at="2030-02-01")
     assert register["register"]["recorded_at"] == "2030-02-01"
     assert register["register"]["read_on"] == REREAD_DAY
+
+
+# ── a plug-in read again is dated by when its source was collected ─────────
+
+COLLECTED_DAY = "2030-01-20"
+
+
+def _collected_rows(day: str) -> list[dict[str, Any]]:
+    """The synthetic rows with the re-read plug-in's rows collected on ``day``."""
+    rows = _rows()
+    for row in rows:
+        if (row.get("extra") or {}).get("plugin") == PLUGIN:
+            row["collected_at"] = day
+    return rows
+
+
+def test_read_dates_names_the_newest_collection_of_each_plugin_read_again():
+    summary = {"rerun": {"from_observation": "2030-01-18T0000Z", "plugins": ["a"],
+                         "from_rerun": {"from_observation": HELD, "plugins": ["b"]}}}
+    rows = [{"extra": {"plugin": "a"}, "collected_at": "2030-01-03"},
+            {"extra": {"plugin": "a"}, "collected_at": COLLECTED_DAY},
+            {"extra": {"plugin": "b"}, "collected_at": "2030-01-15T10:00:00Z"},
+            {"extra": {"plugin": "c"}, "collected_at": "2030-01-24"},
+            {"extra": {}, "collected_at": "2030-01-24"}]
+    read = cmdb.read_dates(summary, REREAD, rows)
+    assert read is not None
+    assert read.reread == {"a": REREAD_DAY, "b": "2030-01-18"}
+    assert read.collected == {"a": COLLECTED_DAY, "b": "2030-01-15"}
+    assert read.of({"extra": {"plugin": "a"}}) == COLLECTED_DAY
+    assert read.of({"extra": {"plugin": "b"}}) == "2030-01-15"
+    assert read.of({"extra": {"plugin": "c"}}) == HELD_DAY
+    # Without the rows, the day each was read again, as before.
+    assert cmdb.read_dates(summary, REREAD).of({"extra": {"plugin": "a"}}) == REREAD_DAY
+
+
+def test_a_collection_older_than_the_full_observation_is_dated_by_it():
+    read = cmdb.read_dates({"rerun": {"from_observation": HELD, "plugins": ["a"]}}, REREAD,
+                           [{"extra": {"plugin": "a"}, "collected_at": "2030-01-02"}])
+    assert read is not None and read.collected == {"a": "2030-01-02"}
+    assert read.of({"extra": {"plugin": "a"}}) == HELD_DAY
+
+
+def test_a_collection_never_postdates_the_day_it_was_read_again():
+    read = cmdb.read_dates({"rerun": {"from_observation": HELD, "plugins": ["a"]}}, REREAD,
+                           [{"extra": {"plugin": "a"}, "collected_at": "2030-02-09"},
+                            {"extra": {"plugin": "a"}, "collected_at": "2030-01"}])
+    assert read is not None and read.collected == {"a": REREAD_DAY}
+
+
+def test_facts_and_edges_of_a_plugin_read_again_are_dated_by_its_collection(tmp_path):
+    register = cmdb.build(_derived(tmp_path, _collected_rows(COLLECTED_DAY)))
+    app = _key(register, "hostname", "app-01.example.test")
+    laptop = _key(register, "hostname", "laptop-01.example.test")
+    assert COLLECTED_DAY in _recorded(register, app)
+    assert _recorded(register, laptop) == {HELD_DAY}
+    assert {a.recorded_at for a in register.assertions} == {HELD_DAY, COLLECTED_DAY}
+    assert not any(REREAD_DAY in (e.valid_at, e.recorded_at) for e in register.edges)
+    by_kind = {e.kind: e for e in register.edges if e.kind in ("installed-on", "release-of")}
+    for kind in ("installed-on", "release-of"):
+        assert (by_kind[kind].valid_at, by_kind[kind].recorded_at) == (
+            COLLECTED_DAY, COLLECTED_DAY), kind
+    assert register.recorded_at == HELD_DAY
+
+
+def test_a_plugin_read_again_from_an_export_the_full_observation_held_moves_no_date(tmp_path):
+    carried = cmdb.build(_write(tmp_path / "carried", _collected_rows("2030-01-04"), None,
+                                stamp=HELD))
+    again = cmdb.build(_derived(tmp_path / "again", _collected_rows("2030-01-04")))
+
+    def dates(register: cmdb.Cmdb) -> set[tuple[str, str, str]]:
+        return ({(a.attribute, a.valid_at, a.recorded_at) for a in register.assertions}
+                | {(e.kind, e.valid_at, e.recorded_at) for e in register.edges})
+
+    assert dates(again) == dates(carried)
+
+
+def test_the_read_me_range_ends_at_the_newest_collection(tmp_path):
+    register = cmdb.build_register(_derived(tmp_path, _collected_rows(COLLECTED_DAY)))
+    assert register["register"]["read_again"] == {PLUGIN: REREAD_DAY}
+    assert register["register"]["read_again_collected"] == {PLUGIN: COLLECTED_DAY}
+    readme = _readme(register, tmp_path)
+    assert f"The data was collected between {HELD_DAY} and {COLLECTED_DAY}." in readme
+    assert not any(REREAD_DAY in line for line in readme)
+
+
+def test_the_read_me_gives_one_date_when_what_was_read_again_was_already_held(tmp_path):
+    register = cmdb.build_register(_derived(tmp_path, _collected_rows("2030-01-04")))
+    assert register["register"]["read_again_collected"] == {PLUGIN: "2030-01-04"}
+    assert f"The data was collected on {HELD_DAY}." in _readme(register, tmp_path)

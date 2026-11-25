@@ -507,6 +507,16 @@ command line or a file format, and its entry says how.
 
 ### Changed
 
+- **A derived observation's rows are dated by when their data was
+  collected**: a plug-in read again by `takestock rerun` no longer dates its
+  facts and relationships by the day it was read again, but by the newest
+  `collected_at` its rows give (or the full observation's date when that is
+  older; the day it was read again only when its rows give none). The
+  register's JSON gains `register.read_again_collected`, `cmdb.read_dates`
+  takes the observation's rows, and the workbook's Read me says when the
+  data was collected: *"The data was collected between 2030-01-10 and
+  2030-01-20."*
+
 - **The CMDB workbook's Read me gives one date range**: a derived
   observation's read date now reads *"The data was read between 2030-01-10
   and 2030-01-25."* rather than counting the sources read again; the JSON's
