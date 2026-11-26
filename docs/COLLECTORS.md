@@ -2324,7 +2324,7 @@ Get-MgDevice -All |
 |---|---|---|
 | Devices and their keys | `input:` or `escrow:` | `DeviceName`, `IsEncrypted`, `EscrowRecordFound`, `EscrowRecordCount`, `NewestEscrowDateUtc` (ISO 8601, or a slash date whose order the column settles), `RiskState` (corroborates only), `SerialNumber`, `Manufacturer`, `Model`, `OSVersion`, `ComplianceState`, `ManagementAgent` |
 | Intune encryption report, exported as CSV from the admin centre | `encryption_report:` | `Device name`, `TpmSpecificationVersion`, `Encryption readiness`, `Encryption status`, `Profile state summary`, `BitLocker State` |
-| Intune device list | `managed_devices:` | `Device name`, `OS`, `SkuFamily` (the edition, when present) |
+| Intune device list | `managed_devices:` | `Device name`, `OS`, `OS version` and `SkuFamily` (the build and edition, when present) |
 | Microsoft Entra ID device objects | `directory_devices:` | `operatingSystem`, `isManaged`, `isCompliant`, `trustType` (counts only) |
 | The main file filtered to devices with no key held in Microsoft Entra ID | `escrow_missing:` | `DeviceName`, checked against the main file |
 | Another product's drive-encryption status | `cross_check:` | the `host_column` and `status_column` it names |
@@ -2356,6 +2356,17 @@ disagree about whether a drive is encrypted, the row is `unknown` and flagged
 non-Windows device encryption` (`unknown`) counts enrolled devices that are
 not Windows, whose own report that they are encrypted cannot be checked
 here.
+
+**Dates.** Each row is dated by the file its facts were read from: a device
+row by the main file, or, for a device found only in the encryption report,
+by the report, with a note that the main file does not hold it; the hardware
+row by the encryption report; the non-Windows row by the device list. A
+device's build and edition come from one file where one holds both: the
+device list, the only file with an edition, gives the build as well when it
+has one, and `extra.os_collected_at` records that file's date, as of which a
+Windows support band is derived. Where the device list has an edition but no
+build, the main file's build is used, and the row records each one's date
+(`os_version_collected_at`, `sku_family_collected_at`).
 
 **`cross_check:`** compares each device with another product's
 drive-encryption export: `file`; `name` (default `cross_check`), used in the

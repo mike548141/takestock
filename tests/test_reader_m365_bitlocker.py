@@ -7,11 +7,13 @@ Nothing here was captured from a real export.
 
 from __future__ import annotations
 
+import os
+from datetime import datetime
 from pathlib import Path
 
 from entra_helpers import ctx, write
 
-from takestock import coverage
+from takestock import coverage, lifecycle
 from takestock.readers import library
 from takestock.readers import m365_bitlocker as reader
 
@@ -23,6 +25,7 @@ REPORT = ("Device name", "OS", "OS version", "TpmSpecificationVersion", "Encrypt
           "Encryption status", "User principal name", "Profile state summary",
           "BitLocker State")
 DEVICES = ("Device name", "OS", "SkuFamily")
+DEVICES_BUILT = ("Device name", "OS", "OS version", "SkuFamily")
 DIRECTORY = ("displayName", "operatingSystem", "isManaged", "isCompliant", "trustType")
 OTHER = ("Computer", "Disk protection")
 
@@ -55,6 +58,13 @@ def _rep(name: str, status: str = "Encrypted", tpm: str = "2.0", ready: str = "R
 
 def _escrow(tmp: Path, rows: list[dict], name: str = "escrow.csv") -> Path:
     return write(tmp / name, ESCROW, rows)
+
+
+def _dated(path: Path, day: str) -> Path:
+    """``path``, its modification time set to noon (UTC) on ``day``."""
+    t = datetime.fromisoformat(day + "T12:00:00+00:00").timestamp()
+    os.utime(path, (t, t))
+    return path
 
 
 def _run(path: Path | None, settings: dict | None = None):
@@ -377,3 +387,64 @@ def test_escrowed_devices(tmp_path):
     path = _escrow(tmp_path, [_dev("pc-01"), _dev("PC-02")])
     assert reader.escrowed_devices(path) == {"PC-01", "PC-02"}
     assert reader.escrowed_devices(tmp_path / "absent.csv") == set()
+
+
+def test_each_row_is_dated_by_the_export_it_was_read_from(tmp_path):
+    path = _dated(_escrow(tmp_path, [_dev("PC-01")]), "2030-01-10")
+    report = _dated(write(tmp_path / "report.csv", REPORT, [_rep("PC-01"), _rep("PC-09")]),
+                    "2030-03-20")
+    devices = _dated(write(tmp_path / "devices.csv", DEVICES, [
+        {"Device name": "PC-01", "OS": "Windows"}, {"Device name": "PH-01", "OS": "Android"},
+    ]), "2030-03-21")
+    out = _run(path, {"encryption_report": str(report), "managed_devices": str(devices)})
+    held = _device(out, "PC-01")
+    assert held.collected_at == "2030-01-10" and "escrow export" in held.source_name
+    only = _device(out, "PC-09")
+    assert only.collected_at == "2030-03-20"
+    assert only.source_name == "Microsoft Intune encryption report, file dated 2030-03-20"
+    assert "not in the escrow export (file dated 2030-01-10)" in only.notes
+    assert "no-escrow-record-row" in only.flags
+    assert _rows(out)["Endpoint key-storage hardware"].collected_at == "2030-03-20"
+    assert _rows(out)["Managed non-Windows device encryption"].collected_at == "2030-03-21"
+    assert _scope(out).collected_at == "2030-01-10"
+
+
+#: The build the device list reports for a device upgraded since the main export.
+NEWER = "10.0.30010.2"
+
+
+def _upgraded(tmp_path: Path):
+    path = _dated(_escrow(tmp_path, [_dev("PC-01"), _dev("PC-02"), _dev("PC-03")]),
+                  "2030-01-10")
+    devices = _dated(write(tmp_path / "devices.csv", DEVICES_BUILT, [
+        {"Device name": "PC-01", "OS": "Windows", "OS version": NEWER, "SkuFamily": "Enterprise"},
+        {"Device name": "PC-02", "OS": "Windows", "SkuFamily": "Enterprise"},
+        {"Device name": "PC-03", "OS": "Windows", "OS version": _dev("x")["OSVersion"],
+         "SkuFamily": "Enterprise"},
+    ]), "2030-03-21")
+    return _run(path, {"managed_devices": str(devices)})
+
+
+def test_build_and_edition_come_from_one_export(tmp_path):
+    out = _upgraded(tmp_path)
+    one = _device(out, "PC-01")
+    assert one.extra["os_version"] == NEWER and one.extra["sku_family"] == "Enterprise"
+    assert one.extra["os_collected_at"] == "2030-03-21"
+    assert one.collected_at == "2030-01-10"
+    two = _device(out, "PC-02")
+    assert two.extra["os_version"] == _dev("x")["OSVersion"]
+    assert two.extra["os_version_collected_at"] == "2030-01-10"
+    assert two.extra["sku_family_collected_at"] == "2030-03-21"
+    assert "os_collected_at" not in two.extra
+
+
+def test_a_support_band_follows_the_device_lists_build_and_date(tmp_path):
+    old, new = _dev("x")["OSVersion"].split(".")[2], NEWER.split(".")[2]
+    table = {"editions_covered": ["Enterprise"], "windows_11_enterprise_education": {
+        old: {"end": "2030-02-01"}, new: {"end": "2031-02-01"}}}
+    rows = [r for r in _upgraded(tmp_path).records if r.host]
+    lifecycle.derive_windows_support(rows, table)
+    band = {r.host: (r.support_status, r.support_end) for r in rows}
+    assert band["PC-01"] == ("supported", "2031-02-01")
+    assert band["PC-02"] == ("supported", "2030-02-01")
+    assert band["PC-03"] == ("end-of-support", "2030-02-01")

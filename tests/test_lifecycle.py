@@ -106,6 +106,14 @@ def test_windows_support_is_derived(windows, kw, status, end):
     assert a.extra[lc.SUPPORT_STATUS_BASIS_KEY] == lc.DERIVED
 
 
+def test_a_band_is_derived_as_of_when_the_build_was_collected(windows):
+    a = device("10.0.19045.1", "Education", collected="2025-09-01")
+    b = device("10.0.19045.1", "Education", collected="2025-09-01")
+    b.extra[lc.OS_COLLECTED_AT_KEY] = "2025-11-01"
+    lc.derive_windows_support([a, b], windows)
+    assert a.support_status == "supported" and b.support_status == "end-of-support"
+
+
 def test_paid_extended_updates_are_recorded_as_a_condition(windows):
     a = device("6.3.9600", name="Windows Server 2012 R2 Standard")
     lc.derive_windows_support([a], windows)

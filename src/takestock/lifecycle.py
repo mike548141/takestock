@@ -183,6 +183,12 @@ LIFECYCLE_LINE_KEY = "lifecycle_line"
 OS_VERSION_KEY = "os_version"
 OS_EDITION_KEY = "sku_family"
 OS_NAME_KEY = "os"
+#: ``extra`` key a collector may fill with the date (``YYYY-MM-DD``) the
+#: device's build and edition were collected, which can differ from the row's
+#: own ``collected_at`` where a row joins exports of different dates. A Windows
+#: band is derived as of this date when it is present, and as of the row's
+#: ``collected_at`` otherwise.
+OS_COLLECTED_AT_KEY = "os_collected_at"
 
 _WINDOWS_BUILD = re.compile(r"^10\.0\.(\d{5})(?:\.\d+)?$")
 
@@ -204,6 +210,14 @@ def _as_of(a: CryptoAsset) -> date | None:
         return date.fromisoformat((a.collected_at or "")[:10])
     except ValueError:
         return None
+
+
+def _windows_as_of(a: CryptoAsset) -> date | None:
+    """When a device's build and edition were collected: ``extra[OS_COLLECTED_AT_KEY]``, else the row's."""
+    try:
+        return date.fromisoformat(str(a.extra.get(OS_COLLECTED_AT_KEY) or "")[:10])
+    except ValueError:
+        return _as_of(a)
 
 
 def _fold(s: object) -> str:
@@ -267,7 +281,7 @@ def _windows_band(a: CryptoAsset, dataset: dict) -> tuple[str, str, str] | str |
             return "unrecognised_product"
     elif build and row.get("build") and str(row["build"]) != build:
         return "unrecognised_product"
-    as_of = _as_of(a)
+    as_of = _windows_as_of(a)
     if row is not None:
         if as_of is None:
             return "uncollected_date"

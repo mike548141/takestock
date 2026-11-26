@@ -507,6 +507,15 @@ command line or a file format, and its entry says how.
 
 ### Changed
 
+- **`m365_bitlocker` dates each row by the file it was read from**: a device
+  found only in the encryption report is dated by the report and its note
+  says the main export does not hold it; the key-storage hardware row is
+  dated by the report and the non-Windows row by the device list. A device's
+  build is taken from the device list when it has one, so that build and
+  edition come from one file, and `extra.os_collected_at` records that file's
+  date. `lifecycle.derive_windows_support` derives a band as of
+  `extra.os_collected_at` where a row carries it (`OS_COLLECTED_AT_KEY`).
+
 - **`takestock rerun` runs the late steps, coverage checks and annotations
   again**: after the named plug-ins are read again, the plug-ins that read the
   rest of the observation run over the rows as in a full observation, and

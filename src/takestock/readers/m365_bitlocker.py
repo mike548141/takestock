@@ -29,8 +29,9 @@ a named person beside it.
   name, keeping every value seen, so a device with one profile in error is
   read as in error.
 * ``managed_devices``: an export of Intune's device list (``Device name``,
-  ``OS`` and, if present, ``SkuFamily``). It gives the enrolled population by
-  operating system, and each device's operating system and edition.
+  ``OS`` and, if present, ``OS version`` and ``SkuFamily``). It gives the
+  enrolled population by operating system, and each device's operating
+  system, build and edition.
 * ``directory_devices``: an export of Microsoft Entra ID's device objects
   (``operatingSystem``, ``isManaged``, ``isCompliant``, ``trustType``). Only
   counts are taken from it; no row is written from it.
@@ -138,6 +139,18 @@ up then (``createdDateTime`` on Microsoft Graph's *bitlockerRecoveryKey
 resource type* is "the date and time when the key was originally backed up to
 Microsoft Entra ID"); it cannot say the drive still uses that key.
 
+**Dates.** Each row is dated by the export its facts were read from. A device
+row takes the main export's file date, or, for a device the main export does
+not hold, the encryption report's, and its note says the main export does not
+hold it. The ``Endpoint key-storage hardware`` row takes the encryption
+report's date and the ``Managed non-Windows device encryption`` row the device
+list's. A device's build and edition are read from one export where one holds
+both: the device list, the only export with an edition, gives the build too
+when it has one for the device, and ``os_collected_at`` records its date, as
+of which a Windows support band is derived. Where the device list has an
+edition but no build, the main export's build is used, and the row records
+each one's date (``os_version_collected_at``, ``sku_family_collected_at``).
+
 **Serials.** A device's serial is carried from the main export. A virtual
 machine's serial of the form ``VMware-<16 hex digits>-<16 hex digits>`` is
 written in space-separated byte pairs, which is easier to read and to match
@@ -152,6 +165,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import coverage, roles
+from ..lifecycle import OS_COLLECTED_AT_KEY, OS_EDITION_KEY, OS_NAME_KEY, OS_VERSION_KEY
 from ..model import CryptoAsset, register_informational_prefixes
 from ..plugins import Context, Plugin, StepResult
 from ..util import file_mtime_date
@@ -367,6 +381,37 @@ def directory_counts(rows: list[dict]) -> dict[str, int]:
     }
 
 
+def os_facts(escrow_row: dict | None, inventory_row: dict | None, escrow_when: str,
+             inventory_when: str) -> dict[str, str]:
+    """A device's build, edition and operating system, with the date they were collected.
+
+    The device list is the only export with an edition, so its build is used
+    where it has one, and both carry its date. Otherwise the main export's
+    build is used, and where an edition comes from the device list each value
+    keeps its own date.
+    """
+    out: dict[str, str] = {}
+    build = value(inventory_row, "OS version")
+    build_when = inventory_when
+    if not build:
+        build, build_when = value(escrow_row, "OSVersion"), escrow_when
+    edition = value(inventory_row, "SkuFamily")
+    if build:
+        out[OS_VERSION_KEY] = build
+    if value(inventory_row, "OS"):
+        out[OS_NAME_KEY] = value(inventory_row, "OS")
+    if edition:
+        out[OS_EDITION_KEY] = edition
+    if build and edition and build_when != inventory_when:
+        out["os_version_collected_at"] = build_when
+        out["sku_family_collected_at"] = inventory_when
+        return out
+    when = build_when if build else inventory_when if edition else ""
+    if when:
+        out[OS_COLLECTED_AT_KEY] = when
+    return out
+
+
 def _as_list(raw: Any, default: tuple[str, ...]) -> tuple[str, ...]:
     if not raw:
         return default
@@ -452,6 +497,10 @@ def grade(encrypted: bool | None, escrowed: bool | None,
             "This device's drive is encrypted and a copy of its recovery key is held in "
             "Microsoft Entra ID: the disk stays unreadable if stolen, and recoverable if "
             "the device fails.")
+
+
+def _named(export: str, when: str) -> str:
+    return f"{export}, " + (f"file dated {when}" if when else "file date unavailable")
 
 
 def _risk(raw: str) -> str:
@@ -544,8 +593,12 @@ def read(ctx: Context, path: Path) -> tuple[list[CryptoAsset], list[str]]:
     devices = sorted(set(escrow) | set(report))
 
     when = file_mtime_date(path) or ""
-    source_name = ("Microsoft Intune and Entra BitLocker key escrow export, "
-                   + (f"file dated {when}" if when else "file date unavailable"))
+    source_name = _named("Microsoft Intune and Entra BitLocker key escrow export", when)
+    report_when = (file_mtime_date(report_path) if report_path and report_rows else None) or ""
+    report_source = _named("Microsoft Intune encryption report", report_when)
+    inventory_when = (file_mtime_date(inventory_path)
+                      if inventory_path and inventory_rows else None) or ""
+    inventory_source = _named("Microsoft Intune device list", inventory_when)
     order = date_order([value(r, "NewestEscrowDateUtc") for r in escrow_rows])
 
     n = dict.fromkeys(("encrypted", "held", "not_held", "not_encrypted", "ungraded", "drift",
@@ -596,7 +649,7 @@ def read(ctx: Context, path: Path) -> tuple[list[CryptoAsset], list[str]]:
             models[model] = models.get(model, 0) + 1
             extra.update({"risk_state": risk_raw, "escrow_records": str(copies),
                           "manufacturer": value(er, "Manufacturer"), "model": model,
-                          "os_version": value(er, "OSVersion"),
+                          OS_VERSION_KEY: value(er, "OSVersion"),
                           "compliance_state": value(er, "ComplianceState"),
                           "management_agent": value(er, "ManagementAgent")})
             if newest:
@@ -615,16 +668,12 @@ def read(ctx: Context, path: Path) -> tuple[list[CryptoAsset], list[str]]:
                 n["risk_disagrees"] += 1
         else:
             flags.append(NO_ESCROW_ROW)
-            note += (" The device is in the encryption report but not in the escrow export, "
-                     "so nothing is known about its recovery key, which is not the same as "
-                     "knowing it has none.")
+            note += (" The device is in the encryption report but not in the escrow export"
+                     + (f" (file dated {when})" if when else "")
+                     + ", so nothing is known about its recovery key, which is not the same "
+                     "as knowing it has none. The row is dated by the encryption report.")
 
-        iv = inventory.get(device)
-        if iv is not None:
-            if value(iv, "OS"):
-                extra["os"] = value(iv, "OS")
-            if value(iv, "SkuFamily"):
-                extra["sku_family"] = value(iv, "SkuFamily")
+        extra.update(os_facts(er, inventory.get(device), when, inventory_when))
 
         if rr is not None:
             tpm = str(rr["tpm"])
@@ -687,7 +736,9 @@ def read(ctx: Context, path: Path) -> tuple[list[CryptoAsset], list[str]]:
         assets.append(CryptoAsset(
             name=f"Disk encryption and key custody {device}", data_state="at-rest",
             protocol="fde", role=roles.key_custody(device), host=device, serial=serial,
-            source=NAME, source_class="private", source_name=source_name, collected_at=when,
+            source=NAME, source_class="private",
+            source_name=source_name if er is not None else report_source,
+            collected_at=when if er is not None else report_when,
             verdict=verdict, flags=flags, notes=note, extra=extra))
 
     assets.append(_scope_row(devices, escrow, report, len(report_rows), inventory_rows,
@@ -703,7 +754,7 @@ def read(ctx: Context, path: Path) -> tuple[list[CryptoAsset], list[str]]:
         assets.append(CryptoAsset(
             name="Endpoint key-storage hardware", data_state="at-rest", protocol="fde",
             role=roles.key_storage_hardware(), source=NAME, source_class="private",
-            source_name=source_name, collected_at=when, verdict="n/a", flags=hw_flags,
+            source_name=report_source, collected_at=report_when, verdict="n/a", flags=hw_flags,
             hosts_count=known,
             notes=(f"{n['tpm_wanted']} of {known} devices with a TPM version in the "
                    f"encryption report have version {TPM_WANTED}. The TPM holds each "
@@ -719,7 +770,7 @@ def read(ctx: Context, path: Path) -> tuple[list[CryptoAsset], list[str]]:
         assets.append(CryptoAsset(
             name="Managed non-Windows device encryption", data_state="at-rest",
             protocol="fde", role=roles.unassessed_device_encryption(), source=NAME,
-            source_class="private", source_name=source_name, collected_at=when,
+            source_class="private", source_name=inventory_source, collected_at=inventory_when,
             verdict="unknown", flags=["not-assessed:non-windows-at-rest"], hosts_count=count,
             notes=(f"{count} enrolled device(s) are not Windows ({listing}). The reader "
                    "does not grade them: whatever such a device reports about its own "
