@@ -419,10 +419,17 @@ standard can change without a code change. Each is read through
 | `dns-services.yaml` | Public resolvers, a DNSSEC validation control, a certificate-transparency endpoint, CAA issuers and takeover namespaces; shipped empty |
 | `port-encryption.csv` | Each well-known port's posture (`encrypted`, `opportunistic` or `cleartext`), exposure and remedy |
 | `daemon-dictionary.csv` | Process binary names mapped to products. A profile adds its own rows in `<stem>.daemon-dictionary.yaml` |
-| `vendor-domains.csv` | Public vendor domains, for naming the operator of an outside service |
+| `vendor-domains.csv` | Public vendor domains, for naming the operator of an outside service. `config.load_vendor_domains(path)` reads a named CSV in the same columns instead, which replaces the table rather than adding to it |
 | `windows-lifecycle.yaml`, `software-lifecycle.yaml` | Vendor support dates, filled from public sources |
 | `crypto-software.csv` | Cryptographic libraries, and the highest TLS version a release line can negotiate, from public sources. Read by `software_inventory` |
 | `plugin-kinds.yaml` | The record schema of each plug-in kind, and how its records become rows. The contract with plug-ins, so it is read from the package only and a workspace copy is ignored |
+
+The collectors and readers that work from DNS names share one module,
+`dnsnames.py`: tidying a name, telling a public name from one inside a
+private network (a profile can add its own internal endings), attributing a name to a vendor by the longest suffix the
+vendor table lists, grouping the rest under a best guess at the registered
+domain, reading the suppliers the target profile declares, and matching a
+vendor's name against those declarations by whole words.
 
 ## Adding a collector
 

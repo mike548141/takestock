@@ -46,6 +46,7 @@ from .. import coverage, dnsevidence, roles, zonefile
 from ..config import inbox_path, load_vendor_domains
 from ..coverage import Gap
 from ..digresponse import norm, parse, query
+from ..dnsnames import declared_vendor_domains, registrable, second_level_labels, suffix_lookup
 from ..model import NA_VERDICT, CryptoAsset, register_informational_prefixes
 from ..util import now_date
 
@@ -76,23 +77,6 @@ register_informational_prefixes(
 
 #: Top-level labels reserved from the public DNS (RFC 2606, RFC 6761, RFC 6762).
 RESERVED_TLDS = frozenset({"test", "example", "invalid", "localhost", "local"})
-
-# Second-level labels that, directly under a two-letter country code, form part
-# of a public suffix (``co`` or ``com`` before the country code), so the
-# registered domain is the label to their left. Taken from the ICANN section
-# of the Public Suffix List: the commercial, network, organisation, academic,
-# government, education and military forms it lists under many country codes,
-# and the national spellings of "government" (``govt``, ``gob``, ``gouv``),
-# each listed under only one or a few country codes but never ordinary words.
-# ``go``, ``or`` and ``ne`` are left out because they are ordinary words,
-# registered as names under other country codes, where a match would shorten a
-# real registered domain. The match is
-# by label, not by country code, so it is a best guess, not the list itself. A
-# profile may add its own.
-SECOND_LEVEL_LABELS = frozenset({
-    "co", "com", "net", "org", "ac",
-    "gov", "govt", "gob", "gouv", "edu", "mil",
-})
 
 #: Reads (name, resolver) and returns dig's text for an A query.
 Reader = Callable[[str, str], str]
@@ -216,14 +200,6 @@ def proof_service(text: str, prefixes: Mapping[str, str] | None = None) -> str:
     return ""
 
 
-def registrable(name: str, second_level: Iterable[str] = SECOND_LEVEL_LABELS) -> str:
-    """A best guess at the registered domain: the last two labels, or three under a public suffix."""
-    parts = name.split(".")
-    tail = 3 if (len(parts) >= 3 and parts[-2] in set(second_level)
-                 and len(parts[-1]) == 2) else 2
-    return ".".join(parts[-tail:])
-
-
 def _hosts(assets: Iterable[CryptoAsset]) -> set[str]:
     return {norm(a.host).removeprefix("*.") for a in assets if a.host}
 
@@ -246,46 +222,6 @@ def _resolved_names(target: Mapping, root: Path | None) -> tuple[set[str], bool]
             return {norm(str(r.get(column) or "")) for r in csv.DictReader(fh)} - {""}, True
     except (OSError, UnicodeDecodeError, csv.Error):
         return set(), False
-
-
-def declared_vendor_domains(target: Mapping) -> dict[str, str]:
-    """Vendor domains the profile declares: {domain: vendor name}.
-
-    Read from ``third_party`` and ``infrastructure`` entries (``name`` and
-    ``domains``) and from ``scan_targets.saas_443`` / ``smtp_25`` entries
-    (``vendor`` and ``domains``).
-    """
-    out: dict[str, str] = {}
-
-    def add(name: object, entry: Mapping) -> None:
-        vendor = str(name or "").strip()
-        if not vendor:
-            return
-        for d in entry.get("domains") or []:
-            dom = norm(str(d or ""))
-            if dom:
-                out[dom] = vendor
-
-    for key in ("third_party", "infrastructure"):
-        for e in target.get(key) or []:
-            if isinstance(e, Mapping):
-                add(e.get("name"), e)
-    scan = target.get("scan_targets") or {}
-    for key in ("saas_443", "smtp_25"):
-        for e in scan.get(key) or []:
-            if isinstance(e, Mapping):
-                add(e.get("vendor"), e)
-    return out
-
-
-def suffix_lookup(name: str, table: Mapping[str, object]) -> object | None:
-    """The value for ``name`` or its nearest listed parent in ``table``."""
-    parts = name.split(".")
-    for i in range(len(parts) - 1):
-        value = table.get(".".join(parts[i:]))
-        if value:
-            return value
-    return None
 
 
 def no_zones_gap(unreadable: int) -> Gap:
@@ -348,7 +284,7 @@ def collect(target: Mapping, root: Path | None, population: Iterable[CryptoAsset
     services_cfg = dnsevidence.services(dict(target))
     namespaces = dict(services_cfg.get("takeover_namespaces") or {})
     settings = _settings(target)
-    second_level = SECOND_LEVEL_LABELS | {str(x) for x in settings.get("second_level_labels") or []}
+    second_level = second_level_labels(settings.get("second_level_labels") or [])
     proof_prefixes = {str(k).lower(): str(v)
                       for k, v in (settings.get("proof_prefixes") or {}).items()}
 

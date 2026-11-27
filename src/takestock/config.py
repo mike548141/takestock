@@ -457,13 +457,21 @@ def load_port_encryption() -> dict[str, dict[str, str]]:
         return build_index(list(_csv_rows(f)))
 
 
-def load_vendor_domains() -> dict[str, dict[str, str]]:
-    """Known vendor domains, keyed by lower-cased domain."""
-    path = data_file("vendor-domains.csv")
+def load_vendor_domains(path: str | Path | None = None) -> dict[str, dict[str, str]]:
+    """Known vendor domains, keyed by lower-cased domain.
+
+    With no ``path``, the bundled ``vendor-domains.csv`` (or a named
+    workspace's copy), and {} when there is none. With a ``path``, that CSV
+    instead, in the same columns; it replaces the bundled table rather than
+    adding to it, and a file that cannot be read raises ``OSError``, so a
+    table somebody named is never silently empty.
+    """
     out: dict[str, dict[str, str]] = {}
-    if not path.exists():
-        return out
-    with path.open(newline="") as f:
+    if path is None:
+        path = data_file("vendor-domains.csv")
+        if not path.exists():
+            return out
+    with Path(path).open(newline="", encoding="utf-8-sig") as f:
         for row in _csv_rows(f):
             key = str(row.get("domain", "")).strip().lower()
             if key:

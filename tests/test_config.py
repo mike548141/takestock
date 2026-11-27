@@ -151,6 +151,22 @@ def test_workspace_data_rows_are_read(tmp_path):
     assert list(config.load_vendor_domains()) == ["example.com"]
 
 
+def test_a_named_vendor_table_replaces_the_bundled_one(tmp_path):
+    config.set_workspace(tmp_path)
+    named = tmp_path / "own-vendors.csv"
+    named.write_text("﻿" + "\n".join([
+        "# rows for one estate", "domain,vendor,category,notes",
+        "Widgets.Example,Widget Works,saas,", "parts.test,Widget Works,cdn,", ""]),
+        encoding="utf-8")
+    table = config.load_vendor_domains(named)
+    assert set(table) == {"widgets.example", "parts.test"}
+    assert table["parts.test"]["category"] == "cdn"
+    assert "github.com" not in table  # the bundled rows are not merged in
+    assert config.load_vendor_domains(str(named)) == table
+    with pytest.raises(OSError):
+        config.load_vendor_domains(tmp_path / "missing.csv")
+
+
 def test_the_bundled_port_table_and_dispositions_load():
     table = config.load_port_encryption()
     assert table["443/tcp"]["posture"] == "encrypted"

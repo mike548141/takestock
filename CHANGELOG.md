@@ -9,6 +9,25 @@ command line or a file format, and its entry says how.
 
 ### Added
 
+- **`takestock.dnsnames`: shared DNS-name helpers** (`docs/ARCHITECTURE.md`).
+  The name helpers `dns_zones` used (`suffix_lookup`, `registrable` with a
+  profile's extra `second_level_labels`, the declared vendor domains) move
+  into one module, joined by `normalise`, `is_public` (single labels and
+  reserved or private-network endings are never an outside party's;
+  `non_public_suffixes` adds a profile's own internal endings),
+  `declared_vendors`
+  (every supplier the profile declares across `third_party`,
+  `infrastructure` and `scan_targets`, with its kind, uses, `pq_roadmap` and
+  domains), and `declared_matches`, which says which declarations a vendor
+  name accounts for: every identifying word of the name, legal forms such
+  as `Ltd` aside, must be a whole word of the declared name. `dns_zones`
+  behaves as before.
+
+- **`config.load_vendor_domains(path)`** reads a named vendor-domain CSV
+  instead of the bundled table; the named table replaces the bundled one,
+  and a named file that cannot be read is an error rather than an empty
+  table.
+
 - **`takestock mailpath` names message-trace origins**: a sending address the
   system catalogue or an overlay recognises is shown by name beside the
   address, and Exchange Online's placeholder for messages the platform made
