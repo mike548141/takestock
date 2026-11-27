@@ -134,6 +134,23 @@ def test_an_environment_without_a_date_is_valid_when_its_row_was_read(tmp_path):
     assert env and {(a.valid_at, a.recorded_at) for a in env} == {(REREAD_DAY, REREAD_DAY)}
 
 
+def test_an_os_build_read_again_is_dated_and_recorded_by_when_it_was_collected(tmp_path):
+    rows = _rows()
+    disk = next(r for r in rows if r["name"] == "disk laptop-01")
+    disk["extra"].update({"plugin": PLUGIN, "os_version": "7.2.41",
+                          "os_collected_at": "2030-01-20"})
+    disk["collected_at"] = "2030-01-04"
+    register = cmdb.build(_derived(tmp_path, rows))
+    laptop = _key(register, "hostname", "laptop-01.example.test")
+    dates = {a.attribute: (a.valid_at, a.recorded_at) for a in register.assertions
+             if a.item == laptop and a.attribute in ("hostname", "os_version")}
+    # The build was collected after the full observation, so the register
+    # learned it no earlier than that; the row's other facts are recorded on
+    # the full observation's date, as before.
+    assert dates == {"hostname": ("2030-01-04", HELD_DAY),
+                     "os_version": ("2030-01-20", "2030-01-20")}
+
+
 # ── the edges, the keys and the counts ─────────────────────────────────────
 
 

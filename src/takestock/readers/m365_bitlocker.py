@@ -146,8 +146,9 @@ hold it. The ``Endpoint key-storage hardware`` row takes the encryption
 report's date and the ``Managed non-Windows device encryption`` row the device
 list's. A device's build and edition are read from one export where one holds
 both: the device list, the only export with an edition, gives the build too
-when it has one for the device, and ``os_collected_at`` records its date, as
-of which a Windows support band is derived. Where the device list has an
+when it has one for the device, ``os_collected_at`` records its date, as of
+which a Windows support band is derived, and ``os_source_name`` names it, as
+the row's ``source_name`` would. Where the device list has an
 edition but no build, the main export's build is used, and the row records
 each one's date (``os_version_collected_at``, ``sku_family_collected_at``).
 
@@ -165,7 +166,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import coverage, roles
-from ..lifecycle import OS_COLLECTED_AT_KEY, OS_EDITION_KEY, OS_NAME_KEY, OS_VERSION_KEY
+from ..lifecycle import OS_COLLECTED_AT_KEY, OS_EDITION_KEY, OS_NAME_KEY, OS_SOURCE_NAME_KEY, OS_VERSION_KEY
 from ..model import CryptoAsset, register_informational_prefixes
 from ..plugins import Context, Plugin, StepResult
 from ..util import file_mtime_date
@@ -382,17 +383,20 @@ def directory_counts(rows: list[dict]) -> dict[str, int]:
 
 
 def os_facts(escrow_row: dict | None, inventory_row: dict | None, escrow_when: str,
-             inventory_when: str) -> dict[str, str]:
+             inventory_when: str, inventory_source: str = "") -> dict[str, str]:
     """A device's build, edition and operating system, with the date they were collected.
 
     The device list is the only export with an edition, so its build is used
-    where it has one, and both carry its date. Otherwise the main export's
-    build is used, and where an edition comes from the device list each value
-    keeps its own date.
+    where it has one, and both carry its date; ``inventory_source``, the
+    device list's source name, is then recorded as the build's source.
+    Otherwise the main export's build is used, and where an edition comes
+    from the device list each value keeps its own date.
     """
     out: dict[str, str] = {}
     build = value(inventory_row, "OS version")
     build_when = inventory_when
+    if build and inventory_source:
+        out[OS_SOURCE_NAME_KEY] = inventory_source
     if not build:
         build, build_when = value(escrow_row, "OSVersion"), escrow_when
     edition = value(inventory_row, "SkuFamily")
@@ -673,7 +677,8 @@ def read(ctx: Context, path: Path) -> tuple[list[CryptoAsset], list[str]]:
                      + ", so nothing is known about its recovery key, which is not the same "
                      "as knowing it has none. The row is dated by the encryption report.")
 
-        extra.update(os_facts(er, inventory.get(device), when, inventory_when))
+        extra.update(os_facts(er, inventory.get(device), when, inventory_when,
+                              inventory_source))
 
         if rr is not None:
             tpm = str(rr["tpm"])

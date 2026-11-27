@@ -70,6 +70,14 @@ observations/latest/cmdb/keys.jsonl
   date. A row that gives none is dated by the observation that read it.
   This is the same in an ordinary observation and a derived one, so
   reading an export again never makes its data newer, nor older than it is.
+- A row that joins exports of different dates may say when its
+  operating-system build was collected, in `extra.os_collected_at`
+  (`lifecycle.OS_COLLECTED_AT_KEY`), and which source it was read from, in
+  `extra.os_source_name` (`lifecycle.OS_SOURCE_NAME_KEY`). Its `os_version`
+  fact is then dated, and recorded, as a row collected that day would be,
+  and credited to that source; each falls back to the row's own date and
+  `source_name` where the row does not give it, and the row's other facts
+  keep its own. A date that does not start with an ISO date is ignored.
 - A derived observation (`takestock rerun`) holds rows read on different
   dates: the rows it carries were read when the full observation it comes
   from was taken, and the rows of the plug-ins it read again (a row names

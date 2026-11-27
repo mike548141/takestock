@@ -431,11 +431,15 @@ def test_build_and_edition_come_from_one_export(tmp_path):
     assert one.extra["os_version"] == NEWER and one.extra["sku_family"] == "Enterprise"
     assert one.extra["os_collected_at"] == "2030-03-21"
     assert one.collected_at == "2030-01-10"
+    # The build is credited to the device list; the row is still the main export's.
+    assert one.extra["os_source_name"] == "Microsoft Intune device list, file dated 2030-03-21"
+    assert one.source_name.startswith("Microsoft Intune and Entra BitLocker key escrow export")
     two = _device(out, "PC-02")
     assert two.extra["os_version"] == _dev("x")["OSVersion"]
     assert two.extra["os_version_collected_at"] == "2030-01-10"
     assert two.extra["sku_family_collected_at"] == "2030-03-21"
     assert "os_collected_at" not in two.extra
+    assert "os_source_name" not in two.extra
 
 
 def test_a_support_band_follows_the_device_lists_build_and_date(tmp_path):

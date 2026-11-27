@@ -936,3 +936,50 @@ def test_the_payload_carries_the_schema_and_never_a_blank(tmp_path):
     assert counts["contested_attributes"] == len(payload["conflicts"]) >= 1
     reasons = {r["relationship"] for r in payload["relationships_not_drawn"]}
     assert "runs-on" in reasons and "contains" not in reasons
+
+
+def _os_facts(register, host):
+    item = _item(register, host).key
+    return {(a.value, a.valid_at, a.actor.name) for a in register.assertions
+            if a.item == item and a.attribute == "os_version"}
+
+
+def test_an_os_build_is_dated_and_credited_by_the_export_it_came_from(tmp_path):
+    rows = [
+        # A row joining two exports: its own date and source are the older
+        # one's, and its build came from the newer one, collected on 2030-01-12.
+        cmdbfake._row(name="disk laptop-07", host="laptop-07.example.test",
+                      data_state="at-rest", source="example_escrow",
+                      source_name="Example key escrow export", collected_at="2030-01-05",
+                      verdict="strong",
+                      extra={"host_type": "Laptop", "os_version": "7.2.41",
+                             "os_collected_at": "2030-01-12",
+                             "os_source_name": "Example device list, file dated 2030-01-12"}),
+        cmdbfake._row(name="agent laptop-07", host="laptop-07.example.test",
+                      data_state="at-rest", source="example_agent",
+                      source_name="Example endpoint agent", collected_at="2030-01-09",
+                      verdict="strong",
+                      extra={"host_type": "Laptop", "os_version": "6.9.12"}),
+        # A collection date that is not a date leaves the row's own.
+        cmdbfake._row(name="disk laptop-08", host="laptop-08.example.test",
+                      data_state="at-rest", source="example_escrow",
+                      source_name="Example key escrow export", collected_at="2030-01-05",
+                      verdict="strong",
+                      extra={"host_type": "Laptop", "os_version": "7.2.41",
+                             "os_collected_at": "not recorded"}),
+    ]
+    register = cmdb.build(cmdbfake.write_observation(tmp_path, assets=rows))
+    assert _os_facts(register, "laptop-07.example.test") == {
+        ("7.2.41", "2030-01-12", "Example device list, file dated 2030-01-12"),
+        ("6.9.12", "2030-01-09", "Example endpoint agent")}
+    # The newer build is published; the row's other facts keep its own date
+    # and source, and a row naming no source for its build keeps its own.
+    published = _value(register, "laptop-07.example.test", "os_version")
+    assert (published.value, published.actor) == (
+        "7.2.41", "Example device list, file dated 2030-01-12")
+    item = _item(register, "laptop-07.example.test").key
+    assert {a.valid_at for a in register.assertions
+            if a.item == item and a.attribute == "hostname"
+            and a.actor.name == "Example key escrow export"} == {"2030-01-05"}
+    assert _os_facts(register, "laptop-08.example.test") == {
+        ("7.2.41", "2030-01-05", "Example key escrow export")}

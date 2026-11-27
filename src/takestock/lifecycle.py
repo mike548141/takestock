@@ -187,8 +187,14 @@ OS_NAME_KEY = "os"
 #: device's build and edition were collected, which can differ from the row's
 #: own ``collected_at`` where a row joins exports of different dates. A Windows
 #: band is derived as of this date when it is present, and as of the row's
-#: ``collected_at`` otherwise.
+#: ``collected_at`` otherwise; the register dates the row's ``os_version`` fact
+#: by it too.
 OS_COLLECTED_AT_KEY = "os_collected_at"
+#: ``extra`` key a collector may fill with the name of the source the device's
+#: build was read from, written as the collector writes a row's
+#: ``source_name``, where that is not the source the row names. The register
+#: credits the row's ``os_version`` fact to it.
+OS_SOURCE_NAME_KEY = "os_source_name"
 
 _WINDOWS_BUILD = re.compile(r"^10\.0\.(\d{5})(?:\.\d+)?$")
 

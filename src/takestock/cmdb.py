@@ -93,6 +93,7 @@ from . import depth, obsarchive
 from .agility import SPREAD_FLAG
 from .config import data_file, load_yaml_strict
 from .exits import EXIT_CLEAN, guarded
+from .lifecycle import OS_COLLECTED_AT_KEY, OS_SOURCE_NAME_KEY
 
 MEASURED = "measured"
 REPORTED = "reported"
@@ -1287,6 +1288,21 @@ def _collected_on(row: Mapping[str, Any]) -> str:
     return collected if _ISO_DATE.match(collected) else ""
 
 
+def _dated_by_its_build(row: Mapping[str, Any], extra: Mapping[str, Any]) -> dict[str, Any] | None:
+    """``row`` as dated by when its operating-system build was collected.
+
+    A row may join exports of different dates, and say in
+    ``extra[OS_COLLECTED_AT_KEY]`` when its build was collected. Its
+    ``os_version`` fact is then dated, and recorded, as a row collected that
+    day would be; its other facts keep the row's own date. None when the row
+    gives no such date.
+    """
+    when = str(extra.get(OS_COLLECTED_AT_KEY) or "")[:10]
+    if not _ISO_DATE.match(when):
+        return None
+    return {**row, "collected_at": when}
+
+
 @dataclass(frozen=True)
 class ReadDates:
     """When the rows of a derived observation were read, and what dates them.
@@ -1640,7 +1656,7 @@ class _Builder:
                      source=str(asset.get("source") or ""))
 
     def _say(self, key: str, attribute: str, value: Any, strength: str,
-             valid_at: str, actor: Actor) -> None:
+             valid_at: str, actor: Actor, *, recorded_at: str = "") -> None:
         if attribute not in self.schema.attributes:
             raise SchemaError(f"attribute {attribute!r} is not declared in {SCHEMA_FILE}")
         self._check_code(attribute, value, actor)
@@ -1651,7 +1667,20 @@ class _Builder:
         self.assertions.append(Assertion(
             item=key, attribute=attribute, value=value,
             evidence_strength=capped_strength(self.schema, attribute, strength),
-            valid_at=valid_at, recorded_at=self._recording, actor=actor))
+            valid_at=valid_at, recorded_at=recorded_at or self._recording, actor=actor))
+
+    def _say_build(self, key: str, value: Any, strength: str, asset: Mapping[str, Any],
+                   extra: Mapping[str, Any], seen: str, actor: Actor) -> None:
+        """A row's ``os_version`` fact, dated by when the build was collected
+        and credited to the source it was read from, where the row says
+        (``OS_COLLECTED_AT_KEY``, ``OS_SOURCE_NAME_KEY``); otherwise as the
+        row's other facts are."""
+        row = _dated_by_its_build(asset, extra)
+        named = str(extra.get(OS_SOURCE_NAME_KEY) or "").strip()
+        self._say(key, "os_version", value, strength,
+                  self._seen_at(row) if row is not None else seen,
+                  self._actor({**asset, "source_name": named}) if named else actor,
+                  recorded_at=self._recorded_on(row) if row is not None else "")
 
     def _check_code(self, attribute: str, value: Any, actor: Actor) -> None:
         """Refuse a value outside the attribute's vocabulary, if it has one."""
@@ -1698,7 +1727,10 @@ class _Builder:
                     self._software_facts(None, asset, strength, seen, actor)
                 continue
             for attribute, value in self._attributes(asset, extra).items():
-                self._say(key, attribute, value, strength, seen, actor)
+                if attribute == "os_version":
+                    self._say_build(key, value, strength, asset, extra, seen, actor)
+                else:
+                    self._say(key, attribute, value, strength, seen, actor)
             self._say_environment(key, extra, seen)
             if asset.get("data_state") == "third-party" and str(extra.get("vendor") or "").strip():
                 self._say(key, "vendor_name", str(extra["vendor"]).strip(),

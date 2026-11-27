@@ -507,6 +507,17 @@ command line or a file format, and its entry says how.
 
 ### Changed
 
+- **The register dates an operating-system build by when it was collected,
+  and credits it to the source it was read from**: a row's `os_version`
+  fact is dated, and recorded, by `extra.os_collected_at` where the row
+  gives that date, and credited to `extra.os_source_name`
+  (`lifecycle.OS_SOURCE_NAME_KEY`) where the row names one, rather than by
+  the row's `collected_at` and `source_name`. A build read from a newer
+  export than the rest of its row so carries that export's date and name;
+  the date is the one compared when sources of the same evidence strength
+  give different builds. `m365_bitlocker` names the device list in
+  `extra.os_source_name` when the build is read from it.
+
 - **`m365_bitlocker` dates each row by the file it was read from**: a device
   found only in the encryption report is dated by the report and its note
   says the main export does not hold it; the key-storage hardware row is

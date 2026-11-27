@@ -2363,8 +2363,9 @@ by the report, with a note that the main file does not hold it; the hardware
 row by the encryption report; the non-Windows row by the device list. A
 device's build and edition come from one file where one holds both: the
 device list, the only file with an edition, gives the build as well when it
-has one, and `extra.os_collected_at` records that file's date, as of which a
-Windows support band is derived. Where the device list has an edition but no
+has one, `extra.os_collected_at` records that file's date, as of which a
+Windows support band is derived, and `extra.os_source_name` names that file
+as a row's `source_name` would. Where the device list has an edition but no
 build, the main file's build is used, and the row records each one's date
 (`os_version_collected_at`, `sku_family_collected_at`).
 
