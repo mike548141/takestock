@@ -82,13 +82,17 @@ CMDB_SCHEMA_OVERLAY_SUFFIX = ".cmdb-schema-overlay.yaml"
 #: The suffix of a profile's own daemon-dictionary rows (see :func:`load_dictionary`).
 DAEMON_DICTIONARY_SUFFIX = ".daemon-dictionary.yaml"
 
+#: The suffix of a profile's own post-quantum positions (see :mod:`takestock.pqc_positions`).
+PQC_POSITIONS_SUFFIX = ".pqc-positions.yaml"
+
 # Files beside a target profile that extend it rather than being a profile.
 # The ones the package itself writes about are listed here, so the list does
 # not depend on which modules happen to have been imported. Any other module
 # that reads an overlay of its own registers the suffix with
 # register_overlay_suffix().
 OVERLAY_SUFFIXES: list[str] = [".dispositions.yaml", ".derived-ports.yaml", IPAM_PLAN_SUFFIX,
-                               CMDB_SCHEMA_OVERLAY_SUFFIX, DAEMON_DICTIONARY_SUFFIX]
+                               CMDB_SCHEMA_OVERLAY_SUFFIX, DAEMON_DICTIONARY_SUFFIX,
+                               PQC_POSITIONS_SUFFIX]
 
 
 def register_overlay_suffix(*suffixes: str) -> None:

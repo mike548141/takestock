@@ -420,6 +420,7 @@ standard can change without a code change. Each is read through
 | `port-encryption.csv` | Each well-known port's posture (`encrypted`, `opportunistic` or `cleartext`), exposure and remedy |
 | `daemon-dictionary.csv` | Process binary names mapped to products. A profile adds its own rows in `<stem>.daemon-dictionary.yaml` |
 | `vendor-domains.csv` | Public vendor domains, for naming the operator of an outside service. `config.load_vendor_domains(path)` reads a named CSV in the same columns instead, which replaces the table rather than adding to it |
+| `pqc-positions.yaml` | Software providers' published post-quantum positions, each with its source and read date. Not shipped yet: `pqc_positions.load` reads it when present, with a profile's `<stem>.pqc-positions.yaml` merged over it |
 | `windows-lifecycle.yaml`, `software-lifecycle.yaml` | Vendor support dates, filled from public sources |
 | `crypto-software.csv` | Cryptographic libraries, and the highest TLS version a release line can negotiate, from public sources. Read by `software_inventory` |
 | `plugin-kinds.yaml` | The record schema of each plug-in kind, and how its records become rows. The contract with plug-ins, so it is read from the package only and a workspace copy is ignored |
@@ -430,6 +431,13 @@ private network (a profile can add its own internal endings), attributing a name
 vendor table lists, grouping the rest under a best guess at the registered
 domain, reading the suppliers the target profile declares, and matching a
 vendor's name against those declarations by whole words.
+
+`pqc_positions.py` reads what providers have published about post-quantum
+cryptography: it refuses an entry with no source or read date, reports every
+entry past its re-check date, matches an entry to a supplier by the leading
+words of the supplier's name, and gives each match as one cited sentence and
+a payload. A supplier with no entry is not researched, never `silent`. The
+format is in [`TARGET-PROFILE.md`](TARGET-PROFILE.md#stempqc-positionsyaml).
 
 ## Adding a collector
 

@@ -14,8 +14,9 @@ its overlays can carry. The sample organisation in
   what to collect for one organisation.
 - **Overlay**: a file beside a profile, named after it, that adds to it:
   `<stem>.dispositions.yaml`, `<stem>.derived-ports.yaml`,
-  `<stem>.cmdb-schema-overlay.yaml`, `<stem>.ipam.yaml` and
-  `<stem>.daemon-dictionary.yaml`. An overlay is never read as a profile.
+  `<stem>.cmdb-schema-overlay.yaml`, `<stem>.ipam.yaml`,
+  `<stem>.daemon-dictionary.yaml` and `<stem>.pqc-positions.yaml`. An
+  overlay is never read as a profile.
 - **Inbox**: the directory supplied exports are read from.
 - **Observation**: one run's output directory, named by its UTC time stamp.
 
@@ -29,6 +30,7 @@ its overlays can carry. The sample organisation in
     example-widgets.derived-ports.yaml    overlay: a cleartext probe plan (optional)
     example-widgets.ipam.yaml             overlay: the IP address plan file
     example-widgets.daemon-dictionary.yaml  overlay: the organisation's own process names (optional)
+    example-widgets.pqc-positions.yaml    overlay: suppliers' published post-quantum positions (optional)
   inbox/                                  exports supplied by hand
   observations/
     2030-01-31T0930Z/                     one observation
@@ -580,6 +582,73 @@ table does not have, a missing field, a category or confidence outside the
 table's words, or a binary named twice) stops `takestock observe` and
 `takestock rerun` before anything is written, with the file named, and the
 binary when one row is at fault.
+
+### `<stem>.pqc-positions.yaml`
+
+What software providers have published about post-quantum cryptography,
+each entry with where it was read and when, for a reader to show beside the
+suppliers the organisation depends on (`takestock.pqc_positions`). Entries
+here are merged over a bundled `pqc-positions.yaml` when one exists
+(takestock ships none yet; a named workspace's `data/pqc-positions.yaml`
+counts as one): **an entry with the same `key` replaces the bundled entry
+whole**, and any other is added.
+
+```yaml
+schema: 1
+recheck_after_days: 180        # optional: when an entry without recheck_by falls due
+positions:
+  - key: example-cloud
+    provider: Example Cloud
+    aliases: [ECX]
+    state: shipped
+    since: release 7
+    summary: Hybrid key exchange is on by default
+    detail: Applies to the managed load balancer
+    dimensions: key exchange only
+    products: [Example Balancer]
+    source: https://example.com/pq
+    publisher: Example Cloud
+    published: 2030-01-10
+    read: 2030-02-01
+    recheck_by: 2030-12-01
+```
+
+| Field | Means |
+|---|---|
+| `provider` | Who the position belongs to. Required |
+| `key` | The entry's identity, used when merging. Defaults to `provider`; given once per file |
+| `aliases` | Other names the provider is known by. Optional |
+| `state` | `shipped`, `partial`, `planned` or `silent` (read, and found to say nothing on the question). Required |
+| `since` | The release or version that carries it. Optional |
+| `summary`, `detail` | What was published, in a line and at length. Optional |
+| `dimensions` | Which cryptographic functions the reading covers (key exchange, signatures, data at rest). Optional, and shown with the state whenever it is given |
+| `products` | The products the position covers. Recorded, never matched on |
+| `source` | Where it was read: a URL. Required |
+| `publisher` | Who published that material. Optional |
+| `published` | The date the material itself carries. Optional; not later than `read` |
+| `read` | The date it was read. Required; not later than today |
+| `recheck_by` | The date by which it is worth reading again. Optional; without it the entry falls due `recheck_after_days` after `read` (180 unless the file says otherwise) |
+
+Dates are `YYYY-MM-DD`. An entry past its re-check date is still shown,
+and reported: `Positions.stale` lists it with a sentence for a gap, its
+payload carries `stale: true`, and its cited sentence ends by saying it is
+due for re-checking. A supplier with no entry is *not researched*, which is
+not the same as `silent`.
+
+A position is matched to a supplier by **leading words**: the provider's
+name (or an alias), legal forms such as `Ltd` set aside, must be the first
+whole words of the supplier's name. `Example Cloud` matches `Example Cloud
+(managed hosting)` but not `Hosting by Example Cloud`; where two entries
+match, the longer name wins. `pqc_positions.resolve` gives what the
+profile itself records for a supplier (its `pq_roadmap`) precedence over a
+published position.
+
+A malformed file (not valid YAML, another top-level key, another schema, an
+unknown field, a missing `provider`, `state`, `source` or `read`, a date that
+is not a date, dates in the wrong order, or a key given twice) is refused
+with the file named. When one entry is at fault the message names it too:
+by its provider once the provider has been read, otherwise by its number in
+the list. A key given twice is named by the key.
 
 ### `<stem>.cmdb-schema-overlay.yaml`
 

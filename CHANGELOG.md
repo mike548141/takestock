@@ -9,6 +9,21 @@ command line or a file format, and its entry says how.
 
 ### Added
 
+- **`takestock.pqc_positions`: suppliers' published post-quantum positions**
+  (`docs/TARGET-PROFILE.md`). A format for what a software provider has
+  published about post-quantum cryptography (`shipped`, `partial`, `planned`
+  or `silent`, the release, what it covers) with its provenance: the source
+  URL, the publisher, the date the material carries, the date it was read,
+  and a `recheck_by` date or a file-wide `recheck_after_days` rule. An entry
+  without a source or read date is refused; one past its re-check date is
+  still used and is listed in `Positions.stale`, flagged in its payload and
+  named as due for re-checking in its cited sentence. Entries come from an
+  optional bundled `pqc-positions.yaml` (none ships yet) with the profile's
+  own `<stem>.pqc-positions.yaml` merged over it by `key`. `Positions.match`
+  matches a supplier by the leading words of its name, and `resolve` gives
+  the cited sentence and payload, with the profile's own `pq_roadmap`
+  winning. A supplier with no entry is not researched, never `silent`.
+
 - **`takestock.dnsnames`: shared DNS-name helpers** (`docs/ARCHITECTURE.md`).
   The name helpers `dns_zones` used (`suffix_lookup`, `registrable` with a
   profile's extra `second_level_labels`, the declared vendor domains) move
