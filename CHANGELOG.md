@@ -43,6 +43,19 @@ command line or a file format, and its entry says how.
   and a named file that cannot be read is an error rather than an empty
   table.
 
+- **`estate` and `endpoint_coverage` readers** (the readers library;
+  `docs/COLLECTORS.md`). `estate` checks the classes of equipment a profile
+  declares (`asset_classes:`) against the instruments an observation ran and
+  writes one row per class: instrumented, partly instrumented, silent, not
+  run, unmeasured (an instrument that sent no probe) or without any
+  instrument, with a coverage gap for each class nothing measured, and
+  optionally a comparison with the vendors a discovery export saw.
+  `endpoint_coverage` is a coverage check that lists the endpoint control
+  families no instrument reaches, and how many of the devices reached each
+  family covers (`endpoint_control_families:` excludes families or adds
+  instruments that evidence one). Both run late, read only the rows already
+  collected, and say that nothing looked, never that an asset failed.
+
 - **`takestock mailpath` names message-trace origins**: a sending address the
   system catalogue or an overlay recognises is shown by name beside the
   address, and Exchange Online's placeholder for messages the platform made

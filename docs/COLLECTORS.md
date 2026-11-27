@@ -994,6 +994,8 @@ plugins:
 | `falcon_disk_encryption` | `general` | A CrowdStrike Falcon export of drive encryption per machine: encrypted, unencrypted or partly encrypted, with machines a key-custody export covers left to `m365_bitlocker` | none: name it with `input:` |
 | `falcon_estate_coverage` | `general` | CrowdStrike Falcon host, discovered asset, heartbeat and unsupported asset exports: sensored machines against everything discovery sees, sensor versions, reduced functionality mode, silent sensors, criticality, and machines placed as production or not from host groups | none: name it with `input:` |
 | `falcon_environment` | `annotation` | The CrowdStrike Falcon host list's host groups: each machine's production or non-production label, put on the other readers' rows that name it | none: name it with `input:` |
+| `estate` | `general` | The profile's declared asset classes against the instruments the observation ran: one row per class saying whether anything measured it, and a gap for each class nothing did | none: it reads the profile's `asset_classes:` |
+| `endpoint_coverage` | `coverage-check` | A short list of endpoint control families against every row the observation produced: families no instrument reaches, and how many of the devices reached each family covers | none: it reads the rows already collected |
 
 A reader with no default input still runs when the profile gives it none,
 and records in its own coverage gap that no export was read. A profile that
@@ -3633,3 +3635,141 @@ The label holds `value` (`production`, `non-production` or blank),
 `not-measured` for one whose groups name no environment), `note`,
 `contested` (`yes` or blank), `valid_at` (the host list's file date),
 `source` and `source_name`. **Coverage gap:** a host list that gives no rows.
+
+### Readers of the run itself: `estate` and `endpoint_coverage`
+
+These two read no export. They run late, after every other step, and read
+the rows the observation has already produced (`docs/PLUGINS.md`, *When steps
+run*). Both raise gaps that say **nothing looked**; neither judges an asset.
+
+### `estate`
+
+A `general` plug-in. It checks a declaration the profile holds, **the
+declared asset classes**, against the run, and writes one row per class.
+Every other check notices an instrument that exists and fails or comes back
+short; none notices a class of equipment that nothing was ever pointed at,
+because such a class writes no rows and fails nothing.
+
+```yaml
+plugins:
+  - name: estate
+    settings: {key: asset_classes}      # optional: the profile key that holds the list
+asset_classes:
+  - name: Edge firewalls
+    crypto: [IPsec VPN, TLS management interface]
+    collect: ike_scan/tls_scan
+  - name: Backup appliances
+    crypto: [data at rest]
+    collect: none
+```
+
+| Entry field | Means |
+|---|---|
+| `name` | The class |
+| `crypto` | The cryptography the class is expected to hold. Shown on the row; never graded |
+| `collect` | The instruments meant to serve the class, separated by `/`, each as the `source` its rows carry: a built-in collector's module name (`tls_scan`) or a plug-in's name. `none`, `-` or blank says a person looked and no instrument serves the class. A hyphen reads as an underscore, and a `(planned)` marker is ignored |
+
+`settings:` takes `key` (the profile key holding the list, default
+`asset_classes`) and `discovered_vendors` (a mapping of vendor name to the
+number of devices a discovery export saw, see below).
+
+**The row** has `data_state` `estate`, source `estate`, no date (a
+declaration is not an observation) and no cryptographic content. It answers
+one question, whether an instrument is pointed at the class and produced
+anything. `extra.estate_state` is one of:
+
+| State | Means | Verdict | Gap kind |
+|---|---|---|---|
+| `no-instrument` | the declaration names no instrument, or only ones this run does not have | `unknown` | not-collected |
+| `instrument-not-run` | every named instrument exists and was deliberately not run (offline, or no probing authorised) | `unknown` | could-not-test |
+| `instrument-unmeasured` | every named instrument ran, but sent no probe because it had no scanner, so it wrote only placeholder rows (`source_class` `unknown`) | `unknown` | not-collected |
+| `instrument-silent` | every named instrument exists and wrote nothing | `unknown` | could-not-test |
+| `instrument-partial` | some named instruments wrote rows and others did not | `unknown` | could-not-test, low-fidelity |
+| `instrumented` | every named instrument wrote rows | `n/a` | none |
+
+Placeholder rows are not counted as output, so an instrument that sent no
+probe never makes its class read `instrumented`. The row also holds
+`declared_crypto`, `collectors_declared`, `collectors_live`,
+`collectors_silent`, `collectors_unbuilt`, `collectors_unprobed`,
+`attributed_assets`, `declared_planned` and `dark`.
+
+**Attribution is derived, never guessed.** An instrument named by exactly one
+class is exclusive to it, and its rows are that class's (flag
+`estate-evidenced:<n>`). An instrument several classes name is shared (flag
+`instrument-shared:<name>`) and claims no count. No host name, address or
+vendor string is read to place a row in a class. A `(planned)` marker on an
+instrument the run has is reported (`declaration-stale:planned-but-built:<name>`)
+and not believed.
+
+**Which instruments exist** comes from the run record: every registered
+collector's module and every declared plug-in are *built*; a collector the
+observation skipped is *skipped* unless another entry for the same module ran.
+
+**The other direction.** With `discovered_vendors` supplied, a vendor no
+class names is a gap carrying its count. With none supplied, a gap says the
+declaration was not checked against what is on the network.
+
+The plug-in's record in `summary.json` holds `declared_classes`, `dark`,
+`dark_count`, `by_state`, `stale_declarations` and `not_run`.
+
+**Cannot see.** Whether an instrument that wrote rows measured the *right*
+equipment: a row count is not coverage of a class, which is why a shared
+instrument claims no count.
+
+### `endpoint_coverage`
+
+A `coverage-check` plug-in: it writes no rows, so no verdict, count or
+denominator elsewhere moves. It keeps a short working list of endpoint control
+families (`takestock.readers.endpoint_coverage.FAMILIES`, takestock's own
+list and not any framework's) and says, for each, whether any instrument
+produced evidence of it and for how many of the devices the run reached.
+
+| Family | Evidenced by (`source`) |
+|---|---|
+| `agent-coverage` | `falcon_estate_coverage` |
+| `platform-integrity` | `falcon_zta` |
+| `disk-encryption` | `falcon_disk_encryption`, `m365_bitlocker` |
+| `key-escrow` | `m365_bitlocker` |
+| `software-inventory` | `falcon_software` |
+| `patch-state` | `falcon_vulnerabilities` |
+| `remote-management` | `winrm_config` |
+| `fleet-trend`, `configuration-baseline`, `application-control`, `removable-media`, `device-retirement` | none shipped: add one with `evidence:` or exclude the family |
+
+```yaml
+plugins:
+  - name: endpoint_coverage
+endpoint_control_families:
+  exclude: [removable-media]                    # a control this organisation does not operate
+  evidence:
+    configuration-baseline: [compliance_report]  # a plug-in's rows that evidence a family
+```
+
+An id in either list that names no family is reported as a gap, because a
+typo would otherwise suppress nothing and read as a clean answer.
+
+**Devices.** A row is a reading of a device when its `source` is one a family
+names and it carries `extra.aid` (a sensor identifier) or a `host`. Two
+identifiers on one row are one machine, merged across rows, so two exports
+naming a machine differently are not counted twice. A row with neither (a
+fleet count, a product total) is aggregate and adds no device.
+
+**Gaps**, each starting `Endpoint coverage —`:
+
+| Gap | When | Kind, nature |
+|---|---|---|
+| `control family unreached` | no instrument wrote a row for the family; carries the device count | not-collected, no-data |
+| `control family fleet-level only` | rows exist and none names a device | extent-unknown, low-fidelity |
+| `control family partly reached` | the family covers `n` of `N` devices | extent-unknown, no-data |
+| `support horizon` | devices with no support status for the operating system they run | extent-unknown, low-fidelity |
+| `management record` | devices a sensor reached that no device-management export (`m365_bitlocker`) lists; silent when no such export ran | extent-unknown, no-data |
+| `profile` | an id in `endpoint_control_families:` names no family | could-not-test |
+
+The support gap is read after the profile's `lifecycle: support_status:`
+block and the bundled Windows table are applied to copies of the rows, the
+same two steps an observation applies afterwards, so it reads what the
+finished rows will carry. A device with no row from a family's instrument
+is a device nothing measured, never a device that failed the control.
+
+**Cannot see.** A control no listed instrument reads, until a profile adds
+one; whether a device outside a management export is managed by something
+else.

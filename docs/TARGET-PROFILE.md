@@ -144,6 +144,8 @@ collector reads is ignored.
 | `dns_zones` | Settings for reading supplied zone files | `dns_zones` |
 | `third_party` | Outside providers and the domains they operate | dispositions, `dns_zones` |
 | `infrastructure` | Infrastructure providers and their domains | `dns_zones` |
+| `asset_classes` | The classes of equipment the organisation runs, each with the instruments meant to serve it | the `estate` plug-in ([`COLLECTORS.md`](COLLECTORS.md#estate)) |
+| `endpoint_control_families` | Endpoint control families to leave out, and instruments that evidence a family | the `endpoint_coverage` plug-in ([`COLLECTORS.md`](COLLECTORS.md#endpoint_coverage)) |
 | `lifecycle` | Planned migration and vendor support, per host | every observation |
 | `sge` | Settings for the Secure Government Email reading | the SGE note and the asset marking |
 | `cmdb` | The configuration register's title, schema overlay, reading notes and Jira Assets import | `takestock cmdb --target` |
