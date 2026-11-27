@@ -286,6 +286,8 @@ Each output reads a finished observation, never the network:
 | `requirements.py` | `assets.json`, the gaps in `summary.json`, `data/requirements-catalogue.yaml` | `requirements/`: Markdown, a workbook and JSON |
 | `comply.py`, over `sge.py` and `sge_note.py` | `assets.json`, `raw/`, `data/secure-government-email.yaml`, the profile | `sge-note.html`, or the report as text |
 | `ipam.py`, `ipam_view.py` | an `<stem>.ipam.yaml` plan file and the exports it names | `<stem>.json`, `.csv` and `.html` |
+| `remediation.py` | the graded rows (`assets.json` loaded as `CryptoAsset`), optionally `summary.json` | a plan as a dict: units of work, fix kinds and the axes it does not model (see [`DISPOSITIONS.md`](DISPOSITIONS.md#units-of-work)); nothing is written to disk |
+| `fronting.py` | `assets.json` and the port table | one count of service findings by what could be put in front of them, as a dict or a Markdown table (`python3 -m takestock.fronting <observation>`) |
 
 Every HTML page uses one shell, `htmlpage.py`: self-contained, light and dark
 schemes, a print stylesheet, no external fonts or scripts, and the profile's

@@ -9,6 +9,31 @@ command line or a file format, and its entry says how.
 
 ### Added
 
+- **`takestock.remediation`: units of work, counted once per piece of work**
+  (`docs/DISPOSITIONS.md`). `plan(assets, summary=None, *, tracks=None)` turns
+  graded rows into one row per unit of work, keyed by `effort_group` where the
+  deciding entry declared shared effort and by the asset otherwise. Each row
+  says whether it is one decision or many actions (proven only for a single
+  asset; otherwise `unverified` with the distinct hosts as the upper bound), and
+  carries its size, finding classes, usage, leverage, lifecycle and end
+  condition. `kinds` rolls rows up by deciding entry and `decision_owed` prints
+  the plan with and without each ungrouped kind counting as one change, never
+  replacing the totals. The result also carries a register of the prioritisation
+  axes with how far each is modelled, a statement that its order is not a
+  recommended sequence, and the coverage the plan was computed over.
+  `TrackTables` takes labels, order and out-of-cycle tracks from the bundled
+  ladder or an organisation's own. `unit_assets` returns the host behind each
+  unit; `source_label` and `SOURCE_LABEL` name collectors and readers for a
+  reader.
+
+- **`takestock.fronting`: service findings counted by what could front them**
+  (`docs/DISPOSITIONS.md`). `fronting_breakdown(assets, port_table)` counts
+  `plaintext:` and `unverified-encryption:` findings by the `frontable` class of
+  their protocol in the port table, with the cleartext and not-proven-encrypted
+  halves and the distinct hosts beside the total. A protocol the table does not
+  list is shown as its own class, and a protocol carrying two answers is
+  refused. `python3 -m takestock.fronting <observation-dir>` prints the table.
+
 - **`takestock.pqc_positions`: suppliers' published post-quantum positions**
   (`docs/TARGET-PROFILE.md`). A format for what a software provider has
   published about post-quantum cryptography (`shipped`, `partial`, `planned`

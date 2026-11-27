@@ -257,6 +257,67 @@ observation, it lets a later report say whether it judged the rows against
 the same set or a changed one (`render_basis`). What was measured does not
 change when the dispositions do; what it is judged against does.
 
+## Units of work
+
+A finding count is not a workload. Sixty findings are sixty jobs only if each
+needs its own visit; if one configuration change clears all of them they are
+one job. `takestock.remediation.plan(assets, summary=None, *, tracks=None)`
+counts the work, not the findings, and keeps the two readings apart.
+
+```python
+from takestock import remediation
+plan = remediation.plan(assets, summary)   # assets: graded CryptoAsset rows
+plan["totals"]       # findings, units, work_units, unverified_units, ...
+plan["rows"]         # one per unit of work
+plan["kinds"]        # the rows rolled up by the entry that decided them
+```
+
+**The unit.** A row's key is the asset's `effort_group` when the entry that
+decided it declared `effort_scope: per-rule`, and the asset itself otherwise.
+The planner invents no other grouping. `remediation.unit_assets(assets)`
+returns the host behind each unit, keyed the same way, so a report that must
+not name a host can use `plan` and one that may can add the names.
+
+**One decision, or N actions?** Each row says. Only a unit of a single asset
+reads as proven. Any other unit reads `unverified`, with an upper bound of the
+distinct hosts it touches, because nothing in an observation says whether a
+change can be pushed centrally.
+
+**Kinds and the decision owed.** `kinds` groups rows by the deciding entry's
+reason. A kind of many ungrouped units says nobody has decided whether one
+change covers them, and `decision_owed` prints both the plan as it stands and
+the plan if every such kind were one change. Neither replaces `totals`, and
+the note beside them says one central change is not no work.
+
+**Tracks.** Rows are labelled, ordered and marked out of cycle from a
+`TrackTables`. The default is the bundled ladder; for an organisation's own,
+pass `TrackTables.from_rules(load_dispositions_for_target(profile))`. A track
+no table knows keeps its slug and sorts last. Tracks that decline to act
+(`no-action`, `accept-replacement-planned`, `accept-no-alternative`) are not
+work, unless the acceptance has passed its review date. `retire-planned` and
+`defer-migration` are work.
+
+**What it does not model.** `remediation.AXES` is the register of the axes a
+planner would weigh (size, leverage, lifecycle, usage, risk, complexity, skill,
+blast radius, reversibility, owner, change window) with how far each is
+modelled, and `remediation.ORDER` says the row order is by track and then by
+leverage and is not a recommended sequence. The plan also carries
+`coverage`, the population it was computed over: a small number of units is
+not evidence of a small problem where whole classes of equipment were never
+examined.
+
+`remediation.source_label(source)` gives a collector or reader id a name a
+reader can use (`SOURCE_LABEL`); pass `labels=` to extend it with sources of
+your own.
+
+### Service findings by what could front them
+
+`takestock.fronting.fronting_breakdown(assets, port_table)` counts the
+`plaintext:<protocol>` and `unverified-encryption:<protocol>` findings by the
+`frontable` class of their protocol in the port table, with the cleartext and
+not-proven-encrypted halves and the distinct hosts beside the total.
+`python3 -m takestock.fronting <observation-dir>` prints the table.
+
 ## Dispensations
 
 Deciding that a finding can wait is a priority call. It is not, by itself, a
