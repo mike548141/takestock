@@ -93,7 +93,12 @@ from . import depth, obsarchive
 from .agility import SPREAD_FLAG
 from .config import data_file, load_yaml_strict
 from .exits import EXIT_CLEAN, guarded
-from .lifecycle import OS_COLLECTED_AT_KEY, OS_SOURCE_NAME_KEY
+from .lifecycle import (
+    OS_COLLECTED_AT_KEY,
+    OS_NAME_COLLECTED_AT_KEY,
+    OS_NAME_SOURCE_NAME_KEY,
+    OS_SOURCE_NAME_KEY,
+)
 
 MEASURED = "measured"
 REPORTED = "reported"
@@ -1288,19 +1293,35 @@ def _collected_on(row: Mapping[str, Any]) -> str:
     return collected if _ISO_DATE.match(collected) else ""
 
 
-def _dated_by_its_build(row: Mapping[str, Any], extra: Mapping[str, Any]) -> dict[str, Any] | None:
-    """``row`` as dated by when its operating-system build was collected.
+def _dated_by(row: Mapping[str, Any], extra: Mapping[str, Any], key: str) -> dict[str, Any] | None:
+    """``row`` as dated by the collection date ``extra[key]`` gives.
 
-    A row may join exports of different dates, and say in
-    ``extra[OS_COLLECTED_AT_KEY]`` when its build was collected. Its
-    ``os_version`` fact is then dated, and recorded, as a row collected that
-    day would be; its other facts keep the row's own date. None when the row
-    gives no such date.
+    A row may join exports of different dates, and say in an ``extra`` key
+    when one of its facts was collected. That fact is then dated, and
+    recorded, as a row collected that day would be; the row's other facts
+    keep its own date. None when the row gives no such date.
     """
-    when = str(extra.get(OS_COLLECTED_AT_KEY) or "")[:10]
+    when = str(extra.get(key) or "")[:10]
     if not _ISO_DATE.match(when):
         return None
     return {**row, "collected_at": when}
+
+
+#: The facts a row's own date does not always date: the attribute, the
+#: ``extra`` key that holds its value, and the keys that may give when it was
+#: collected and the name of the source it was read from.
+_OWN_DATED_FACTS: tuple[tuple[str, str, str, str], ...] = (
+    ("os_version", "os_version", OS_COLLECTED_AT_KEY, OS_SOURCE_NAME_KEY),
+    ("os", "os", OS_NAME_COLLECTED_AT_KEY, OS_NAME_SOURCE_NAME_KEY),
+)
+
+
+def _own_dates(row: Mapping[str, Any]) -> list[str]:
+    """The ISO dates ``row``'s own-dated facts say they were collected, which
+    the row's own ``collected_at`` does not give."""
+    extra = row.get("extra") or {}
+    return [str(extra[when])[:10] for _, held, when, _ in _OWN_DATED_FACTS
+            if extra.get(held) and _ISO_DATE.match(str(extra.get(when) or "")[:10])]
 
 
 @dataclass(frozen=True)
@@ -1388,9 +1409,11 @@ def read_dates(summary: Mapping[str, Any], stamp: str,
     collected: dict[str, str] = {}
     for row in rows or ():
         plugin = str((row.get("extra") or {}).get("plugin") or "")
-        when = str(row.get("collected_at") or "")[:10]
-        if plugin in reread and _ISO_DATE.match(when):
-            collected[plugin] = min(max(collected.get(plugin, when), when), reread[plugin])
+        if plugin not in reread:
+            continue
+        for when in [str(row.get("collected_at") or "")[:10], *_own_dates(row)]:
+            if _ISO_DATE.match(when):
+                collected[plugin] = min(max(collected.get(plugin, when), when), reread[plugin])
     return ReadDates(held=day, reread=reread, collected=collected)
 
 
@@ -1669,15 +1692,16 @@ class _Builder:
             evidence_strength=capped_strength(self.schema, attribute, strength),
             valid_at=valid_at, recorded_at=recorded_at or self._recording, actor=actor))
 
-    def _say_build(self, key: str, value: Any, strength: str, asset: Mapping[str, Any],
-                   extra: Mapping[str, Any], seen: str, actor: Actor) -> None:
-        """A row's ``os_version`` fact, dated by when the build was collected
-        and credited to the source it was read from, where the row says
-        (``OS_COLLECTED_AT_KEY``, ``OS_SOURCE_NAME_KEY``); otherwise as the
-        row's other facts are."""
-        row = _dated_by_its_build(asset, extra)
-        named = str(extra.get(OS_SOURCE_NAME_KEY) or "").strip()
-        self._say(key, "os_version", value, strength,
+    def _say_own_dated(self, key: str, attribute: str, value: Any, strength: str,
+                       asset: Mapping[str, Any], extra: Mapping[str, Any], seen: str,
+                       actor: Actor, when_key: str, source_key: str) -> None:
+        """A row's fact that may come from a different export than the rest of
+        the row: dated by when it was collected and credited to the source it
+        was read from, where the row says (``when_key``, ``source_key``);
+        otherwise as the row's other facts are."""
+        row = _dated_by(asset, extra, when_key)
+        named = str(extra.get(source_key) or "").strip()
+        self._say(key, attribute, value, strength,
                   self._seen_at(row) if row is not None else seen,
                   self._actor({**asset, "source_name": named}) if named else actor,
                   recorded_at=self._recorded_on(row) if row is not None else "")
@@ -1727,8 +1751,10 @@ class _Builder:
                     self._software_facts(None, asset, strength, seen, actor)
                 continue
             for attribute, value in self._attributes(asset, extra).items():
-                if attribute == "os_version":
-                    self._say_build(key, value, strength, asset, extra, seen, actor)
+                own = next((f for f in _OWN_DATED_FACTS if f[0] == attribute), None)
+                if own is not None:
+                    self._say_own_dated(key, attribute, value, strength, asset, extra,
+                                        seen, actor, own[2], own[3])
                 else:
                     self._say(key, attribute, value, strength, seen, actor)
             self._say_environment(key, extra, seen)
@@ -2082,8 +2108,17 @@ class _Builder:
 
     def _collected_span(self) -> tuple[str, str]:
         """The earliest and latest dates the rows are dated by (:meth:`_seen_at`)."""
-        dates = sorted({self._seen_at(asset) for asset in self.assets})
+        dates = sorted({self._seen_at(row) for asset in self.assets
+                        for row in (asset, *self._own_dated_rows(asset))})
         return (dates[0], dates[-1]) if dates else ("", "")
+
+    def _own_dated_rows(self, asset: Mapping[str, Any]) -> list[dict[str, Any]]:
+        """``asset`` as dated by each of its own-dated facts (:data:`_OWN_DATED_FACTS`)
+        that it holds and dates."""
+        extra = asset.get("extra") or {}
+        rows = [_dated_by(asset, extra, when) for _, held, when, _ in _OWN_DATED_FACTS
+                if extra.get(held)]
+        return [r for r in rows if r is not None]
 
 
 def build(observation: Path | str, *, ledger: KeyLedger | None = None,

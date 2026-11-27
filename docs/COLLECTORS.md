@@ -2368,7 +2368,9 @@ device's build and edition come from one file where one holds both: the
 device list, the only file with an edition, gives the build as well when it
 has one, `extra.os_collected_at` records that file's date, as of which a
 Windows support band is derived, and `extra.os_source_name` names that file
-as a row's `source_name` would. Where the device list has an edition but no
+as a row's `source_name` would. The operating-system name is always the device
+list's, so `extra.os_name_collected_at` and `extra.os_name_source_name` give its
+date and name whichever file the build came from. Where the device list has an edition but no
 build, the main file's build is used, and the row records each one's date
 (`os_version_collected_at`, `sku_family_collected_at`).
 

@@ -78,6 +78,11 @@ observations/latest/cmdb/keys.jsonl
   and credited to that source; each falls back to the row's own date and
   `source_name` where the row does not give it, and the row's other facts
   keep its own. A date that does not start with an ISO date is ignored.
+  The operating-system name (`os`) has its own pair, `extra.os_name_collected_at`
+  and `extra.os_name_source_name` (`lifecycle.OS_NAME_COLLECTED_AT_KEY`,
+  `OS_NAME_SOURCE_NAME_KEY`), because a name may be read from a different
+  export than the build. These dates also count toward the read-me's "collected
+  between" range and `read_again_collected`.
 - A derived observation (`takestock rerun`) holds rows read on different
   dates: the rows it carries were read when the full observation it comes
   from was taken, and the rows of the plug-ins it read again (a row names

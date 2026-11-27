@@ -195,6 +195,13 @@ OS_COLLECTED_AT_KEY = "os_collected_at"
 #: ``source_name``, where that is not the source the row names. The register
 #: credits the row's ``os_version`` fact to it.
 OS_SOURCE_NAME_KEY = "os_source_name"
+#: The same two for the operating-system *name* (``OS_NAME_KEY``), which a
+#: collector may read from a different export than the build: the date
+#: (``YYYY-MM-DD``) it was collected, and the name of the source it was read
+#: from. The register dates and credits the row's ``os`` fact by them, never
+#: by the build's keys, which may name another export.
+OS_NAME_COLLECTED_AT_KEY = "os_name_collected_at"
+OS_NAME_SOURCE_NAME_KEY = "os_name_source_name"
 
 _WINDOWS_BUILD = re.compile(r"^10\.0\.(\d{5})(?:\.\d+)?$")
 

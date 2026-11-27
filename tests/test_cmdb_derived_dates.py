@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import cmdbfake
+import pytest
 
 from takestock import cmdb, rerun
 
@@ -467,3 +468,44 @@ def test_an_ordinary_observation_dates_its_edges_by_their_rows_collection(tmp_pa
     register = cmdb.build(_write(tmp_path, rows, None))
     assert {(e.valid_at, e.recorded_at) for e in register.edges
             if e.kind in ("installed-on", "release-of")} == {("2030-01-04", REREAD_DAY)}
+
+
+# ── a fact collected on its own date counts toward the span ───────────────
+
+_OWN_DATED = [("os_version", "os_collected_at", "7.2.41"),
+              ("os", "os_name_collected_at", "Examplix")]
+
+
+def _own_dated_rows(attribute: str, when_key: str, value: str, day: str) -> list[dict[str, Any]]:
+    """The synthetic rows, each collected on 2030-01-04 and one of them holding
+    ``attribute`` as collected on ``day``."""
+    rows = _rows()
+    for row in rows:
+        row["collected_at"] = "2030-01-04"
+    disk = next(r for r in rows if r["name"] == "disk laptop-01")
+    disk["extra"].update({"plugin": PLUGIN, attribute: value, when_key: day})
+    return rows
+
+
+@pytest.mark.parametrize(("attribute", "when_key", "value"), _OWN_DATED)
+def test_the_read_me_range_includes_a_fact_collected_after_its_row(tmp_path, attribute,
+                                                                  when_key, value):
+    rows = _own_dated_rows(attribute, when_key, value, "2030-01-20")
+    register = cmdb.build_register(_write(tmp_path, rows, None))
+    assert (register["register"]["collected_from"],
+            register["register"]["collected_to"]) == ("2030-01-04", "2030-01-20")
+    assert "The data was collected between 2030-01-04 and 2030-01-20." in _readme(
+        register, tmp_path)
+
+
+@pytest.mark.parametrize(("attribute", "when_key", "value"), _OWN_DATED)
+def test_a_plugin_read_again_is_collected_as_late_as_its_newest_fact(tmp_path, attribute,
+                                                                    when_key, value):
+    rows = _own_dated_rows(attribute, when_key, value, "2030-01-20")
+    register = cmdb.build_register(_derived(tmp_path, rows))
+    assert register["register"]["read_again_collected"] == {PLUGIN: "2030-01-20"}
+    # Never later than the day it was read again.
+    late = _own_dated_rows(attribute, when_key, value, "2030-02-09")
+    read = cmdb.read_dates({"rerun": {"from_observation": HELD, "plugins": [PLUGIN]}},
+                           REREAD, late)
+    assert read is not None and read.collected == {PLUGIN: REREAD_DAY}

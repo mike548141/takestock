@@ -597,6 +597,20 @@ command line or a file format, and its entry says how.
 
 ### Changed
 
+- **The register dates and credits an operating-system name by its own
+  export, and the read-me's span counts facts dated apart from their row**:
+  a row's `os` fact is dated, and recorded, by `extra.os_name_collected_at`
+  and credited to `extra.os_name_source_name`
+  (`lifecycle.OS_NAME_COLLECTED_AT_KEY`, `OS_NAME_SOURCE_NAME_KEY`) where the
+  row gives them, rather than by the row's `collected_at` and `source_name` or
+  by the build's keys, which may name another export. The "collected between"
+  sentence, `collected_from` and `collected_to`, and `read_again_collected`
+  take the dates of a row's `os_collected_at` (where it holds a build) and
+  `os_name_collected_at` (where it holds a name) as well as its own
+  `collected_at`, so a fact collected after its row no longer falls outside
+  the range. `m365_bitlocker` writes the two name keys, from the device list,
+  whichever export the build came from.
+
 - **The register dates an operating-system build by when it was collected,
   and credits it to the source it was read from**: a row's `os_version`
   fact is dated, and recorded, by `extra.os_collected_at` where the row

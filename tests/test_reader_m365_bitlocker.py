@@ -440,6 +440,20 @@ def test_build_and_edition_come_from_one_export(tmp_path):
     assert two.extra["sku_family_collected_at"] == "2030-03-21"
     assert "os_collected_at" not in two.extra
     assert "os_source_name" not in two.extra
+    # The name is always the device list's, so it is dated and named by it
+    # whichever export the build came from.
+    for row in (one, two):
+        assert row.extra["os"] == "Windows"
+        assert row.extra["os_name_collected_at"] == "2030-03-21"
+        assert row.extra["os_name_source_name"] == (
+            "Microsoft Intune device list, file dated 2030-03-21")
+
+
+def test_a_device_the_device_list_does_not_hold_has_no_os_name_provenance(tmp_path):
+    out = _run(_dated(_escrow(tmp_path, [_dev("PC-01")]), "2030-01-10"))
+    extra = _device(out, "PC-01").extra
+    assert "os" not in extra
+    assert "os_name_collected_at" not in extra and "os_name_source_name" not in extra
 
 
 def test_a_support_band_follows_the_device_lists_build_and_date(tmp_path):

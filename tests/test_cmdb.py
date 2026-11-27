@@ -983,3 +983,38 @@ def test_an_os_build_is_dated_and_credited_by_the_export_it_came_from(tmp_path):
             and a.actor.name == "Example key escrow export"} == {"2030-01-05"}
     assert _os_facts(register, "laptop-08.example.test") == {
         ("7.2.41", "2030-01-05", "Example key escrow export")}
+
+
+def test_an_os_name_is_dated_and_credited_by_the_export_it_came_from(tmp_path):
+    named = {"host_type": "Laptop", "os": "Examplix", "os_version": "7.2.41",
+             # The build came from the older export; the name from the newer one.
+             "os_collected_at": "2030-01-05",
+             "os_name_collected_at": "2030-01-12",
+             "os_name_source_name": "Example device list, file dated 2030-01-12"}
+    rows = [
+        cmdbfake._row(name="disk laptop-07", host="laptop-07.example.test",
+                      data_state="at-rest", source="example_escrow",
+                      source_name="Example key escrow export", collected_at="2030-01-05",
+                      verdict="strong", extra=named),
+        # A name date that is not a date leaves the row's own.
+        cmdbfake._row(name="disk laptop-08", host="laptop-08.example.test",
+                      data_state="at-rest", source="example_escrow",
+                      source_name="Example key escrow export", collected_at="2030-01-05",
+                      verdict="strong",
+                      extra={**named, "os_name_collected_at": "not recorded",
+                             "os_name_source_name": ""}),
+    ]
+    register = cmdb.build(cmdbfake.write_observation(tmp_path, assets=rows))
+
+    def facts(host, attribute):
+        item = _item(register, host).key
+        return {(a.value, a.valid_at, a.actor.name) for a in register.assertions
+                if a.item == item and a.attribute == attribute}
+
+    # The name takes its own export's date and name, not the build's or the row's.
+    assert facts("laptop-07.example.test", "os") == {
+        ("Examplix", "2030-01-12", "Example device list, file dated 2030-01-12")}
+    assert facts("laptop-07.example.test", "os_version") == {
+        ("7.2.41", "2030-01-05", "Example key escrow export")}
+    assert facts("laptop-08.example.test", "os") == {
+        ("Examplix", "2030-01-05", "Example key escrow export")}

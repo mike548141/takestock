@@ -148,7 +148,9 @@ list's. A device's build and edition are read from one export where one holds
 both: the device list, the only export with an edition, gives the build too
 when it has one for the device, ``os_collected_at`` records its date, as of
 which a Windows support band is derived, and ``os_source_name`` names it, as
-the row's ``source_name`` would. Where the device list has an
+the row's ``source_name`` would. The operating-system name is always the device
+list's, so ``os_name_collected_at`` and ``os_name_source_name`` give its date
+and name whichever export the build came from. Where the device list has an
 edition but no build, the main export's build is used, and the row records
 each one's date (``os_version_collected_at``, ``sku_family_collected_at``).
 
@@ -166,7 +168,15 @@ from pathlib import Path
 from typing import Any
 
 from .. import coverage, roles
-from ..lifecycle import OS_COLLECTED_AT_KEY, OS_EDITION_KEY, OS_NAME_KEY, OS_SOURCE_NAME_KEY, OS_VERSION_KEY
+from ..lifecycle import (
+    OS_COLLECTED_AT_KEY,
+    OS_EDITION_KEY,
+    OS_NAME_COLLECTED_AT_KEY,
+    OS_NAME_KEY,
+    OS_NAME_SOURCE_NAME_KEY,
+    OS_SOURCE_NAME_KEY,
+    OS_VERSION_KEY,
+)
 from ..model import CryptoAsset, register_informational_prefixes
 from ..plugins import Context, Plugin, StepResult
 from ..util import file_mtime_date
@@ -404,6 +414,10 @@ def os_facts(escrow_row: dict | None, inventory_row: dict | None, escrow_when: s
         out[OS_VERSION_KEY] = build
     if value(inventory_row, "OS"):
         out[OS_NAME_KEY] = value(inventory_row, "OS")
+        if inventory_when:
+            out[OS_NAME_COLLECTED_AT_KEY] = inventory_when
+        if inventory_source:
+            out[OS_NAME_SOURCE_NAME_KEY] = inventory_source
     if edition:
         out[OS_EDITION_KEY] = edition
     if build and edition and build_when != inventory_when:
