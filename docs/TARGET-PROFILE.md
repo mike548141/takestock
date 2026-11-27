@@ -15,8 +15,8 @@ its overlays can carry. The sample organisation in
 - **Overlay**: a file beside a profile, named after it, that adds to it:
   `<stem>.dispositions.yaml`, `<stem>.derived-ports.yaml`,
   `<stem>.cmdb-schema-overlay.yaml`, `<stem>.ipam.yaml`,
-  `<stem>.daemon-dictionary.yaml` and `<stem>.pqc-positions.yaml`. An
-  overlay is never read as a profile.
+  `<stem>.daemon-dictionary.yaml`, `<stem>.pqc-positions.yaml` and
+  `<stem>.flows.yaml`. An overlay is never read as a profile.
 - **Inbox**: the directory supplied exports are read from.
 - **Observation**: one run's output directory, named by its UTC time stamp.
 
@@ -31,6 +31,7 @@ its overlays can carry. The sample organisation in
     example-widgets.ipam.yaml             overlay: the IP address plan file
     example-widgets.daemon-dictionary.yaml  overlay: the organisation's own process names (optional)
     example-widgets.pqc-positions.yaml    overlay: suppliers' published post-quantum positions (optional)
+    example-widgets.flows.yaml            overlay: the information-flow channel map (optional)
   inbox/                                  exports supplied by hand
   observations/
     2030-01-31T0930Z/                     one observation
@@ -651,6 +652,18 @@ is not a date, dates in the wrong order, or a key given twice) is refused
 with the file named. When one entry is at fault the message names it too:
 by its provider once the provider has been read, otherwise by its number in
 the list. A key given twice is named by the key.
+
+### `<stem>.flows.yaml`
+
+The channel map for the `flows` plug-in: what each channel token in an
+information-sharing register means in terms an instrument can find (a host, a
+port or a protocol), the data requests that would close what is unmeasured,
+and optionally a classification scale of the organisation's own. Its keys
+(`register`, `data_requests`, `classification`, `channels`), the kinds and
+the register's columns are described in
+[`COLLECTORS.md`](COLLECTORS.md#flows). A map that contradicts itself, or does
+not cover a channel the register names, stops the `flows` step, which an
+observation records as a gap carrying the error.
 
 ### `<stem>.cmdb-schema-overlay.yaml`
 

@@ -996,6 +996,7 @@ plugins:
 | `falcon_environment` | `annotation` | The CrowdStrike Falcon host list's host groups: each machine's production or non-production label, put on the other readers' rows that name it | none: name it with `input:` |
 | `estate` | `general` | The profile's declared asset classes against the instruments the observation ran: one row per class saying whether anything measured it, and a gap for each class nothing did | none: it reads the profile's `asset_classes:` |
 | `endpoint_coverage` | `coverage-check` | A short list of endpoint control families against every row the observation produced: families no instrument reaches, and how many of the devices reached each family covers | none: it reads the rows already collected |
+| `flows` | `annotation` | An information-sharing register joined to the channels the observation measured: the sentence of what rides each row, a gap for each data request, unmatched leg and unmeasurable hop, and the whole join in `summary.json` | none: the profile's `<stem>.flows.yaml` names the register |
 
 A reader with no default input still runs when the profile gives it none,
 and records in its own coverage gap that no export was read. A profile that
@@ -3773,3 +3774,142 @@ is a device nothing measured, never a device that failed the control.
 **Cannot see.** A control no listed instrument reads, until a profile adds
 one; whether a device outside a management export is managed by something
 else.
+
+### `flows`
+
+An `annotation` plug-in. A register of what the organisation shares (one row
+per **flow**: which outside party, which direction, what classification,
+which **channels** it travels by) says what leaves and to whom. An observation
+says how strong the channels are. `flows` joins them, so a finding reads "this
+old cipher on the supplier link underlies 7 recorded flows that carry customer
+records to 3 partners" rather than naming a protocol alone.
+
+```yaml
+plugins:
+  - flows                     # settings: {map: path} names another map file
+```
+
+The join key is one thing: a **declared channel map**,
+`targets/<stem>.flows.yaml` beside the profile, which says what each channel
+token in the register means in terms an instrument can find: a host (and
+optionally a port) or a protocol. Party, direction, classification and
+compliance flag ride along and are never matched on. The map is judgement
+written down, not measurement, and nothing here upgrades it to evidence.
+
+**The register** is one of:
+
+* a CSV file (`.csv`) with a header row;
+* a JSON file holding an array of rows, or an object whose `flows` key holds
+  one;
+* a page or script that assigns the array to a constant named `RAW`
+  (`const RAW = [...];`).
+
+Rows are mappings of these columns, read by name. Any further column is kept
+untouched in the payload's `extra`.
+
+| Column | Means |
+|---|---|
+| `flow_id` | The flow's identifier. Defaults to its position |
+| `direction` | `Inbound` or `Outbound`, case ignored |
+| `external_party` | The organisation at the other end |
+| `channel` | One channel token, or several separated by `;`: a flow naming three rides all three |
+| `classification` | The flow's classification, by default one of the New Zealand Protective Security Requirements levels: `UNCLASSIFIED`, `IN-CONFIDENCE`, `SENSITIVE`, `RESTRICTED`, `CONFIDENTIAL`, `SECRET`, `TOP SECRET`. A trailing `???` is a marker some registers use for an unknown or doubtful value; it is kept as `classification_certain: false`, and a blank value is also not certain |
+| `compliance_flag` | The register's own compliance column, cross-tabulated against the kinds below |
+
+```json
+[
+  {"flow_id": "F01", "direction": "Outbound", "external_party": "Acme Freight",
+   "channel": "Partner file drop; Courier", "classification": "IN-CONFIDENCE",
+   "compliance_flag": "compliant", "purpose": "orders"}
+]
+```
+
+**The map** (`<stem>.flows.yaml`, an overlay: never read as a profile):
+
+```yaml
+register:                                  # echoed into the payload, as text
+  path: inbox/flows-register.csv           # default inbox/information-flows.json
+  source: Example Widgets flows, January 2030
+  issued: 2030-01-15
+data_requests:                             # who could answer each request id
+  R1: {title: Customer portal address list, owner: the web team, asked: 2030-01-20}
+  R2: {title: Scanner vendor connection statement, owner: the logistics team}
+classification:                            # optional: replaces the default scheme
+  scale: [OFFICIAL, OFFICIAL-SENSITIVE, SENSITIVE]   # lowest first
+  floor: OFFICIAL-SENSITIVE                # from here a flow counts as sensitive
+channels:
+  Partner file drop:
+    kind: measured
+    legs:
+      - {leg: file server, host: files-01.example.test, port: 22}
+  Build handover:
+    kind: measured-partial
+    legs:
+      - {leg: build server, host: build-01.example.test}
+    unmeasured:
+      - {what: how keys for encrypted archives are exchanged, gap: R2, scope: control}
+  Warehouse sync:
+    kind: measured-partial
+    legs:
+      - {leg: sync gateway, host: sync-01.example.test, protocol: https}
+      - leg: handheld-uplink
+        measurable: false
+        would_measure: the scanner vendor's statement of how handhelds connect
+        gap: R2
+  Customer portal:
+    kind: unjoined
+    gap: R1
+  Courier:
+    kind: not-cryptographic
+```
+
+| Kind | Means | Needs |
+|---|---|---|
+| `measured` | every declared leg joins to a row this observation graded. It may still name blind spots | at least one leg, none unmeasurable |
+| `measured-partial` | the measured legs do not stand for the whole channel, and the map says which part they miss | a blind spot with `scope: control`, or a leg with `measurable: false` |
+| `unjoined` | the register names nothing a scanner could be pointed at: a data request, never a verdict | a `gap:` request id, and no legs |
+| `not-cryptographic` | telephone, paper, post: shown so the classes still add up | nothing else |
+
+A **leg** selects rows by `host` (case ignored), `port` and `protocol` (or
+`protocols:`), ANDed; a leg with a host and no port matches every port on it,
+and a leg must name a host or a protocol. A leg declared `measurable: false`
+names none of them and must say what would settle it in `would_measure:`: a
+handheld device that only dials out accepts no connection, so no instrument
+sees that hop however long the scan list grows. It joins nothing, and raises its own gap carrying
+`would_measure` as the way out. **An unmeasured entry** says what is not
+measured and the request id that would close it; its `scope` is `leg` (another
+hop), `control` (something riding on a measured transport, such as the cipher on an
+archive) or `routing` (not knowing which of several paths is taken).
+
+Every flow lands in exactly one kind (the best-evidenced of the channels it
+rides), so the four counts add up to the register's rows.
+
+**Two guards.** A channel token in the register with no row in the map
+**raises** and stops the run: reading it as `unjoined` would be silent, and a
+coverage figure that quietly dropped would already have circulated. A map that
+contradicts itself (an unknown kind, a `measured` channel with no leg, an
+`unjoined` one with legs, a `measured-partial` that names nothing partial, a
+request with no owner) raises too. A declared leg that matches no row does
+**not** raise: it is recorded as unjoined and filed as a gap, and the run
+finishes.
+
+**What it writes.** `extra.flows`, one sentence on each row a channel's legs
+select ("3 recorded information flows to 2 organisations, 2 at IN-CONFIDENCE
+or above — channel: Partner file drop"). Gaps: one per data request (what it
+would unblock, how many flows travel that way, and who owes the answer, or
+that nobody has been asked), one per declared leg that matched no row
+(could-not-test), and one per unmeasurable hop (not-collected). A register the
+map names but the inbox lacks is one not-collected gap, never a zero. With no
+map there is neither gap nor annotation. The plug-in's record in
+`summary.json` holds the whole join: `flows`, `channels`, `by_asset`,
+`requests`, `totals` (counts by kind, parties counted as distinct sets and
+never summed across channels, sensitive and uncertain flows, directions,
+classifications outside the scale) and `compliance_by_class`.
+
+`takestock.flows` holds the same in code (`parse_register`, `read_register`,
+`build_channel_map`, `build_requests`, `join`, `build`, `annotate`).
+
+**Cannot see.** That an unjoined channel is insecure (it is unmeasured), that
+a measured channel is safe end to end (the legs are the ones somebody
+declared; `blind_spots` names the rest), or whether the map's judgement that
+a channel is a host is right.

@@ -43,6 +43,24 @@ command line or a file format, and its entry says how.
   and a named file that cannot be read is an error rather than an empty
   table.
 
+- **`flows` reader and `takestock.flows`: information flows joined to the
+  channels that carry them** (the readers library; `docs/COLLECTORS.md`,
+  `docs/TARGET-PROFILE.md`). An annotation that reads an information-sharing
+  register (CSV, JSON, or a script assigning the rows to `RAW`) and a
+  declared channel map (`<stem>.flows.yaml`), joins them to the rows the
+  observation graded, and puts a sentence on each row a channel rides (how
+  many recorded flows, to how many organisations, how many at or above a
+  sensitivity floor). Every flow lands in one of four kinds (measured,
+  partly measured, not tested because no endpoint was supplied, no
+  cryptography), a channel may declare a hop no instrument can measure and
+  what would settle it, and each data request, unmatched leg and
+  unmeasurable hop is a coverage gap naming who holds the answer. A register
+  channel the map does not cover stops the step rather than reading as
+  untested. Classification is ranked on the New Zealand Protective Security
+  Requirements scheme unless the map declares its own scale and floor. The
+  join is the plug-in's record in `summary.json`. `.flows.yaml` joins the
+  overlay suffixes.
+
 - **`estate` and `endpoint_coverage` readers** (the readers library;
   `docs/COLLECTORS.md`). `estate` checks the classes of equipment a profile
   declares (`asset_classes:`) against the instruments an observation ran and
