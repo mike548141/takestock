@@ -533,6 +533,7 @@ SOURCE_LABEL: dict[str, str] = {
     "smb_scan": "file-sharing protocol and signing check",
     "smtp_starttls": "mail transport encryption check",
     "software_inventory": "installed cryptographic providers and their versions",
+    "software_support": "software census with vendor support dates and exploited defects",
     "spf_senders": "public mail sender-policy records",
     "ssh_audit": "secure-shell configuration scan",
     "tls_scan": "transport encryption scan",

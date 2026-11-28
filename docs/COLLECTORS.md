@@ -996,6 +996,8 @@ plugins:
 | `falcon_environment` | `annotation` | The CrowdStrike Falcon host list's host groups: each machine's production or non-production label, put on the other readers' rows that name it | none: name it with `input:` |
 | `estate` | `general` | The profile's declared asset classes against the instruments the observation ran: one row per class saying whether anything measured it, and a gap for each class nothing did | none: it reads the profile's `asset_classes:` |
 | `endpoint_coverage` | `coverage-check` | A short list of endpoint control families against every row the observation produced: families no instrument reaches, and how many of the devices reached each family covers | none: it reads the rows already collected |
+| `privileged_coverage` | `coverage-check` | The profile's declared suppliers against the rows the observation produced: one gap per supplier no row speaks to the privileged access of, and one for the parties the information-sharing register names that no declaration knows | none: it reads the profile's `third_party:` and the register `flows` reads |
+| `software_support` | `general` | A software census's files: the software releases past a vendor's support date or with a catalogued exploited defect open, each with the vendor's line, its end dates and its counts in their own units | none: the profile's `<stem>.software-census.yaml` names the files |
 | `flows` | `annotation` | An information-sharing register joined to the channels the observation measured: the sentence of what rides each row, a gap for each data request, unmatched leg and unmeasurable hop, and the whole join in `summary.json` | none: the profile's `<stem>.flows.yaml` names the register |
 
 A reader with no default input still runs when the profile gives it none,
@@ -3639,11 +3641,11 @@ The label holds `value` (`production`, `non-production` or blank),
 `contested` (`yes` or blank), `valid_at` (the host list's file date),
 `source` and `source_name`. **Coverage gap:** a host list that gives no rows.
 
-### Readers of the run itself: `estate` and `endpoint_coverage`
+### Readers of the run itself: `estate`, `endpoint_coverage` and `privileged_coverage`
 
-These two read no export. They run late, after every other step, and read
+These three read no export. They run late, after every other step, and read
 the rows the observation has already produced (`docs/PLUGINS.md`, *When steps
-run*). Both raise gaps that say **nothing looked**; neither judges an asset.
+run*). Each raises gaps that say **nothing looked**; none judges an asset.
 
 ### `estate`
 
@@ -3684,7 +3686,7 @@ anything. `extra.estate_state` is one of:
 | State | Means | Verdict | Gap kind |
 |---|---|---|---|
 | `no-instrument` | the declaration names no instrument, or only ones this run does not have | `unknown` | not-collected |
-| `instrument-not-run` | every named instrument exists and was deliberately not run (offline, or no probing authorised) | `unknown` | could-not-test |
+| `instrument-not-run` | every named instrument exists and did not run: a collector the run skipped (offline, or no probing authorised), or a declared plug-in that did not run (see below) | `unknown` | could-not-test |
 | `instrument-unmeasured` | every named instrument ran, but sent no probe because it had no scanner, so it wrote only placeholder rows (`source_class` `unknown`) | `unknown` | not-collected |
 | `instrument-silent` | every named instrument exists and wrote nothing | `unknown` | could-not-test |
 | `instrument-partial` | some named instruments wrote rows and others did not | `unknown` | could-not-test, low-fidelity |
@@ -3706,7 +3708,25 @@ and not believed.
 
 **Which instruments exist** comes from the run record: every registered
 collector's module and every declared plug-in are *built*; a collector the
-observation skipped is *skipped* unless another entry for the same module ran.
+observation skipped is *skipped* unless another entry for the same module ran,
+and a declared plug-in that did not run is *skipped* too. An instrument that
+never ran has not "produced nothing", so a plug-in named in a class's `collect`
+reads `instrument-not-run`, not `instrument-silent`, when either
+
+* the run records it as `not-run`: the file named as its `input:` was not
+  supplied, or its step stopped; or
+* the run records it as `ran`, the profile gave it no `input:`, it has no
+  default one, and it wrote no rows: its step was called with nothing to read
+  and said so in its own gap.
+
+The second is judged only for takestock's own readers that write rows (a
+coverage check or an annotation writes none by design, and a plug-in the
+profile names by `module:` or `path:` has a default input `estate` cannot see),
+and only when it wrote nothing: a plug-in given no input that read its settings
+and wrote rows is *instrumented*. A plug-in given an input that wrote nothing
+ran and found nothing, so it stays `instrument-silent`. A plug-in whose turn
+has not come when `estate` runs (`pending`) is none of these, and reads as
+silent until it writes rows.
 
 **The other direction.** With `discovered_vendors` supplied, a vendor no
 class names is a gap carrying its count. With none supplied, a gap says the
@@ -3776,6 +3796,147 @@ is a device nothing measured, never a device that failed the control.
 **Cannot see.** A control no listed instrument reads, until a profile adds
 one; whether a device outside a management export is managed by something
 else.
+
+### `privileged_coverage`
+
+A `coverage-check` plug-in: it writes no rows, so no count, verdict or
+denominator elsewhere moves. It asks one question of each declared supplier:
+who can act with privilege inside it, how that privilege is granted and
+removed, and what happens to it when the relationship ends. No instrument
+that probes a listener can answer that for a hosted service, because the
+tenancy exposes none, so the gap is not a probe that failed. It is a
+question nothing in the run can answer, and more scanning will not change
+that.
+
+```yaml
+plugins:
+  - name: privileged_coverage
+    settings:
+      privileged_sources: [vendor_admin_export]   # optional: more instruments whose rows answer
+      declared_lists: [asset_classes, partners]   # optional: lists whose names count as declared
+third_party:
+  - name: Translation Co
+    role: language-services
+    uses: [document translation]
+    domains: [translation.example.net]
+```
+
+**One gap per supplier.** The `third_party:` list is finite, so each gap names
+its supplier, what the profile says it is used for, the three questions, and
+the population (`one of n declared suppliers out of N`). Kind `not-collected`,
+nature `low-fidelity`: a record exists and is too coarse to settle the
+question. A supplier is *answered*, and raises none, when any row in the
+privileged lens has a `host` that is one of its declared domains or a name
+under one; this is deliberately generous, because a gap for a supplier with
+partial evidence would overstate what is missing. The lens is a row whose
+`data_state` is `identity`, whose `source` is `falcon_accounts`,
+`falcon_logins`, `falcon_logon_events`, `entra_app_credentials` or one
+`privileged_sources` names, or that carries a flag starting `privileged-`,
+`privilege-`, `admin-`, `credential-` or `shared-credential`. With no
+`third_party:` list there is no population and no supplier gap: the check
+never says that privileged access as a whole is unmeasured.
+
+**One gap for the parties no declaration knows.** The information-sharing
+register `flows` reads (at the path its channel map declares) names outside
+parties. A party that shares no word of more than three characters with a
+supplier's name or domains, or with a name in the lists `declared_lists`
+names (default `asset_classes` and `infrastructure`), has never been asked
+who inside it can act. It is one gap, not one per party, because the party
+column can mix organisations with categories of people. The count is exact and
+the first twelve names are given. Kind `extent-unknown`, nature `no-data`. Values
+that name no organisation (blank, `n/a`, `none`, `tbc`, `unspecified`, `-`)
+are not parties, and a party spelt twice counts once. With no register, or one
+that cannot be read, the check is silent: `flows` already says so.
+
+Every gap starts `Privileged access coverage —`, a prefix no other check uses.
+
+**Cannot see.** Who administers a hosted service, or whether a party the
+register names holds data at all.
+
+### `software_support`
+
+A `general` plug-in. It reads the files a software census produced and writes
+the rows takestock's configuration register turns into **Software Release**
+items (`docs/CMDB.md`, *Releases a row lists*), so a release reaches the
+register with its vendor's support date and any catalogued exploited defect
+open against it.
+
+**The inputs** are four CSV files and a manifest that names them. The manifest
+is `<profile stem>.software-census.yaml` beside the target profile, found by
+convention:
+
+```yaml
+output: census.csv                    # one row per source, product and version
+support:
+  output: census-support.csv          # each census row graded against a vendor lifecycle
+  as_of: 2030-03-01                   # the date every band is read on
+  superseded_by_measurement:          # optional
+    - {line: wdg-os-3, declared_source: portfolio,
+       measured_sources: [agent-hosts], measured_product: Widget OS}
+  declaration_notes:                  # optional: one sentence for a lifecycle line
+    - {line: wdg-os-3, note: "Support is extended by contract."}
+vulnerabilities:
+  products_output: vuln-products.csv  # exploit counts per product and version
+  kev_output: vuln-catalogue.csv      # one row per catalogued defect
+  dated: 2030-02-10                   # the date of the vulnerability export
+```
+
+Paths are relative to the manifest. The columns read are:
+
+| File | Columns |
+|---|---|
+| census | `source`, `source_date`, `kind`, `vendor`, `product`, `version`, `population`, `population_unit`, `installs`, `seen_within_90_days` |
+| support | `source`, `kind`, `product`, `version`, `line`, `matched_by`, `as_of`, `band_at_as_of`, `condition_at_as_of`, `holds_until`, `vendor_sources` (what `takestock.lifecycle.derive_census_support` writes) |
+| vulnerability products | `product`, `version`, `hosts_open`, `cves_open`, `kev_listed_cves`, `kev_detail` (`CVE-2099-1 (added 2030-01-02, due 2030-01-23); …`) |
+| catalogue | `cve`, `catalogue_vendor`, `catalogue_product`, `known_ransomware_use`, `hosts_open` |
+
+Other columns are ignored. The census and the vulnerability files are the
+organisation's own analyses of the exports it holds; takestock reads them and
+does not produce them. `settings: lifecycle:` names the lifecycle table the
+support bands were read from, relative to the workspace; by default it is
+`data/software-lifecycle.yaml` (takestock's, or a workspace copy), which also
+supplies each line's own product names and end dates.
+
+**A release is written only where a decision hangs on it:** the vendor band on
+the manifest's `as_of` is end-of-support or end-of-life, or security-only only
+under a paid condition (which means the unconditional date has passed); or the
+vulnerability export names a catalogued identifier open on at least one host.
+Every other spelling stays a counted population on the scope row.
+
+**A release is the vendor's version line.** Every spelling the lifecycle table
+maps to one line becomes one release, named by the vendor's own product names
+in the table and never by a pattern matched over the spellings; it lists the
+spellings it covers and their counts. A spelling mapped to no line, or to
+more than one, stays its own release and carries the reason. A count is in
+its source's own unit (hosts, devices, virtual machines, systems, installs,
+documents) and is never summed across sources; defect identifiers are
+unioned across a line's spellings, never added.
+
+**Whose attribution.** The join matches an identifier on the export's own
+product and carries the catalogue's own vendor and product beside it, never
+matched on. Where they differ that is a fact about the export, and every row
+that states a count says so.
+
+**Rows.** One per release (`data_state` `discovery`, protocol
+`software-lifecycle`, source `software_support`, dated the manifest's `as_of`),
+with `extra.releases` in the shape the register reads and `extra.software_release`
+holding the populations, the reason it was written and the attribution; then
+one scope row, `extra.software_support_scope`, counting the census rows and
+spellings, the releases and the spellings left as populations. A declaration a
+hand-kept source makes is *superseded*, and carries no support finding, where the
+named measuring sources have census rows for the measured product and none of
+their support rows grades to the declared line.
+
+**Gaps.** No manifest, or an output it names that cannot be read, is one
+`not-collected` gap and no rows. A lifecycle table named by `settings:` that is
+missing, is not valid YAML or is not a mapping is one `could-not-test` gap and no
+rows. A malformed number is read as zero.
+Census rows whose source starts `observation-` restate an earlier run and are
+ignored.
+
+**Cannot see.** Which version a machine runs where the census names only a
+product; a defect the export does not catalogue; support a vendor has extended
+by a contract nobody has shown.
 
 ### `flows`
 

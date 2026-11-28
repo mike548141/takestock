@@ -35,8 +35,10 @@ anything this run. ``extra.estate_state`` holds the answer:
 
 * ``no-instrument``: the declaration names no instrument, or only ones this
   run does not have;
-* ``instrument-not-run``: every named instrument exists and was deliberately
-  not run;
+* ``instrument-not-run``: every named instrument exists and did not run: a
+  collector the run skipped, or a declared plug-in that was not run (its
+  input was not supplied, or it stopped) or was given no input to read and
+  wrote nothing;
 * ``instrument-unmeasured``: every named instrument ran but sent no probe (it
   had no scanner), so it wrote only placeholder rows;
 * ``instrument-silent``: every named instrument exists and produced nothing;
@@ -62,8 +64,9 @@ class.
 were skipped, and which plug-ins are declared. An instrument is *built* if it
 is a registered collector's module or a declared plug-in. It is *skipped* if
 the run skipped its module and no other registered name for the same module
-ran. Without a run record, the registered collectors' modules are built and
-none is skipped.
+ran, or if it is a declared plug-in that did not run (:func:`plugins_not_run`):
+an instrument that never ran has not "produced nothing". Without a run record,
+the registered collectors' modules are built and none is skipped.
 
 **The other direction.** A vendor seen on the network that no class names is
 a class the declaration is missing. ``collect`` takes an optional mapping of
@@ -80,7 +83,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from .. import collectors, coverage
+from .. import collectors, coverage, plugin_kinds, plugins
 from ..model import NA_VERDICT, CryptoAsset
 from ..plugins import Context, Plugin, RunInfo, StepResult
 
@@ -100,6 +103,9 @@ _ANNOTATIONS = ("(planned)",)
 #: A ``collect`` value meaning that a person looked and no instrument serves the class.
 _NONE = {"none", "", "-", "n/a"}
 
+#: Plug-in kinds that write no rows by design, so writing none says nothing.
+_WRITES_NO_ROWS = (plugin_kinds.COVERAGE_CHECK, plugin_kinds.ANNOTATION)
+
 #: States in which the class produced no evidence at all.
 DARK_STATES = ("no-instrument", "instrument-silent", "instrument-not-run",
                "instrument-unmeasured")
@@ -111,20 +117,64 @@ def _module(name: str) -> str:
     return str(entry.module) if entry is not None else name
 
 
-def instruments(run: RunInfo | None) -> tuple[set[str], set[str]]:
+def instruments(run: RunInfo | None,
+                target: Mapping | None = None) -> tuple[set[str], set[str]]:
     """``(built, skipped)`` instrument names for this run, as rows' ``source`` spells them.
 
     Built: each registered collector's module, and each declared plug-in.
     Skipped: each skipped collector's module, less any module another
     registered name for it ran under (a module may have an input-reading
-    entry beside a probing one). Without a run record the registry's modules
-    are built and none is skipped.
+    entry beside a probing one), and each declared plug-in that did not run
+    (see :func:`plugins_not_run`; ``target`` is the profile, which says what
+    input each was given). Without a run record the registry's modules are
+    built and none is skipped.
     """
     if run is None:
         return {c.module for c in collectors.REGISTRY.values()}, set()
     built = {_module(n) for n in run.collectors} | set(run.plugins)
     ran = {_module(n) for n in run.ran}
-    return built, {_module(n) for n in run.skipped} - ran
+    return built, ({_module(n) for n in run.skipped} - ran) | set(plugins_not_run(run, target))
+
+
+#: Why a declared plug-in did not run. The first is the host's own record (its
+#: input file was not supplied, or its step stopped); the second is a plug-in
+#: the host did call, given no input to read.
+NOT_RUN = "not-run"
+NO_INPUT = "no-input"
+
+
+def plugins_not_run(run: RunInfo | None, target: Mapping | None = None) -> dict[str, str]:
+    """Declared plug-ins that did not run, each with why: ``{name: NOT_RUN or NO_INPUT}``.
+
+    * ``NOT_RUN``: the run records the plug-in as ``not-run`` (the file named
+      as its input was not supplied, or its step stopped).
+    * ``NO_INPUT``: the run records it as ``ran``, but the profile gave it no
+      input and the plug-in has no default one, so its step was called with
+      nothing to read. Only takestock's own readers and plug-ins that write
+      rows are judged this way (a coverage check or an annotation writes none
+      by design), and a plug-in the profile names by ``module:`` or ``path:``
+      is not judged, since its default input is not known here. Whether the
+      plug-in then wrote rows decides the class's state (:func:`collect`), so
+      one that read its settings and wrote rows is unaffected.
+
+    A plug-in whose turn has not come (``pending``) is in neither: it has not
+    been asked to run yet, which says nothing about whether it will.
+    """
+    if run is None:
+        return {}
+    out = {n: NOT_RUN for n, status in run.plugins.items() if status == "not-run"}
+    if target is None:
+        return out
+    from . import library  # imported here: this module is itself part of the library
+    held = library()
+    for d in plugins.declarations(target):
+        known = held.get(d.name)
+        if (run.plugins.get(d.name) != "ran" or d.problem or d.module or d.path
+                or known is None or known.kind in _WRITES_NO_ROWS):
+            continue
+        if not str(d.input if d.input is not None else known.input).strip():
+            out[d.name] = NO_INPUT
+    return out
 
 
 def _token(raw: str) -> str:
@@ -208,8 +258,8 @@ def _notes(crypto: Sequence[str], named: Sequence[str], live: Sequence[str],
 
 
 def _class_row(entry: Mapping, *, built: set[str], produced: Mapping[str, int],
-               exclusive: set[str], skipped: set[str],
-               unmeasured: Mapping[str, int]) -> tuple[CryptoAsset, list[str]]:
+               exclusive: set[str], skipped: set[str], unmeasured: Mapping[str, int],
+               unrun_plugins: Mapping[str, str] | None = None) -> tuple[CryptoAsset, list[str]]:
     """One declared class as a row, and the texts of the gaps it owes."""
     name = str(entry.get("name", "")).strip() or "(unnamed class)"
     crypto = [str(c) for c in (entry.get("crypto") or [])]
@@ -254,8 +304,18 @@ def _class_row(entry: Mapping, *, built: set[str], produced: Mapping[str, int],
         state, reason = "instrument-not-run", "not-run"
         flags.update(f"instrument-not-run:{n}" for n in silent)
         flags.update(f"collector-unbuilt:{n}" for n in missing)
+        # A collector is skipped by the run's choice; a plug-in that did not run
+        # lacked its input or stopped, which is nobody's choice.
+        reasons = {(unrun_plugins or {})[n] for n in present if n in (unrun_plugins or {})}
+        why = ("dark because it did not run" if reasons else "dark by this run's choice")
+        if reasons == {NO_INPUT}:
+            ran_how = " (it was given no input to read)"
+        elif reasons:
+            ran_how = " (its input was not supplied, it stopped, or it was given no input)"
+        else:
+            ran_how = ""
         texts.append(f"{name}: its only instrument ({', '.join(sorted(present))}) was not run "
-                     f"in this observation, so the class is dark by this run's choice. Its "
+                     f"in this observation{ran_how}, so the class is {why}. Its "
                      f"crypto ({crypto_text}) would be measured by running it")
     elif not live and all(n in skipped or n in unprobed for n in present):
         state, reason = "instrument-unmeasured", "placeholders-only"
@@ -402,6 +462,7 @@ def collect(target: Mapping, assets: Sequence[CryptoAsset], *,
             discovered_vendors: Mapping[str, int] | None = None,
             skipped: set[str] | None = None,
             built: set[str] | None = None,
+            unrun_plugins: Mapping[str, str] | None = None,
             key: str = PROFILE_KEY) -> tuple[list[CryptoAsset], list]:
     """The declared classes checked against ``assets``: ``(rows, gaps)``.
 
@@ -409,8 +470,11 @@ def collect(target: Mapping, assets: Sequence[CryptoAsset], *,
     ``skipped`` is what the run deliberately did not invoke; it is passed in,
     never inferred, because only the caller knows what it chose not to do.
     ``built`` is the instrument set the run is made of (see :func:`instruments`);
-    without it, the registry's modules. ``key`` is the profile key that holds
-    the declaration.
+    without it, the registry's modules. ``unrun_plugins`` is the part of
+    ``skipped`` that is declared plug-ins that did not run, with why (see
+    :func:`plugins_not_run`); it only changes the wording of the gap, since a
+    plug-in lacking its input was not left out by choice. ``key`` is the profile
+    key that holds the declaration.
     """
     raw = target.get(key) or []
     entries = [e for e in raw if isinstance(e, Mapping)]
@@ -455,10 +519,15 @@ def collect(target: Mapping, assets: Sequence[CryptoAsset], *,
     rows: list[CryptoAsset] = []
     for entry in entries:
         row, texts = _class_row(entry, built=have, produced=produced, exclusive=exclusive,
-                                skipped=set(skipped or ()), unmeasured=unmeasured)
+                                skipped=set(skipped or ()), unmeasured=unmeasured,
+                                unrun_plugins=unrun_plugins)
         rows.append(row)
         state = row.extra["estate_state"]
         impact_kind, impact, harvest = _IMPACT.get(state, _IMPACT_DEFAULT)
+        if state == "instrument-not-run" and set(unrun_plugins or ()) & set(
+                row.extra["collectors_built"]):
+            harvest = ("Give each plug-in that did not run its input, or fix what stopped it, "
+                       "and run the observation again.")
         nature = _NATURE.get(state, coverage.NATURE_UNSTATED)
         gaps += [coverage.gap(_gap_kind(state), t, impact=impact, impact_kind=impact_kind,
                               harvest=harvest, nature=nature) for t in texts]
@@ -542,12 +611,13 @@ def summarise(assets: Sequence[CryptoAsset]) -> dict:
 
 
 def step(ctx: Context) -> StepResult:
-    built, skipped = instruments(ctx.run)
+    built, skipped = instruments(ctx.run, ctx.target)
     key = str(ctx.settings.get("key") or PROFILE_KEY)
     found = ctx.settings.get(DISCOVERED_SETTING)
     vendors = {str(k): int(v) for k, v in found.items()} if isinstance(found, Mapping) else None
     rows, gaps = collect(ctx.target, list(ctx.assets), discovered_vendors=vendors,
-                         skipped=skipped, built=built, key=key)
+                         skipped=skipped, built=built, key=key,
+                         unrun_plugins=plugins_not_run(ctx.run, ctx.target))
     return StepResult(records=list(rows), gaps=list(gaps))
 
 

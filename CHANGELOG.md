@@ -90,14 +90,28 @@ command line or a file format, and its entry says how.
   `docs/COLLECTORS.md`). `estate` checks the classes of equipment a profile
   declares (`asset_classes:`) against the instruments an observation ran and
   writes one row per class: instrumented, partly instrumented, silent, not
-  run, unmeasured (an instrument that sent no probe) or without any
-  instrument, with a coverage gap for each class nothing measured, and
+  run (a collector the run skipped, or a plug-in whose input was not
+  supplied, whose step stopped, or that was given no input and wrote
+  nothing), unmeasured (an instrument that sent no
+  probe) or without any instrument, with a coverage gap for each class nothing measured, and
   optionally a comparison with the vendors a discovery export saw.
   `endpoint_coverage` is a coverage check that lists the endpoint control
   families no instrument reaches, and how many of the devices reached each
   family covers (`endpoint_control_families:` excludes families or adds
   instruments that evidence one). Both run late, read only the rows already
   collected, and say that nothing looked, never that an asset failed.
+
+- **`privileged_coverage` and `software_support` readers** (the readers
+  library; `docs/COLLECTORS.md`). `privileged_coverage` is a coverage check
+  that raises one gap for each declared supplier (`third_party:`) that no row
+  in the run speaks to the privileged access of, naming the three questions
+  nothing could answer, and one gap for the parties the information-sharing
+  register names that no declaration holds; it writes no rows.
+  `software_support` reads the files of a software census (a manifest beside
+  the profile names them) and writes the software releases past a vendor's
+  support date or with a catalogued exploited defect open, keyed on the
+  vendor's own version line, each with its end dates and its counts in their
+  own units, in the shape `takestock cmdb` reads from `extra.releases`.
 
 - **`takestock mailpath` names message-trace origins**: a sending address the
   system catalogue or an overlay recognises is shown by name beside the

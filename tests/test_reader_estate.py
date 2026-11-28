@@ -257,6 +257,137 @@ def test_instruments_map_registered_names_to_the_modules_rows_name():
     assert skipped == {"tls_scan"}
 
 
+def test_a_declared_plugin_the_run_records_as_not_run_is_skipped_not_silent():
+    run = RunInfo(collectors=("tls_scan",), ran=("tls_scan",),
+                  plugins={"vendor_export": "not-run", "device_export": "ran",
+                           "later_export": "pending"})
+    built, skipped = estate.instruments(run)
+    assert built == {"tls_scan", "vendor_export", "device_export", "later_export"}
+    # A plug-in whose turn has not come is neither run nor skipped yet.
+    assert skipped == {"vendor_export"}
+    assert estate.plugins_not_run(run) == {"vendor_export": estate.NOT_RUN}
+    assert estate.plugins_not_run(None) == {}
+
+
+def test_a_plugin_that_did_not_run_for_want_of_input_reads_as_not_run():
+    run = RunInfo(collectors=("tls_scan",), ran=("tls_scan",),
+                  plugins={"vendor_export": "not-run", "estate": "pending"})
+    target = {"asset_classes": [{"name": "Edge firewalls", "crypto": ["IPsec VPN"],
+                                 "collect": "vendor_export"}]}
+    out = estate.step(_ctx(target, _rows("tls_scan", 2), run, {"discovered_vendors": {}}))
+    (row,) = out.records
+    assert row.extra["estate_state"] == "instrument-not-run"
+    assert row.flags == ["instrument-not-run:vendor_export"]
+    assert row.extra["dark"] is True and row.verdict == "unknown"
+    assert row.notes.startswith("NOT RUN: vendor_export")
+    (gap,) = out.gaps
+    assert coverage.kind_of(gap) == coverage.COULD_NOT_TEST
+    assert "dark because it did not run" in gap and "by this run's choice" not in gap
+    assert "its input was not supplied" in gap
+    assert coverage.harvest_of(gap).startswith("Give each plug-in that did not run its input")
+    assert estate.summarise(out.records)["not_run"] == ["Edge firewalls"]
+
+
+# A library reader named with no `input:` is called, finds nothing to read, files its own
+# gap and writes no rows. The run records it as having run.
+NO_INPUT_RUN = RunInfo(plugins={"commvault": "ran", "oracle_tde": "ran", "sbom": "ran"})
+BACKUP_CLASS = {"name": "Backup appliances", "crypto": ["backup encryption"], "collect": "commvault"}
+
+
+def _step_for(plugins_declared: list, classes: list[dict], assets: list[CryptoAsset],
+              run: RunInfo = NO_INPUT_RUN):
+    target = {"plugins": plugins_declared, "asset_classes": classes}
+    return estate.step(_ctx(target, assets, run, {"discovered_vendors": {}}))
+
+
+def test_a_plugin_given_no_input_that_wrote_nothing_reads_as_not_run_not_silent():
+    out = _step_for(["commvault"], [BACKUP_CLASS], [])
+    (row,) = out.records
+    assert row.extra["estate_state"] == "instrument-not-run"
+    assert row.extra["estate_reason"] == "not-run"
+    assert row.flags == ["instrument-not-run:commvault"]
+    assert estate.summarise(out.records)["not_run"] == ["Backup appliances"]
+    (gap,) = out.gaps
+    assert "it was given no input to read" in gap and "produced nothing" not in gap
+    assert coverage.harvest_of(gap).startswith("Give each plug-in")
+    assert estate.plugins_not_run(NO_INPUT_RUN, {"plugins": ["commvault"]}) == {
+        "commvault": estate.NO_INPUT}
+
+
+def test_the_same_plugin_given_an_input_that_wrote_nothing_stays_silent():
+    # It ran, with something to read, and found nothing: that is silence.
+    out = _step_for([{"name": "commvault", "input": "inbox/policies.csv"}], [BACKUP_CLASS], [])
+    assert out.records[0].extra["estate_state"] == "instrument-silent"
+    assert out.records[0].flags == ["instrument-silent:commvault"]
+    assert "produced nothing" in out.gaps[0]
+
+
+def test_a_plugin_given_no_input_that_wrote_rows_is_instrumented():
+    out = _step_for(["commvault"], [BACKUP_CLASS], _rows("commvault", 3))
+    assert out.records[0].extra["estate_state"] == "instrumented"
+
+
+def test_a_plugin_that_names_a_module_or_a_path_is_not_judged_by_its_input():
+    # Its default input is not known here, so nothing is claimed about it.
+    for declared in ({"name": "commvault", "module": "somewhere.else"},
+                     {"name": "commvault", "path": "plugins/commvault.py"}):
+        out = _step_for([declared], [BACKUP_CLASS], [])
+        assert out.records[0].extra["estate_state"] == "instrument-silent"
+
+
+def test_a_plugin_that_writes_no_rows_by_design_is_not_judged_by_its_rows():
+    run = RunInfo(plugins={"privileged_coverage": "ran", "flows": "ran"})
+    classes = [{"name": "Suppliers", "collect": "privileged_coverage"},
+               {"name": "Channels", "collect": "flows"}]
+    out = _step_for(["privileged_coverage", "flows"], classes, [], run)
+    assert [r.extra["estate_state"] for r in out.records] == ["instrument-silent"] * 2
+
+
+def test_a_plugin_not_in_the_library_is_not_judged_by_its_input():
+    run = RunInfo(plugins={"vendor_export": "ran"})
+    out = _step_for(["vendor_export"], [{"name": "Edge", "collect": "vendor_export"}], [], run)
+    assert out.records[0].extra["estate_state"] == "instrument-silent"
+
+
+def test_one_plugin_not_run_beside_one_that_ran_is_partial_and_flagged_not_run():
+    run = RunInfo(plugins={"vendor_export": "not-run", "device_export": "ran"})
+    target = {"asset_classes": [{"name": "Edge firewalls",
+                                 "collect": "vendor_export/device_export"}]}
+    out = estate.step(_ctx(target, _rows("device_export", 3), run, {"discovered_vendors": {}}))
+    (row,) = out.records
+    assert row.extra["estate_state"] == "instrument-partial"
+    assert "instrument-not-run:vendor_export" in row.flags
+    assert "instrument-silent:vendor_export" not in row.flags
+
+
+def test_a_plugin_not_run_beside_a_collector_that_ran_dark_keeps_the_class_silent():
+    # The collector ran and wrote nothing: that is silence, and the class is not
+    # "not run". Only the not-run plug-in's own flag changes.
+    run = RunInfo(collectors=("tls_scan",), ran=("tls_scan",), plugins={"vendor_export": "not-run"})
+    target = {"asset_classes": [{"name": "Edge firewalls", "collect": "tls_scan/vendor_export"}]}
+    out = estate.step(_ctx(target, [], run, {"discovered_vendors": {}}))
+    (row,) = out.records
+    assert row.extra["estate_state"] == "instrument-silent"
+    assert row.flags == ["instrument-not-run:vendor_export", "instrument-silent:tls_scan"]
+    assert "tls_scan produced nothing" in out.gaps[0] and "vendor_export was not run" in out.gaps[0]
+
+
+def test_a_collector_the_run_skipped_keeps_its_wording_and_remedy():
+    run = RunInfo(collectors=("ike_scan",), skipped={"ike_scan": "no scan was asked for"})
+    target = {"asset_classes": [{"name": "Edge firewalls", "collect": "ike_scan"}]}
+    out = estate.step(_ctx(target, [], run, {"discovered_vendors": {}}))
+    (gap,) = out.gaps
+    assert "was not run in this observation, so the class is dark by this run's choice" in gap
+    assert coverage.harvest_of(gap) == "Run the observation again with the instrument enabled."
+
+
+def test_a_plugin_whose_turn_has_not_come_is_still_silent_not_not_run():
+    run = RunInfo(plugins={"vendor_export": "pending"})
+    target = {"asset_classes": [{"name": "Edge firewalls", "collect": "vendor_export"}]}
+    out = estate.step(_ctx(target, [], run, {"discovered_vendors": {}}))
+    assert out.records[0].extra["estate_state"] == "instrument-silent"
+
+
 def test_without_a_run_record_the_registered_modules_are_built_and_none_skipped():
     from takestock import collectors
     built, skipped = estate.instruments(None)
@@ -340,3 +471,32 @@ def test_an_observation_writes_one_row_per_class_and_a_summary(workspace):
     record = result.summary["plugins"]["estate"]
     assert record["rows"] == 2 and record["summary"]["declared_classes"] == 2
     assert any("Backup appliances" in g for g in result.summary["gaps"])
+
+
+def test_a_declared_plugin_whose_input_file_is_missing_reads_as_not_run_in_an_observation(workspace):
+    target = config.load_target("example-widgets")
+    target["plugins"] = [{"name": "falcon_estate_coverage", "input": "inbox/absent-hosts.csv"},
+                         "estate"]
+    target["asset_classes"] = [
+        {"name": "Sensor fleet", "crypto": ["disk encryption"], "collect": "falcon_estate_coverage"}]
+    result = observe.observe(target, observe.Options(now=NOW, offline=True,
+                                                     announce=lambda _line: None))
+    assert result.summary["plugins"]["falcon_estate_coverage"]["status"] == "not-run"
+    (row,) = [a for a in result.assets if a.source == "estate"]
+    assert row.extra["estate_state"] == "instrument-not-run"
+    assert result.summary["plugins"]["estate"]["summary"]["not_run"] == ["Sensor fleet"]
+
+
+def test_a_declared_plugin_with_no_input_reads_as_not_run_in_an_observation(workspace):
+    target = config.load_target("example-widgets")
+    target["plugins"] = ["commvault", "estate"]
+    target["asset_classes"] = [
+        {"name": "Backup appliances", "crypto": ["backup encryption"], "collect": "commvault"}]
+    result = observe.observe(target, observe.Options(now=NOW, offline=True,
+                                                     announce=lambda _line: None))
+    assert result.summary["plugins"]["commvault"]["status"] == "ran"
+    assert result.summary["plugins"]["commvault"]["rows"] == 0
+    (row,) = [a for a in result.assets if a.source == "estate"]
+    assert row.extra["estate_state"] == "instrument-not-run"
+    assert result.summary["plugins"]["estate"]["summary"]["not_run"] == ["Backup appliances"]
+

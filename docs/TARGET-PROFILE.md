@@ -143,7 +143,7 @@ collector reads is ignored.
 | `plugins` | The plug-in collectors to run, each with its input and settings ([`PLUGINS.md`](PLUGINS.md#declaring-a-plug-in-in-the-target-profile)) | the named plug-ins |
 | `collectors` | Built-in collectors to turn off, each with the reason | every observation |
 | `dns_zones` | Settings for reading supplied zone files | `dns_zones` |
-| `third_party` | Outside providers and the domains they operate | dispositions, `dns_zones` |
+| `third_party` | Outside providers and the domains they operate; for the `privileged_coverage` plug-in also each one's `role` and `uses` | dispositions, `dns_zones`, the `privileged_coverage` plug-in ([`COLLECTORS.md`](COLLECTORS.md#privileged_coverage)) |
 | `infrastructure` | Infrastructure providers and their domains | `dns_zones` |
 | `asset_classes` | The classes of equipment the organisation runs, each with the instruments meant to serve it | the `estate` plug-in ([`COLLECTORS.md`](COLLECTORS.md#estate)) |
 | `endpoint_control_families` | Endpoint control families to leave out, and instruments that evidence a family | the `endpoint_coverage` plug-in ([`COLLECTORS.md`](COLLECTORS.md#endpoint_coverage)) |
