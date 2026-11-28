@@ -37,8 +37,9 @@ anything this run. ``extra.estate_state`` holds the answer:
   run does not have;
 * ``instrument-not-run``: every named instrument exists and did not run: a
   collector the run skipped, or a declared plug-in that was not run (its
-  input was not supplied, or it stopped) or was given no input to read and
-  wrote nothing;
+  input was not supplied, or it stopped), had not run yet when this reader
+  read the run (a coverage check or late step whose turn comes after this
+  reader's) or was given no input to read and wrote nothing;
 * ``instrument-unmeasured``: every named instrument ran but sent no probe (it
   had no scanner), so it wrote only placeholder rows;
 * ``instrument-silent``: every named instrument exists and produced nothing;
@@ -138,13 +139,16 @@ def instruments(run: RunInfo | None,
 
 #: Why a declared plug-in did not run. The first is the host's own record (its
 #: input file was not supplied, or its step stopped); the second is a plug-in
-#: the host did call, given no input to read.
+#: the host did call, given no input to read; the third is a plug-in whose turn
+#: comes after the reader's, which has not run when the reader reads the run
+#: but does run later in the same observation.
 NOT_RUN = "not-run"
 NO_INPUT = "no-input"
+NOT_YET = "not-yet-run"
 
 
 def plugins_not_run(run: RunInfo | None, target: Mapping | None = None) -> dict[str, str]:
-    """Declared plug-ins that did not run, each with why: ``{name: NOT_RUN or NO_INPUT}``.
+    """Declared plug-ins that did not run, each with why: ``{name: NOT_RUN, NO_INPUT or NOT_YET}``.
 
     * ``NOT_RUN``: the run records the plug-in as ``not-run`` (the file named
       as its input was not supplied, or its step stopped).
@@ -156,9 +160,13 @@ def plugins_not_run(run: RunInfo | None, target: Mapping | None = None) -> dict[
       is not judged, since its default input is not known here. Whether the
       plug-in then wrote rows decides the class's state (:func:`collect`), so
       one that read its settings and wrote rows is unaffected.
-
-    A plug-in whose turn has not come (``pending``) is in neither: it has not
-    been asked to run yet, which says nothing about whether it will.
+    * ``NOT_YET``: the run records it as ``pending`` and its turn comes after
+      this reader's, so it has not run when this reader reads the run, though
+      it runs later in the same observation. Judged, like ``NO_INPUT``, only
+      for takestock's own readers (the profile's ``target`` says which are
+      declared), and not for an annotation, which always runs after grading and
+      so is always ``pending`` here: it is read as before. The reader's own
+      entry is ``pending`` while it reads, and is not counted.
     """
     if run is None:
         return {}
@@ -169,10 +177,14 @@ def plugins_not_run(run: RunInfo | None, target: Mapping | None = None) -> dict[
     held = library()
     for d in plugins.declarations(target):
         known = held.get(d.name)
-        if (run.plugins.get(d.name) != "ran" or d.problem or d.module or d.path
-                or known is None or known.kind in _WRITES_NO_ROWS):
+        if d.problem or d.module or d.path or known is None:
             continue
-        if not str(d.input if d.input is not None else known.input).strip():
+        status = run.plugins.get(d.name)
+        if status == "pending":
+            if d.name != NAME and known.kind != plugin_kinds.ANNOTATION:
+                out[d.name] = NOT_YET
+        elif (status == "ran" and known.kind not in _WRITES_NO_ROWS
+              and not str(d.input if d.input is not None else known.input).strip()):
             out[d.name] = NO_INPUT
     return out
 
@@ -209,12 +221,18 @@ def _exclusive(entries: Sequence[Mapping]) -> set[str]:
     return {n for n, c in counts.items() if c == 1}
 
 
-def _role(name: str, crypto: Sequence[str], state: str) -> str:
+def _role(name: str, crypto: Sequence[str], state: str, *, yet: str = "") -> str:
     """The row's plain-language line: what the class is and whether anything examined it."""
     what = f"A kind of equipment in the estate: {name}."
     if state == "no-instrument":
         return (f"{what} Nothing in this report has examined it, because no check for this "
                 "kind of equipment exists in this run, so its encryption is unknown, not absent.")
+    if state == "instrument-not-run" and yet == "all":
+        return (f"{what} The check for it had not run when this was written (its turn comes "
+                "after this check's), so the equipment is unexamined here.")
+    if state == "instrument-not-run" and yet == "some":
+        return (f"{what} Part of the checks for it were not run in this observation and the "
+                "rest had not run when this was written, so the equipment is unexamined here.")
     if state == "instrument-not-run":
         return (f"{what} The check for it was not run in this observation, so the equipment "
                 "is unexamined here.")
@@ -233,13 +251,19 @@ def _role(name: str, crypto: Sequence[str], state: str) -> str:
 
 def _notes(crypto: Sequence[str], named: Sequence[str], live: Sequence[str],
            silent: list[str], missing: list[str], state: str, attributed: int,
-           unprobed: Sequence[str]) -> str:
+           unprobed: Sequence[str], yet: Sequence[str] = ()) -> str:
     what = f"declared crypto: {', '.join(crypto) or 'unstated'}"
     if state == "no-instrument" and not named:
         return f"NO INSTRUMENT: none is named for this class. {what}"
     if state == "no-instrument":
         return (f"NO INSTRUMENT: {', '.join(sorted(missing))} named, none present in this "
                 f"run. {what}")
+    if state == "instrument-not-run" and yet:
+        rest = sorted(n for n in silent if n not in yet)
+        late = f"{', '.join(sorted(yet))} had not run when estate read the run"
+        if not rest:
+            return f"NOT YET RUN: {late} (its turn comes after estate's). {what}"
+        return (f"NOT RUN: {', '.join(rest)} was not run this observation; {late}. {what}")
     if state == "instrument-not-run":
         return f"NOT RUN: {', '.join(sorted(silent))} was not run this observation. {what}"
     if state == "instrument-unmeasured":
@@ -271,6 +295,8 @@ def _class_row(entry: Mapping, *, built: set[str], produced: Mapping[str, int],
     silent = [n for n in present if not produced.get(n)]
     # Present, wrote rows, but none of them a measurement: no probe was sent.
     unprobed = [n for n in silent if unmeasured.get(n)]
+    # Present plug-ins whose turn comes after estate's: not run yet, not not run.
+    yet = sorted(n for n in present if (unrun_plugins or {}).get(n) == NOT_YET)
 
     def dark_flag(instrument: str) -> str:
         # An instrument the run skipped is the operator's decision and outranks
@@ -306,7 +332,11 @@ def _class_row(entry: Mapping, *, built: set[str], produced: Mapping[str, int],
         flags.update(f"collector-unbuilt:{n}" for n in missing)
         # A collector is skipped by the run's choice; a plug-in that did not run
         # lacked its input or stopped, which is nobody's choice.
-        reasons = {(unrun_plugins or {})[n] for n in present if n in (unrun_plugins or {})}
+        # A plug-in whose turn comes after estate's does run, later in the same
+        # observation; it had not run when estate read the run, which is not the
+        # same as not having been run.
+        reasons = {(unrun_plugins or {})[n] for n in present
+                   if (unrun_plugins or {}).get(n, NOT_YET) != NOT_YET}
         why = ("dark because it did not run" if reasons else "dark by this run's choice")
         if reasons == {NO_INPUT}:
             ran_how = " (it was given no input to read)"
@@ -314,17 +344,31 @@ def _class_row(entry: Mapping, *, built: set[str], produced: Mapping[str, int],
             ran_how = " (its input was not supplied, it stopped, or it was given no input)"
         else:
             ran_how = ""
-        texts.append(f"{name}: its only instrument ({', '.join(sorted(present))}) was not run "
-                     f"in this observation{ran_how}, so the class is {why}. Its "
-                     f"crypto ({crypto_text}) would be measured by running it")
+        if not yet:
+            texts.append(f"{name}: its only instrument ({', '.join(sorted(present))}) was not "
+                         f"run in this observation{ran_how}, so the class is {why}. Its "
+                         f"crypto ({crypto_text}) would be measured by running it")
+        else:
+            late = (f"{', '.join(yet)} had not run when estate read the run (its turn comes "
+                    "after estate's)")
+            rest = sorted(n for n in present if n not in yet)
+            who = (f"its only instrument ({', '.join(yet)}) had not run when estate read the "
+                   "run (its turn comes after estate's)" if not rest else
+                   f"its instruments ({', '.join(sorted(present))}) did not all run: "
+                   f"{', '.join(rest)} was not run in this observation{ran_how}; {late}")
+            texts.append(f"{name}: {who}, so the class is dark at this point in the run. Its "
+                         f"crypto ({crypto_text}) is not counted from rows that had not been "
+                         "written")
     elif not live and all(n in skipped or n in unprobed for n in present):
         state, reason = "instrument-unmeasured", "placeholders-only"
         flags.update(dark_flag(n) for n in silent)
         flags.update(f"collector-unbuilt:{n}" for n in missing)
-        not_run = sorted(n for n in silent if n in skipped)
+        not_run = sorted(n for n in silent if n in skipped and n not in yet)
         why = f"{', '.join(sorted(unprobed))} ran but sent no probe and wrote placeholder rows"
         if not_run:
             why += f", and {', '.join(not_run)} was not run"
+        if yet:
+            why += f", and {', '.join(yet)} had not run when estate read the run"
         texts.append(f"{name}: unmeasured, because {why}. Its crypto ({crypto_text}) has no "
                      "evidence here; installing the missing scanner would measure it")
     elif not live:
@@ -332,7 +376,7 @@ def _class_row(entry: Mapping, *, built: set[str], produced: Mapping[str, int],
         flags.update(dark_flag(n) for n in silent)
         flags.update(f"collector-unbuilt:{n}" for n in missing)
         ran_silent = sorted(n for n in silent if n not in skipped and n not in unprobed)
-        not_run = sorted(n for n in silent if n in skipped)
+        not_run = sorted(n for n in silent if n in skipped and n not in yet)
         parts = []
         if ran_silent:
             parts.append(f"{', '.join(ran_silent)} produced nothing")
@@ -340,6 +384,8 @@ def _class_row(entry: Mapping, *, built: set[str], produced: Mapping[str, int],
             parts.append(f"{', '.join(sorted(unprobed))} sent no probe")
         if not_run:
             parts.append(f"{', '.join(not_run)} was not run")
+        if yet:
+            parts.append(f"{', '.join(yet)} had not run when estate read the run")
         texts.append(f"{name}: dark in this observation ({'; '.join(parts)}). Its crypto "
                      f"({crypto_text}) is unmeasured here. This limits what was measured and "
                      "is not evidence that the class is absent")
@@ -363,7 +409,9 @@ def _class_row(entry: Mapping, *, built: set[str], produced: Mapping[str, int],
 
     asset = CryptoAsset(
         name=f"Declared asset class: {name}",
-        role=_role(name, crypto, state),
+        role=_role(name, crypto, state,
+                   yet=("" if not yet or state != "instrument-not-run"
+                        else "all" if len(yet) == len(present) else "some")),
         data_state=DATA_STATE,
         protocol="",
         source=SOURCE,
@@ -372,7 +420,8 @@ def _class_row(entry: Mapping, *, built: set[str], produced: Mapping[str, int],
         # No collected_at: a declaration is not an observation.
         verdict="unknown" if state != "instrumented" else NA_VERDICT,
         flags=sorted(flags),
-        notes=_notes(crypto, named, live, silent, missing, state, attributed, unprobed),
+        notes=_notes(crypto, named, live, silent, missing, state, attributed, unprobed,
+                     yet if state == "instrument-not-run" else ()),
         extra={
             "estate_class": name,
             "estate_state": state,
@@ -390,6 +439,8 @@ def _class_row(entry: Mapping, *, built: set[str], produced: Mapping[str, int],
             "dark": state in DARK_STATES,
         },
     )
+    if yet and state == "instrument-not-run":
+        asset.extra["collectors_not_yet"] = yet
     return asset, texts
 
 
@@ -524,10 +575,22 @@ def collect(target: Mapping, assets: Sequence[CryptoAsset], *,
         rows.append(row)
         state = row.extra["estate_state"]
         impact_kind, impact, harvest = _IMPACT.get(state, _IMPACT_DEFAULT)
-        if state == "instrument-not-run" and set(unrun_plugins or ()) & set(
-                row.extra["collectors_built"]):
+        late = row.extra.get("collectors_not_yet", [])
+        built_here = set(row.extra["collectors_built"])
+        unrun = {n for n in built_here & set(unrun_plugins or ())
+                 if (unrun_plugins or {})[n] != NOT_YET}
+        if state == "instrument-not-run" and unrun:
             harvest = ("Give each plug-in that did not run its input, or fix what stopped it, "
                        "and run the observation again.")
+            if late:
+                harvest += (" Declare each plug-in that had not run yet before estate, or "
+                            "read this class from that plug-in's own record.")
+        elif state == "instrument-not-run" and late:
+            impact = ("Nothing about this equipment was counted here, because the plug-in "
+                      "that measures it had not run when this was read. Its own record may "
+                      "show what it found; this row does not.")
+            harvest = ("Declare it before estate, or read this class from that plug-in's "
+                       "own record.")
         nature = _NATURE.get(state, coverage.NATURE_UNSTATED)
         gaps += [coverage.gap(_gap_kind(state), t, impact=impact, impact_kind=impact_kind,
                               harvest=harvest, nature=nature) for t in texts]

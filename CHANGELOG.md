@@ -91,8 +91,9 @@ command line or a file format, and its entry says how.
   declares (`asset_classes:`) against the instruments an observation ran and
   writes one row per class: instrumented, partly instrumented, silent, not
   run (a collector the run skipped, or a plug-in whose input was not
-  supplied, whose step stopped, or that was given no input and wrote
-  nothing), unmeasured (an instrument that sent no
+  supplied or whose step stopped, a coverage check or late step whose turn
+  comes after `estate`'s and so had not run when it read the run, or a plug-in
+  given no input that wrote nothing), unmeasured (an instrument that sent no
   probe) or without any instrument, with a coverage gap for each class nothing measured, and
   optionally a comparison with the vendors a discovery export saw.
   `endpoint_coverage` is a coverage check that lists the endpoint control

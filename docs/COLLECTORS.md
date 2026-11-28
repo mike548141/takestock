@@ -3686,7 +3686,7 @@ anything. `extra.estate_state` is one of:
 | State | Means | Verdict | Gap kind |
 |---|---|---|---|
 | `no-instrument` | the declaration names no instrument, or only ones this run does not have | `unknown` | not-collected |
-| `instrument-not-run` | every named instrument exists and did not run: a collector the run skipped (offline, or no probing authorised), or a declared plug-in that did not run (see below) | `unknown` | could-not-test |
+| `instrument-not-run` | every named instrument exists and did not run: a collector the run skipped (offline, or no probing authorised), or a declared plug-in that did not run or had not run when `estate` read the run (see below) | `unknown` | could-not-test |
 | `instrument-unmeasured` | every named instrument ran, but sent no probe because it had no scanner, so it wrote only placeholder rows (`source_class` `unknown`) | `unknown` | not-collected |
 | `instrument-silent` | every named instrument exists and wrote nothing | `unknown` | could-not-test |
 | `instrument-partial` | some named instruments wrote rows and others did not | `unknown` | could-not-test, low-fidelity |
@@ -3711,22 +3711,43 @@ collector's module and every declared plug-in are *built*; a collector the
 observation skipped is *skipped* unless another entry for the same module ran,
 and a declared plug-in that did not run is *skipped* too. An instrument that
 never ran has not "produced nothing", so a plug-in named in a class's `collect`
-reads `instrument-not-run`, not `instrument-silent`, when either
+reads `instrument-not-run`, not `instrument-silent`, when any of
 
 * the run records it as `not-run`: the file named as its `input:` was not
-  supplied, or its step stopped; or
+  supplied, or its step stopped;
 * the run records it as `ran`, the profile gave it no `input:`, it has no
   default one, and it wrote no rows: its step was called with nothing to read
-  and said so in its own gap.
+  and said so in its own gap; or
+* the run records it as `pending`: its turn comes after `estate`'s (a coverage
+  check or a late step listed after it), so it had not run when `estate` read
+  the run, though it does run later in the same observation.
 
 The second is judged only for takestock's own readers that write rows (a
 coverage check or an annotation writes none by design, and a plug-in the
 profile names by `module:` or `path:` has a default input `estate` cannot see),
 and only when it wrote nothing: a plug-in given no input that read its settings
 and wrote rows is *instrumented*. A plug-in given an input that wrote nothing
-ran and found nothing, so it stays `instrument-silent`. A plug-in whose turn
-has not come when `estate` runs (`pending`) is none of these, and reads as
-silent until it writes rows.
+ran and found nothing, so it stays `instrument-silent`.
+
+The third is worded as what it is. Where every instrument a class names did
+not run, the row, its note and its gap say the plug-in *had not run when
+`estate` read the run (its turn comes after `estate`'s)*, never that it "was
+not run in this observation", and the gap's
+remedy is to declare the plug-in before `estate` or to read the class from that
+plug-in's own record. The row carries `extra.collectors_not_yet` naming it. It
+keeps the state `instrument-not-run` and the flag `instrument-not-run:<name>`:
+nothing from that plug-in was counted, which is what the state says. In a
+class where another named instrument ran, the flag still reads
+`instrument-not-run:<name>`. A *silent* class's gap says the plug-in had not
+run yet, but its note lists it among the instruments that produced nothing. A
+*partial* class's note and gap list it among those that produced none. It is
+judged only for takestock's own readers, named in the profile without
+`module:` or `path:`, whose kind is known. An annotation is not judged: it runs
+after grading, so it is always `pending` when `estate` reads, and a class that
+names one reads as before (`instrument-silent`). `estate`'s own entry is
+`pending` for as long as it reads, and is not counted: a class that names
+`estate` reads as `instrument-silent`, since it has written no rows when it
+reads.
 
 **The other direction.** With `discovered_vendors` supplied, a vendor no
 class names is a gap carrying its count. With none supplied, a gap says the

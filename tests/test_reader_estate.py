@@ -260,10 +260,11 @@ def test_instruments_map_registered_names_to_the_modules_rows_name():
 def test_a_declared_plugin_the_run_records_as_not_run_is_skipped_not_silent():
     run = RunInfo(collectors=("tls_scan",), ran=("tls_scan",),
                   plugins={"vendor_export": "not-run", "device_export": "ran",
-                           "later_export": "pending"})
+                           "later_export": "pending", "estate": "pending"})
     built, skipped = estate.instruments(run)
-    assert built == {"tls_scan", "vendor_export", "device_export", "later_export"}
-    # A plug-in whose turn has not come is neither run nor skipped yet.
+    assert built == {"tls_scan", "vendor_export", "device_export", "later_export", "estate"}
+    # With no profile there is nothing to say which plug-ins are library readers,
+    # so a plug-in that has not had its turn is not judged.
     assert skipped == {"vendor_export"}
     assert estate.plugins_not_run(run) == {"vendor_export": estate.NOT_RUN}
     assert estate.plugins_not_run(None) == {}
@@ -336,10 +337,11 @@ def test_a_plugin_that_names_a_module_or_a_path_is_not_judged_by_its_input():
 
 
 def test_a_plugin_that_writes_no_rows_by_design_is_not_judged_by_its_rows():
-    run = RunInfo(plugins={"privileged_coverage": "ran", "flows": "ran"})
+    # Both are coverage checks listed before estate, so both have run when it reads.
+    run = RunInfo(plugins={"privileged_coverage": "ran", "endpoint_coverage": "ran"})
     classes = [{"name": "Suppliers", "collect": "privileged_coverage"},
-               {"name": "Channels", "collect": "flows"}]
-    out = _step_for(["privileged_coverage", "flows"], classes, [], run)
+               {"name": "Endpoints", "collect": "endpoint_coverage"}]
+    out = _step_for(["privileged_coverage", "endpoint_coverage"], classes, [], run)
     assert [r.extra["estate_state"] for r in out.records] == ["instrument-silent"] * 2
 
 
@@ -381,11 +383,132 @@ def test_a_collector_the_run_skipped_keeps_its_wording_and_remedy():
     assert coverage.harvest_of(gap) == "Run the observation again with the instrument enabled."
 
 
-def test_a_plugin_whose_turn_has_not_come_is_still_silent_not_not_run():
-    run = RunInfo(plugins={"vendor_export": "pending"})
-    target = {"asset_classes": [{"name": "Edge firewalls", "collect": "vendor_export"}]}
+# A coverage check listed after estate has not run when estate reads the run, and does run
+# later in the same observation: it reads as not yet run, not as not run and not as silent.
+LATE_TARGET = {"plugins": ["estate", "endpoint_coverage", "privileged_coverage"]}
+PENDING_RUN = RunInfo(plugins={"estate": "pending", "endpoint_coverage": "pending",
+                               "privileged_coverage": "pending"})
+
+
+def _late_step(classes: list[dict], run: RunInfo = PENDING_RUN,
+               assets: list[CryptoAsset] | None = None):
+    target = dict(LATE_TARGET, asset_classes=classes)
+    return estate.step(_ctx(target, assets or [], run, {"discovered_vendors": {}}))
+
+
+def test_the_plugins_whose_turn_comes_after_estates_are_not_yet_run():
+    assert estate.plugins_not_run(PENDING_RUN, LATE_TARGET) == {
+        "endpoint_coverage": estate.NOT_YET, "privileged_coverage": estate.NOT_YET}
+    built, skipped = estate.instruments(PENDING_RUN, LATE_TARGET)
+    assert {"endpoint_coverage", "privileged_coverage", "estate"} <= built
+    # estate's own entry is pending only while it reads; it is running.
+    assert skipped == {"endpoint_coverage", "privileged_coverage"}
+
+
+def test_a_plugin_whose_turn_has_not_come_reads_as_not_yet_run_in_its_own_words():
+    out = _late_step([{"name": "Edge firewalls", "crypto": ["IPsec VPN"],
+                       "collect": "endpoint_coverage"}])
+    (row,) = out.records
+    assert row.extra["estate_state"] == "instrument-not-run"
+    assert row.extra["estate_reason"] == "not-run"
+    assert row.flags == ["instrument-not-run:endpoint_coverage"]
+    assert row.extra["collectors_not_yet"] == ["endpoint_coverage"]
+    assert row.extra["dark"] is True and row.verdict == "unknown"
+    assert row.notes.startswith("NOT YET RUN: endpoint_coverage had not run when estate read")
+    assert "had not run when this was written" in row.role
+    assert "was not run in this observation" not in row.role
+    (gap,) = out.gaps
+    assert coverage.kind_of(gap) == coverage.COULD_NOT_TEST
+    assert "had not run when estate read the run (its turn comes after estate's)" in gap
+    for wrong in ("was not run in this observation", "its input was not supplied",
+                  "would be measured by running it", "produced nothing"):
+        assert wrong not in gap
+    assert coverage.harvest_of(gap) == (
+        "Declare it before estate, or read this class from that plug-in's own record.")
+    assert "had not run when this was read" in coverage.impact_of(gap)
+    assert estate.summarise(out.records)["not_run"] == ["Edge firewalls"]
+
+
+def test_a_pending_plugin_beside_one_that_ran_is_partial_and_flagged_not_run():
+    run = RunInfo(plugins={"endpoint_coverage": "pending", "privileged_coverage": "ran",
+                           "estate": "pending"})
+    out = _late_step([{"name": "Edge firewalls",
+                       "collect": "endpoint_coverage/privileged_coverage"}], run,
+                     _rows("privileged_coverage", 3))
+    (row,) = out.records
+    assert row.extra["estate_state"] == "instrument-partial"
+    assert "instrument-not-run:endpoint_coverage" in row.flags
+    assert "instrument-silent:endpoint_coverage" not in row.flags
+
+
+def test_a_pending_plugin_beside_a_collector_that_ran_dark_keeps_the_class_silent():
+    run = RunInfo(collectors=("tls_scan",), ran=("tls_scan",),
+                  plugins={"endpoint_coverage": "pending", "estate": "pending"})
+    out = _late_step([{"name": "Edge firewalls", "collect": "tls_scan/endpoint_coverage"}], run)
+    (row,) = out.records
+    assert row.extra["estate_state"] == "instrument-silent"
+    assert row.flags == ["instrument-not-run:endpoint_coverage", "instrument-silent:tls_scan"]
+    (gap,) = out.gaps
+    assert "tls_scan produced nothing" in gap
+    assert "endpoint_coverage had not run when estate read the run" in gap
+    assert "endpoint_coverage was not run" not in gap
+
+
+def test_a_pending_plugin_beside_a_not_run_one_says_each_in_its_own_words():
+    run = RunInfo(plugins={"endpoint_coverage": "pending", "privileged_coverage": "not-run",
+                           "estate": "pending"})
+    out = _late_step([{"name": "Edge firewalls",
+                       "collect": "endpoint_coverage/privileged_coverage"}], run)
+    (row,) = out.records
+    assert row.extra["estate_state"] == "instrument-not-run"
+    assert row.flags == ["instrument-not-run:endpoint_coverage",
+                         "instrument-not-run:privileged_coverage"]
+    assert row.notes.startswith("NOT RUN: privileged_coverage was not run this observation; "
+                                "endpoint_coverage had not run when estate read the run")
+    (gap,) = out.gaps
+    assert "privileged_coverage was not run in this observation" in gap
+    assert "endpoint_coverage had not run when estate read the run" in gap
+    harvest = coverage.harvest_of(gap)
+    assert harvest.startswith("Give each plug-in that did not run its input")
+    assert "Declare each plug-in that had not run yet before estate" in harvest
+
+
+def test_an_annotation_is_always_pending_at_estate_time_and_is_read_as_before():
+    run = RunInfo(plugins={"estate": "pending", "flows": "pending"})
+    target = {"plugins": ["estate", "flows"],
+              "asset_classes": [{"name": "Channels", "collect": "flows"}]}
+    assert estate.plugins_not_run(run, target) == {}
     out = estate.step(_ctx(target, [], run, {"discovered_vendors": {}}))
     assert out.records[0].extra["estate_state"] == "instrument-silent"
+    assert "collectors_not_yet" not in out.records[0].extra
+
+
+def test_a_pending_plugin_that_is_not_a_library_reader_is_not_judged():
+    # Its kind is not known here (a plug-in the profile names by module or path, or one
+    # not in the library), so it reads as before.
+    run = RunInfo(plugins={"vendor_export": "pending", "estate": "pending"})
+    for declared in ("vendor_export", {"name": "vendor_export", "module": "somewhere.else"},
+                     {"name": "vendor_export", "path": "plugins/vendor_export.py"}):
+        target = {"plugins": ["estate", declared],
+                  "asset_classes": [{"name": "Edge firewalls", "collect": "vendor_export"}]}
+        assert estate.plugins_not_run(run, target) == {}
+        out = estate.step(_ctx(target, [], run, {"discovered_vendors": {}}))
+        assert out.records[0].extra["estate_state"] == "instrument-silent"
+
+
+def test_the_reader_naming_itself_is_not_read_as_not_run_while_it_reads():
+    # Its own entry is `pending` for as long as it reads; it is running, not unrun.
+    run = RunInfo(plugins={"estate": "pending"})
+    target = {"plugins": ["estate"],
+              "asset_classes": [{"name": "The declaration", "collect": "estate"}]}
+    out = estate.step(_ctx(target, [], run, {"discovered_vendors": {}}))
+    assert out.records[0].extra["estate_state"] == "instrument-silent"
+    assert estate.plugins_not_run(run, target) == {}
+
+
+def test_a_status_other_than_pending_or_not_run_is_read_as_before():
+    run = RunInfo(plugins={"vendor_export": "ran", "device_export": "queued"})
+    assert estate.plugins_not_run(run) == {}
 
 
 def test_without_a_run_record_the_registered_modules_are_built_and_none_skipped():
@@ -500,3 +623,23 @@ def test_a_declared_plugin_with_no_input_reads_as_not_run_in_an_observation(work
     assert row.extra["estate_state"] == "instrument-not-run"
     assert result.summary["plugins"]["estate"]["summary"]["not_run"] == ["Backup appliances"]
 
+
+
+def test_a_declared_plugin_that_runs_after_estate_reads_as_not_yet_run_in_an_observation(workspace):
+    target = config.load_target("example-widgets")
+    # estate reads the run before the plug-in listed after it has had its turn.
+    target["plugins"] = ["estate", "endpoint_coverage"]
+    target["asset_classes"] = [
+        {"name": "Sensor fleet", "crypto": ["disk encryption"], "collect": "endpoint_coverage"}]
+    result = observe.observe(target, observe.Options(now=NOW, offline=True,
+                                                     announce=lambda _line: None))
+    # It does run, later in the same observation: the row says it had not run yet.
+    assert result.summary["plugins"]["endpoint_coverage"]["status"] == "ran"
+    (row,) = [a for a in result.assets if a.source == "estate"]
+    assert row.extra["estate_state"] == "instrument-not-run"
+    assert row.flags == ["instrument-not-run:endpoint_coverage"]
+    assert row.extra["collectors_not_yet"] == ["endpoint_coverage"]
+    assert result.summary["plugins"]["estate"]["summary"]["not_run"] == ["Sensor fleet"]
+    gap = next(g for g in result.summary["gaps"] if "Sensor fleet" in g)
+    assert "had not run when estate read the run" in gap
+    assert "was not run in this observation" not in gap
