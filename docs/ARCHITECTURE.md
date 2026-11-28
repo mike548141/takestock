@@ -395,7 +395,7 @@ a new collector or reader declares itself without editing a central list
 | `model.declare_adverse(*prefixes)` | Flags, or flag prefixes, that are adverse whatever is registered as informational. For a program embedding takestock | None |
 | `depth.register_flags(rung, *flags, convention=False)` | Flags that lift a row to an evidence-depth rung (`key-management`, `key`, `posture`), or record an unanswered question (`unanswered`) | Built-in lists in `depth.py` |
 | `plaintext.register_host_listener_source(source, marker)` | A source whose rows are listening ports seen from the host itself | None |
-| `binding.register_binding(binding, protocols=..., data_states=...)` | Protocols or data states bound to `hardware` or `software` | Built-in tables in `binding.py` |
+| `binding.register_binding(binding, protocols=..., data_states=...)` | Protocols or data states bound to `hardware` or `software` | Built-in tables in `binding.py`, which place the states and protocols the bundled readers and collectors emit; a test fails when a value in the source or in the tables the readers draw from is left out |
 | `obsarchive.add_archive_dir(*dirs)` | Further folders to look in for an archived observation's file when it is not beside the manifest (a working copy reading the main copy's archives); every member is still checked against the manifest | None |
 | `cmdb.register_source_strength(source, strength)` | The evidence strength a source's rows carry in the register when a row does not say (for example `reported` for a management system's own records) | None: rows default to `measured` |
 | `config.register_overlay_suffix(*suffixes)` | File suffixes beside a profile that are overlays, never profiles | `.dispositions.yaml`, `.derived-ports.yaml`, `.cmdb-schema-overlay.yaml` and `.ipam.yaml` |
@@ -483,8 +483,10 @@ in its own package instead, with no change here; see
 7. **Declare its flags**: informational ones with
    `model.register_informational_prefixes`, depth rungs with
    `depth.register_flags`, and any new protocol's hardware or software
-   binding with `binding.register_binding`. If it reads an overlay file,
-   register the suffix with `config.register_overlay_suffix`.
+   binding with `binding.register_binding` (a bundled one goes in the tables in
+   `binding.py` instead, which `tests/test_binding_coverage.py` checks). If it
+   reads an overlay file, register the suffix with
+   `config.register_overlay_suffix`.
 8. **Test it on synthetic fixtures** (see
    [`CONTRIBUTING.md`](../CONTRIBUTING.md)): its parsing, its refusals, and
    that it contacts nothing it was not told to.

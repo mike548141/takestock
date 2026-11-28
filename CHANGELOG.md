@@ -633,6 +633,29 @@ command line or a file format, and its entry says how.
 
 ### Changed
 
+- **`binding` places the states and protocols takestock's own readers and
+  collectors emit** (`docs/ARCHITECTURE.md`). The tables did not name many of
+  them, so those readers' weak findings counted as unknown in the hardware or
+  software split of `summary.json` unless a registration placed them. Placed as
+  hardware: the `platform-integrity` state, and the `firmware`, `vsan-encryption`,
+  `vm-encryption`, `datastore`, `datastore-encryption`, `vm-migration`,
+  `key-management`, `macsec`, `wan-link`, `key-store` and `storage-encryption`
+  protocols. Placed as software: the `identity` state, and the `winrm`, `tde`,
+  `database-encryption`, `column-encryption`, `database-backup-encryption`,
+  `backup-encryption`, `commvault-backup`, `software`, `egress`, `inventory`,
+  `software-lifecycle`, `oauth-client-credential`, `legacy-authentication`,
+  `mfa`, `dnssec`, `azure-storage`, `azure-disk`, `azure-backup`, `azure-keyvault`,
+  `azure-at-rest`, `kerberos`, `ntlm`, `netlogon`, `ipsec`, `crypto`, `signing` and
+  `key-material` protocols. `fde`, `disk-encryption`, `wifi`, `tcp`, `udp` and
+  `vulnerability` join the protocols left unplaced with a reason (a row that
+  names its software is still placed as software). A `vulnerability` row that
+  names its product is software whatever data state it is filed under; without
+  this rule it would follow the `platform-integrity` state, which this change
+  places as hardware, and before this change both were unplaced. A defect record
+  that names no product stays unknown. `binding.PRODUCT_DEFECT_PROTOCOLS` holds
+  that rule. `tests/test_binding_coverage.py` fails when a value in the source,
+  or in the tables the readers draw from, is neither placed nor given a reason.
+
 - **The register dates and credits an operating-system name by its own
   export, and the read-me's span counts facts dated apart from their row**:
   a row's `os` fact is dated, and recorded, by `extra.os_name_collected_at`
