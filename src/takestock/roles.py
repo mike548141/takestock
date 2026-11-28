@@ -988,3 +988,34 @@ def sensor_heartbeat() -> str:
 def unsupported_devices() -> str:
     """Discovered devices an endpoint sensor cannot run on."""
     return "Which devices on the network the endpoint sensor cannot be put on at all"
+
+
+def third_party_vendor(vendor: str, domains: int, declared: bool) -> str:
+    """One outside organisation the machines look names up for, or one the profile declares."""
+    if not vendor:
+        return ""
+    if not declared:
+        return ("An outside organisation the machines reach for that nobody has written down "
+                "as a supplier, so nothing has asked how it protects what it carries")
+    if domains:
+        return ("An outside organisation written down as a supplier, and seen here in the "
+                "names the machines look up")
+    return ("An outside organisation written down as a supplier, which the machines were not "
+            "seen looking up in this export")
+
+
+def third_party_incidental(count: int) -> str:
+    """Outside organisations whose every name the vendor table files outside the dependency categories."""
+    return ("Outside organisations whose every name the vendor table files under a category "
+            "that does not count as a dependency, such as a shared content network")
+
+
+def unattributed_domain() -> str:
+    """An outside domain looked up often that no table or declaration places."""
+    return ("An outside domain the machines look up often, which nothing here can put an "
+            "organisation behind")
+
+
+def third_party_scope() -> str:
+    """What the record of outside dependencies covers."""
+    return "What the record of outside dependencies covers, and what it cannot say"

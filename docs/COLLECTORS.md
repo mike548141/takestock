@@ -986,6 +986,7 @@ plugins:
 | `falcon_system_resources` | `general` | A CrowdStrike Falcon export of machines' firmware: BIOS and UEFI versions, and machines behind the estate's own newest on the same hardware | none: name it with `input:` |
 | `falcon_windows_os_security` | `general` | A CrowdStrike Falcon export of Windows platform protections (Secure Boot, virtualisation-based security, Credential Guard, device-memory protections): readings per protection, with an optional second reading compared | none: name it with `input:` |
 | `falcon_sha1_signed_modules` | `general` | A CrowdStrike Falcon LogScale export of module-signature events carrying SHA-1, by machine | none: name it with `input:` |
+| `falcon_dns` | `general` | A CrowdStrike Falcon LogScale export of DNS names looked up, with counts: the outside organisations depended on, declared or not, with each supplier's published post-quantum position where one is on record | none: name it with `input:` |
 | `falcon_logins` | `general` | CSV exports of sign-in activity on machines with the CrowdStrike Falcon sensor: logon type 8 sign-ins, where sign-in activity concentrates, local against domain accounts, the sign-in paths in use and failed sign-ins | none: name it with `input:` |
 | `falcon_accounts` | `general` | A CSV of the accounts the CrowdStrike Falcon sensor saw sign in: where administrative privilege sits, and how old the passwords are | none: name it with `input:` |
 | `falcon_logon_events` | `general` | CrowdStrike Falcon LogScale exports of sign-in and local group change events: which machines take remote desktop sign-ins or received a logon type 8 sign-in, and where local group membership changed | none: name it with `input:` |
@@ -3143,6 +3144,103 @@ that export lists (each machine once). **Coverage gaps:** no export read; and
 always one saying where SHA-1 sits in the chain is not established. **Cannot
 see:** whether SHA-1 is a module's own signature, the older half of a double
 signature, or a certificate higher in the chain; which modules or publishers.
+
+### `falcon_dns`
+
+Which outside organisations the estate's machines look names up for, from
+the sensor's `DnsRequest` events: each one a dependency the profile declares,
+one it does not, or an organisation the vendor table files under a category
+that does not count as a dependency. Beside each dependency, what the
+supplier has published about post-quantum cryptography, where that is on
+record.
+
+```yaml
+plugins:
+  - name: falcon_dns
+    input: inbox/falcon/dns-lookups.csv
+    settings:
+      # vendor_domains: inbox/vendor-domains.csv      # replaces the bundled table
+      # dependency_categories: [cloud, saas, identity, security]
+      # second_level_labels: [ltd]
+      # non_public_suffixes: [.corp.example]
+      # unattributed_share: 0.001
+```
+
+```
+#event_simpleName=DnsRequest
+| groupBy([DomainName], limit=max)
+```
+
+| Field | Default heading |
+|---|---|
+| `name` | `DomainName` |
+| `lookups` | `_count` |
+
+The event and its `DomainName` field are named by the FLTR core package's
+query *DNS Events - Java Generating DNS Requests* in CrowdStrike's community
+repository (`#event_simpleName=DnsRequest DomainName!="wpad"`), read on 29
+November 2026, New Zealand time. A blank or unreadable count is read as 0
+lookups, and the name is still counted. `groupBy()` names its count `_count`
+(the LogScale documentation, cited above for the traffic readers).
+
+**How a name is placed.** A single label, or a name with an ending
+`dnsnames.NON_PUBLIC_SUFFIXES` lists (reserved and private-network endings,
+each with its basis) or `non_public_suffixes` adds, is counted as not public.
+A name under the profile's `discovery.domains` or `discovery.email_domains`
+is the organisation's own. Any other name is external, and is put to an
+organisation by the profile's own `domains:` on a `third_party:`,
+`infrastructure:` or `scan_targets` entry first, then by the vendor table
+(`vendor_domains` names a CSV in the bundled table's columns, which replaces
+it), each by the longest listed suffix of the name. A name neither places is
+grouped under a best guess at its registered domain (`second_level_labels`
+adds labels to the guess), and a group earns a row of its own once it holds
+`unattributed_share` of the external lookups.
+
+Each of an organisation's names takes the vendor table's category for it,
+or `declared` when only the profile's `domains:` place it. The organisation
+counts as a dependency when one of those categories is `declared` or is in
+`dependency_categories` (default: every category of the bundled table except
+`cdn`); the rest are named together on one incidental row. The table's
+category wins over a declaration, so a declared supplier whose every name the
+table files under `cdn` is incidental, and its declaration still counts as
+seen. A dependency is
+matched to the profile's declarations by whole words: each identifying word
+of the vendor's name (legal forms such as `Inc` set aside) must be a whole
+word of a declared name, so `Tera Labs` is never taken for a declared
+`Terabyte Cloud`.
+
+**Post-quantum positions.** The declaration's own `pq_roadmap:` wins; else a
+published position from the positions files (`takestock.pqc_positions`: the
+bundled file, then the profile's `<stem>.pqc-positions.yaml`). A dependency
+with neither is flagged `pq-roadmap-unrecorded`: no position on record here,
+which is not the same as a supplier that published nothing. A position past
+its re-check date on the day the reader runs is still shown, says so, and is
+listed in a gap. The run date decides, not the export's, because the question
+is whether the supplier's stated position is still current.
+
+**Rows** (all `third-party`, `dependency`): `Third-party dependency: <vendor>`
+per dependency (`third-party-observed:<vendor>`, `n/a`, or
+`third-party-undeclared:<vendor>`, `unknown`), and per `third_party:` supplier
+never looked up (`third-party-not-observed:<vendor>`, `n/a`); `Names resolved
+that are not organisational dependencies` (`third-party-incidental`);
+`Unattributed external domain: <domain>` (`dns-name-unattributed:<domain>`,
+`unknown`); `Third-party dependency scope` (`scope-dns-evidence-only`) with
+every count and share. `summary.json` carries the dependencies, declared and
+undeclared, those not seen, those with and without a position, the positions
+by state, the unattributed domains and the attributed share. **Coverage
+gaps:** no export read; the undeclared organisations, by name; the
+dependencies with no position; the stale positions shown; an
+`unattributed_share` that is not a share from 0 up to 1 (the default is then
+used). **Cannot see:**
+whether a connection followed a lookup, what it carried or how it was
+protected; machines without a sensor; organisations reached by address; and
+which lookups were a person browsing rather than the organisation's own
+systems, where workstations carry the sensor.
+
+`falcon_dns.attribution(target, settings)` returns the vendor table,
+declarations, domain map, own domains and positions exactly as the reader
+builds them, so another module attributing names (a host a scan reached, say)
+uses the same table as these rows.
 
 ### The CrowdStrike Falcon identity, endpoint-event and assessment readers
 

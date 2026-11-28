@@ -9,6 +9,27 @@ command line or a file format, and its entry says how.
 
 ### Added
 
+- **The `falcon_dns` reader: outside organisations depended on, from DNS
+  lookups** (`docs/COLLECTORS.md`). Reads a CrowdStrike Falcon LogScale export
+  of DNS names with lookup counts (the query is in the docs) and puts each
+  external name to an organisation, by the profile's own `domains:` first and
+  then the vendor table (`settings: vendor_domains:` replaces the bundled one).
+  One row per dependency, declared or not (matched to the profile's
+  declarations by whole words), one per declared supplier never looked up, one
+  for the outside organisations whose every name the vendor table files under a
+  category that does not count as a dependency (such as a shared content
+  network), one per unattributed domain above a share of the lookups, and a
+  scope row. Beside each dependency, the
+  declaration's `pq_roadmap:` or the supplier's published position from
+  `takestock.pqc_positions`; a dependency with neither is flagged
+  `pq-roadmap-unrecorded` (no position on record here), and a position past its
+  re-check date is shown and listed in a gap. An `unattributed_share` that is
+  not a share from 0 up to 1 is a gap, and the default is used. Settings: `columns`, `vendor_domains`,
+  `dependency_categories`, `second_level_labels`, `non_public_suffixes`,
+  `unattributed_share`. `summarise` gives its `summary.json` block, and
+  `attribution(target, settings)` returns the tables it attributes with, so
+  another module can attribute names with the same ones.
+
 - **`takestock.remediation`: units of work, counted once per piece of work**
   (`docs/DISPOSITIONS.md`). `plan(assets, summary=None, *, tracks=None)` turns
   graded rows into one row per unit of work, keyed by `effort_group` where the

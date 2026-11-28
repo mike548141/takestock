@@ -505,6 +505,7 @@ SOURCE_LABEL: dict[str, str] = {
     "falcon_accounts": "CrowdStrike Falcon local accounts",
     "falcon_connections": "CrowdStrike Falcon network connections",
     "falcon_disk_encryption": "CrowdStrike Falcon disk encryption state",
+    "falcon_dns": "CrowdStrike Falcon DNS lookups, by the organisation behind each name",
     "falcon_endpoint_events": "CrowdStrike Falcon removable media and credential-store events",
     "falcon_estate_coverage": "CrowdStrike Falcon sensor coverage",
     "falcon_http": "CrowdStrike Falcon web requests read in clear, by destination",
